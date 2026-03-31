@@ -47,6 +47,8 @@ public class StatsOverlay extends View {
     private static final float LINE_SPACING_DP = 2f;
     private static final float CORNER_RADIUS_DP = 4f;
 
+    private final StringBuilder reusableSb = new StringBuilder(128);
+
     public StatsOverlay(Context context) {
         this(context, null);
     }
@@ -177,33 +179,53 @@ public class StatsOverlay extends View {
     }
 
     private String buildCompactLine() {
-        StringBuilder sb = new StringBuilder();
-        sb.append(fps).append(" FPS");
+        reusableSb.setLength(0);
+        reusableSb.append(fps).append(" FPS");
         if (codec != null && !codec.isEmpty()) {
-            sb.append(" | ").append(codec);
+            reusableSb.append(" | ").append(codec);
         }
-        sb.append(" | ").append(String.format("%.1fms", decodeTimeMs));
-        sb.append(" | WiFi ").append(getWifiQualityLabel());
+        reusableSb.append(" | ").append(String.format("%.1fms", decodeTimeMs));
+        reusableSb.append(" | WiFi ").append(getWifiQualityLabel());
         if (serverThermalState > 0) {
-            sb.append(" | ").append(getThermalLabel());
+            reusableSb.append(" | ").append(getThermalLabel());
         }
-        return sb.toString();
+        return reusableSb.toString();
     }
 
     private String[] buildFullLines() {
         String thermalPrefix = serverThermalState >= 2 ? "[X]" : serverThermalState == 1 ? "[!]" : "";
         String wifiPrefix = wifiQuality <= 1 ? (wifiQuality == 0 ? "[X]" : "[!]") : "";
 
-        return new String[] {
-                "FPS: " + fps + (codec != null && !codec.isEmpty() ? " (" + codec + ")" : ""),
-                "Decode: " + String.format("%.1f ms", decodeTimeMs),
-                "Render: " + String.format("%.1f ms", renderTimeMs),
-                "Network: " + String.format("%.1f ms", networkLatencyMs),
-                "Bitrate: " + (serverBitrate > 0 ? serverBitrate + " kbps" : "N/A"),
-                "FEC: " + (serverBitrate > 0 ? serverFecPct + "%" : "N/A"),
-                thermalPrefix + "Thermal: " + getThermalLabel(),
-                wifiPrefix + "WiFi: " + getWifiQualityLabel() + " (" + wifiRssi + " dBm, " + wifiLinkSpeed + " Mbps)"
-        };
+        reusableSb.setLength(0);
+        reusableSb.append("FPS: ").append(fps);
+        if (codec != null && !codec.isEmpty()) {
+            reusableSb.append(" (").append(codec).append(")");
+        }
+        String line0 = reusableSb.toString();
+
+        reusableSb.setLength(0);
+        String line1 = reusableSb.append("Decode: ").append(String.format("%.1f ms", decodeTimeMs)).toString();
+
+        reusableSb.setLength(0);
+        String line2 = reusableSb.append("Render: ").append(String.format("%.1f ms", renderTimeMs)).toString();
+
+        reusableSb.setLength(0);
+        String line3 = reusableSb.append("Network: ").append(String.format("%.1f ms", networkLatencyMs)).toString();
+
+        reusableSb.setLength(0);
+        String line4 = reusableSb.append("Bitrate: ").append(serverBitrate > 0 ? serverBitrate + " kbps" : "N/A").toString();
+
+        reusableSb.setLength(0);
+        String line5 = reusableSb.append("FEC: ").append(serverBitrate > 0 ? serverFecPct + "%" : "N/A").toString();
+
+        reusableSb.setLength(0);
+        String line6 = reusableSb.append(thermalPrefix).append("Thermal: ").append(getThermalLabel()).toString();
+
+        reusableSb.setLength(0);
+        String line7 = reusableSb.append(wifiPrefix).append("WiFi: ").append(getWifiQualityLabel())
+                .append(" (").append(wifiRssi).append(" dBm, ").append(wifiLinkSpeed).append(" Mbps)").toString();
+
+        return new String[] { line0, line1, line2, line3, line4, line5, line6, line7 };
     }
 
     private String getWifiQualityLabel() {

@@ -32,6 +32,8 @@ public class ReconnectOverlay extends View {
     private static final float TEXT_SIZE_SP = 16f;
     private static final float COUNTER_SIZE_SP = 14f;
 
+    private final StringBuilder reusableSb = new StringBuilder(16);
+
     public ReconnectOverlay(Context context) {
         this(context, null);
     }
@@ -155,7 +157,8 @@ public class ReconnectOverlay extends View {
 
         // Draw attempt counter
         if (currentAttempt > 0) {
-            String counter = currentAttempt + "/" + maxAttempts;
+            reusableSb.setLength(0);
+            String counter = reusableSb.append(currentAttempt).append('/').append(maxAttempts).toString();
             textPaint.setTextSize(COUNTER_SIZE_SP * density);
             canvas.drawText(counter, centerX, centerY + 30 * density, textPaint);
         }

@@ -84,7 +84,7 @@ public class WifiMonitor {
     public void stop() {
         running = false;
         if (handler != null) {
-            handler.removeCallbacks(pollRunnable);
+            handler.removeCallbacksAndMessages(null);
         }
         lastQuality = -1;
     }

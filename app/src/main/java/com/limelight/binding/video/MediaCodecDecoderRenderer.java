@@ -1883,7 +1883,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 // Also send structured stats for the SudoVDA stats overlay
                 float totalTimeMs = lastTwo.totalFrames > 0 ?
                         (float)lastTwo.totalTimeMs / lastTwo.totalFrames : 0;
-                float networkLatencyMs = (int)(rttInfo >> 32); // average RTT
+                float networkLatencyMs = (float)(rttInfo >> 32); // average RTT
                 String codecName;
                 if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_H264) != 0) {
                     codecName = "H.264";

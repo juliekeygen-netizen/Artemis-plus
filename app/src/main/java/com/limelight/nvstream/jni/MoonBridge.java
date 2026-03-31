@@ -433,7 +433,7 @@ public class MoonBridge {
         void onServerStats(int bitrate, int fecPct, int thermalState);
     }
 
-    private static ServerStatsListener serverStatsListener;
+    private static volatile ServerStatsListener serverStatsListener;
 
     public static void setServerStatsListener(ServerStatsListener listener) {
         serverStatsListener = listener;
@@ -460,7 +460,5 @@ public class MoonBridge {
     public static void sendWifiQuality(byte[] payload) {
         // TODO: Implement native method once moonlight-common-c has the extension
         // For now this is a no-op to avoid JNI linkage errors
-        com.limelight.LimeLog.info("WiFi quality update: q=" + (payload[0] & 0xFF) +
-                " rssi=" + payload[1] + " speed=" + ((payload[2] & 0xFF) | ((payload[3] & 0xFF) << 8)));
     }
 }

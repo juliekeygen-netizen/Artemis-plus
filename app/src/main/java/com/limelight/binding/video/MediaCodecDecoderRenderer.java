@@ -1879,6 +1879,24 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 if(prefs.enablePerfOverlay) {
                     perfListener.onPerfUpdate(fullLog);
                 }
+
+                // Also send structured stats for the SudoVDA stats overlay
+                float totalTimeMs = lastTwo.totalFrames > 0 ?
+                        (float)lastTwo.totalTimeMs / lastTwo.totalFrames : 0;
+                float networkLatencyMs = (int)(rttInfo >> 32); // average RTT
+                String codecName;
+                if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_H264) != 0) {
+                    codecName = "H.264";
+                } else if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_H265) != 0) {
+                    codecName = "HEVC";
+                } else if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_AV1) != 0) {
+                    codecName = "AV1";
+                } else {
+                    codecName = "Unknown";
+                }
+                perfListener.onPerfStatsUpdate(decodeTimeMs, totalTimeMs, networkLatencyMs,
+                        (int) fps.renderedFps, codecName);
+
                 // Best latency is only met at requested highest fps, rest can be ignored
                 Boolean targetFpsMatched = ((int) fps.totalFps == (int) prefs.fps);
                 if(minDecodeTime > decodeTimeMs && targetFpsMatched) {

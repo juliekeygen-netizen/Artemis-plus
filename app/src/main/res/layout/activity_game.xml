@@ -116,4 +116,16 @@
         android:visibility="gone"
         android:elevation="9999dp" />
 
+    <com.limelight.overlay.StatsOverlay
+        android:id="@+id/statsOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="visible" />
+
+    <com.limelight.overlay.ReconnectOverlay
+        android:id="@+id/reconnectOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
 </merge>

@@ -66,6 +66,8 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
     private static final int QUICK_MENU_FIRST_STAGE_MS = 200;
 
+    private static final int STATS_OVERLAY_HOLD_TIME_MS = 2000;
+
     private static final int EMULATING_SPECIAL = 0x1;
     private static final int EMULATING_SELECT = 0x2;
     private static final int EMULATING_TOUCHPAD = 0x4;
@@ -129,6 +131,18 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     private final Handler backgroundThreadHandler;
     private boolean hasGameController;
     private boolean stopped = false;
+
+    // Stats overlay toggle: Select+L1 held for 2 seconds
+    private boolean selectL1HoldPending;
+    private final Runnable statsOverlayToggleRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (selectL1HoldPending) {
+                selectL1HoldPending = false;
+                gestures.toggleStatsOverlay();
+            }
+        }
+    };
 
     private final PreferenceConfiguration prefConfig;
     private short currentControllers, initialControllers;
@@ -275,6 +289,10 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
         // Stop new device contexts from being created or used
         stopped = true;
+
+        // Cancel any pending stats overlay toggle
+        selectL1HoldPending = false;
+        mainThreadHandler.removeCallbacks(statsOverlayToggleRunnable);
 
         // Unregister our input device callbacks
         inputManager.unregisterInputDeviceListener(this);
@@ -2695,6 +2713,14 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             }
         }
 
+        // Cancel stats overlay toggle if Select or L1 was released
+        if (selectL1HoldPending &&
+                ((context.inputMap & ControllerPacket.BACK_FLAG) == 0 ||
+                 (context.inputMap & ControllerPacket.LB_FLAG) == 0)) {
+            selectL1HoldPending = false;
+            mainThreadHandler.removeCallbacks(statsOverlayToggleRunnable);
+        }
+
         sendControllerInputPacket(context);
 
         if (context.pendingExit && context.inputMap == 0) {
@@ -2930,6 +2956,21 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
                     context.emulatingButtonFlags |= ControllerHandler.EMULATING_SPECIAL;
                 }
+            }
+        }
+
+        // Select+L1 held for 2 seconds toggles the stats overlay
+        if ((context.inputMap & ControllerPacket.BACK_FLAG) != 0 &&
+                (context.inputMap & ControllerPacket.LB_FLAG) != 0) {
+            if (!selectL1HoldPending) {
+                selectL1HoldPending = true;
+                mainThreadHandler.postDelayed(statsOverlayToggleRunnable, STATS_OVERLAY_HOLD_TIME_MS);
+            }
+        } else {
+            // Combo broken, cancel pending toggle
+            if (selectL1HoldPending) {
+                selectL1HoldPending = false;
+                mainThreadHandler.removeCallbacks(statsOverlayToggleRunnable);
             }
         }
 

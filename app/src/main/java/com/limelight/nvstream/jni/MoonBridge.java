@@ -423,4 +423,44 @@ public class MoonBridge {
     public static native boolean guessControllerHasShareButton(int vendorId, int productId);
 
     public static native void init();
+
+    // SudoVDA extensions
+
+    /**
+     * Listener for server stats received via the control channel (message type 0x3004).
+     */
+    public interface ServerStatsListener {
+        void onServerStats(int bitrate, int fecPct, int thermalState);
+    }
+
+    private static ServerStatsListener serverStatsListener;
+
+    public static void setServerStatsListener(ServerStatsListener listener) {
+        serverStatsListener = listener;
+    }
+
+    /**
+     * Called from native code when a server stats message (type 0x3004) is received.
+     * Payload: 6 bytes - [0-1] bitrate (uint16 LE), [2] fec%, [3] thermal, [4-5] reserved.
+     */
+    public static void bridgeClServerStats(byte[] payload) {
+        if (serverStatsListener != null && payload != null && payload.length >= 4) {
+            int bitrate = (payload[0] & 0xFF) | ((payload[1] & 0xFF) << 8);
+            int fecPct = payload[2] & 0xFF;
+            int thermal = payload[3] & 0xFF;
+            serverStatsListener.onServerStats(bitrate, fecPct, thermal);
+        }
+    }
+
+    /**
+     * Send WiFi quality data to the server via the control channel (type 0x3003).
+     * This is a stub until the native moonlight-common-c extension is compiled.
+     * Payload format: [0] quality, [1] rssi (signed), [2-3] linkSpeed (uint16 LE).
+     */
+    public static void sendWifiQuality(byte[] payload) {
+        // TODO: Implement native method once moonlight-common-c has the extension
+        // For now this is a no-op to avoid JNI linkage errors
+        com.limelight.LimeLog.info("WiFi quality update: q=" + (payload[0] & 0xFF) +
+                " rssi=" + payload[1] + " speed=" + ((payload[2] & 0xFF) | ((payload[3] & 0xFF) << 8)));
+    }
 }

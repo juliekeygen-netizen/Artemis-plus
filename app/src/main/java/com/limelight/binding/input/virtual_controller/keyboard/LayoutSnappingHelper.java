@@ -9,10 +9,10 @@ public class LayoutSnappingHelper {
     private static final int SPACING_MIN = 4; // Minimum spacing between parallel edges
     private static final int SPACING_THRESHOLD = 30; // Maximum distance to trigger spacing adjustment
 
-    // Group resizing is intentionally geometry-derived instead of persisted. Controls that the move
-    // editor has snapped edge-to-edge remain a connected cluster after save/reload, so legacy and
-    // new layouts get grouped scaling automatically without a migration step.
-    private static final int GROUP_EDGE_TOLERANCE = SNAP_THRESHOLD;
+    // Group resize scales the *whole* cluster, including the inter-control gap. Treat any gap that is
+    // still within the editor's own spacing-adjustment range as connected. This prevents a 4 px
+    // snapped gap from becoming 12/16 px after scaling up and suddenly dropping out of the group.
+    private static final int GROUP_EDGE_TOLERANCE = SPACING_THRESHOLD;
     private static final float GROUP_PARALLEL_OVERLAP = 0.40f;
 
     public static class SnapResult {
@@ -66,13 +66,6 @@ public class LayoutSnappingHelper {
         return overlapEnd - overlapStart > Math.min(edge1End - edge1Start, edge2End - edge2Start) * 0.5;
     }
 
-    /**
-     * Returns true when two controls form an edge-connected snapped cluster.
-     *
-     * Move-mode spacing snaps neighbouring controls to 4 px, while normal snapping has a 10 px
-     * tolerance. We therefore accept a <=10 px edge gap with meaningful overlap on the parallel
-     * axis. Merely sharing a left/top alignment does not group distant controls.
-     */
     public static boolean areGrouped(View first, View second) {
         if (first == null || second == null || first == second ||
                 first.getVisibility() != View.VISIBLE || second.getVisibility() != View.VISIBLE ||

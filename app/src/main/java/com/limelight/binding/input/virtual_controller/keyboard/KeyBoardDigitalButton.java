@@ -62,6 +62,7 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement {
     private int layer;
     private KeyBoardDigitalButton movingButton = null;
     private boolean sticky = false;
+    private boolean slideActivationEnabled = true;
 
     boolean inRange(float x, float y) {
         return (this.getX() < x && this.getX() + this.getWidth() > x) &&
@@ -69,6 +70,12 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement {
     }
 
     public boolean checkMovement(float x, float y, KeyBoardDigitalButton movingButton) {
+        // Some buttons (notably Artemis-local actions) must only fire from a deliberate direct
+        // press. Never allow a slide gesture to enter or leave one of those buttons.
+        if (!slideActivationEnabled || !movingButton.slideActivationEnabled) {
+            return false;
+        }
+
         // check if the movement happened in the same layer
         if (movingButton.layer != this.layer) {
             return false;
@@ -112,6 +119,9 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement {
     }
 
     private void checkMovementForAllButtons(float x, float y) {
+        if (!slideActivationEnabled) {
+            return;
+        }
         for (keyBoardVirtualControllerElement element : virtualController.getElements()) {
             if (element != this && element instanceof KeyBoardDigitalButton) {
                 ((KeyBoardDigitalButton) element).checkMovement(x, y, this);
@@ -144,6 +154,14 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement {
 
     public boolean isSticky() {
         return this.sticky;
+    }
+
+    public void setSlideActivationEnabled(boolean enabled) {
+        slideActivationEnabled = enabled;
+    }
+
+    public boolean isSlideActivationEnabled() {
+        return slideActivationEnabled;
     }
 
     @Override

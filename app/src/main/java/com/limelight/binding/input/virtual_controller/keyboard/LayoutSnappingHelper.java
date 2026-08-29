@@ -9,10 +9,11 @@ public class LayoutSnappingHelper {
     private static final int SPACING_MIN = 4; // Minimum spacing between parallel edges
     private static final int SPACING_THRESHOLD = 30; // Maximum distance to trigger spacing adjustment
 
-    // Group resize scales the *whole* cluster, including the inter-control gap. Treat any gap that is
-    // still within the editor's own spacing-adjustment range as connected. This prevents a 4 px
-    // snapped gap from becoming 12/16 px after scaling up and suddenly dropping out of the group.
-    private static final int GROUP_EDGE_TOLERANCE = SPACING_THRESHOLD;
+    // Group resize scales the entire cluster, including the inter-control gap. A fixed 10/30px
+    // tolerance eventually disconnects a legitimately grouped pair after a large scale-up, so the
+    // group tolerance grows with the controls while retaining the normal editor threshold as a
+    // floor. 25% is comfortably above the 4px/default-button ratio but still rejects distant rows.
+    private static final float GROUP_SIZE_TOLERANCE_RATIO = 0.25f;
     private static final float GROUP_PARALLEL_OVERLAP = 0.40f;
 
     public static class SnapResult {
@@ -100,13 +101,20 @@ public class LayoutSnappingHelper {
         int minHeight = Math.min(aHeight, bHeight);
         int minWidth = Math.min(aWidth, bWidth);
 
+        int horizontalGapTolerance = Math.max(
+                SPACING_THRESHOLD,
+                Math.round(minWidth * GROUP_SIZE_TOLERANCE_RATIO));
+        int verticalGapTolerance = Math.max(
+                SPACING_THRESHOLD,
+                Math.round(minHeight * GROUP_SIZE_TOLERANCE_RATIO));
+
         boolean sideBySide = verticalOverlap >= minHeight * GROUP_PARALLEL_OVERLAP &&
-                (Math.abs(aRight - bLeft) <= GROUP_EDGE_TOLERANCE ||
-                        Math.abs(bRight - aLeft) <= GROUP_EDGE_TOLERANCE);
+                (Math.abs(aRight - bLeft) <= horizontalGapTolerance ||
+                        Math.abs(bRight - aLeft) <= horizontalGapTolerance);
 
         boolean stacked = horizontalOverlap >= minWidth * GROUP_PARALLEL_OVERLAP &&
-                (Math.abs(aBottom - bTop) <= GROUP_EDGE_TOLERANCE ||
-                        Math.abs(bBottom - aTop) <= GROUP_EDGE_TOLERANCE);
+                (Math.abs(aBottom - bTop) <= verticalGapTolerance ||
+                        Math.abs(bBottom - aTop) <= verticalGapTolerance);
 
         return sideBySide || stacked;
     }

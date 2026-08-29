@@ -308,6 +308,7 @@ public class KeyBoardController {
 
     public void removeElements() {
         activeMoveGroup.clear();
+        outlinedGroup.clear();
         for (keyBoardVirtualControllerElement element : new ArrayList<>(elements)) {
             frame_layout.removeView(element);
         }

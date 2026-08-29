@@ -744,7 +744,11 @@ final class KeyComboManager {
 
     private static void deleteDefinition(Context context, String id) {
         List<Definition> definitions = loadDefinitions(context);
-        definitions.removeIf(definition -> definition.id.equals(id));
+        for (int i = definitions.size() - 1; i >= 0; i--) {
+            if (definitions.get(i).id.equals(id)) {
+                definitions.remove(i);
+            }
+        }
         saveDefinitions(context, definitions);
     }
 

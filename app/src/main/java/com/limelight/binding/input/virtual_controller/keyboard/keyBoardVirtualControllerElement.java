@@ -19,11 +19,8 @@ import android.widget.FrameLayout;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 public abstract class keyBoardVirtualControllerElement extends View {
     protected static boolean _PRINT_DEBUG_INFORMATION = false;
@@ -76,22 +73,31 @@ public abstract class keyBoardVirtualControllerElement extends View {
     private int lastMoveX;
     private int lastMoveY;
 
-    // The dimensions supplied by KeyBoardController.addElement() represent the element's canonical
-    // size before per-layout saved geometry is loaded. Resize-mode double tap restores these values.
+    // Canonical geometry from controller creation. Saved profile geometry is loaded afterwards.
+    private int defaultX = -1;
+    private int defaultY = -1;
     private int defaultWidth = -1;
     private int defaultHeight = -1;
 
-    // Resize gesture tracking for double-tap reset and connected-group scaling.
     private final int touchSlop;
+
+    // Stable raw-coordinate resize gesture tracking. Raw coordinates do not change when this View's
+    // bounds change, unlike MotionEvent.getX()/getY(), which caused the old grouped scaling to flash.
     private boolean resizeGestureMoved;
-    private float resizeDownX;
-    private float resizeDownY;
+    private float resizeDownRawX;
+    private float resizeDownRawY;
     private long lastResizeTapUpTime;
     private List<GroupResizeSnapshot> resizeGroup;
     private int resizeGroupOriginX;
     private int resizeGroupOriginY;
     private int resizeGroupRight;
     private int resizeGroupBottom;
+
+    // Move-mode double tap enters explicit group-position mode.
+    private boolean moveGestureMoved;
+    private float moveDownRawX;
+    private float moveDownRawY;
+    private long lastMoveTapUpTime;
 
     private static final class GroupResizeSnapshot {
         final keyBoardVirtualControllerElement element;
@@ -121,11 +127,34 @@ public abstract class keyBoardVirtualControllerElement extends View {
     }
 
     /** Called exactly once by the controller when this element is initially attached. */
-    void setDefaultSize(int width, int height) {
+    void setDefaultGeometry(int x, int y, int width, int height) {
         if (defaultWidth <= 0 || defaultHeight <= 0) {
+            defaultX = Math.max(0, x);
+            defaultY = Math.max(0, y);
             defaultWidth = Math.max(getMinimumResizeSizePx(), width);
             defaultHeight = Math.max(getMinimumResizeSizePx(), height);
         }
+    }
+
+    /** Compatibility helper for older controller code. */
+    void setDefaultSize(int width, int height) {
+        setDefaultGeometry(0, 0, width, height);
+    }
+
+    int getDefaultWidth() {
+        return defaultWidth > 0 ? defaultWidth : Math.max(getMinimumResizeSizePx(), getWidth());
+    }
+
+    int getDefaultHeight() {
+        return defaultHeight > 0 ? defaultHeight : Math.max(getMinimumResizeSizePx(), getHeight());
+    }
+
+    int getDefaultX() {
+        return Math.max(0, defaultX);
+    }
+
+    int getDefaultY() {
+        return Math.max(0, defaultY);
     }
 
     public void resetSizeToDefault() {
@@ -137,6 +166,21 @@ public abstract class keyBoardVirtualControllerElement extends View {
         FrameLayout.LayoutParams layoutParams = (FrameLayout.LayoutParams) getLayoutParams();
         layoutParams.width = defaultWidth;
         layoutParams.height = defaultHeight;
+        requestLayout();
+        invalidate();
+    }
+
+    void setGeometry(int left, int top, int width, int height) {
+        if (!(getLayoutParams() instanceof FrameLayout.LayoutParams)) {
+            return;
+        }
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) getLayoutParams();
+        params.leftMargin = Math.max(0, left);
+        params.topMargin = Math.max(0, top);
+        params.width = Math.max(getMinimumResizeSizePx(), width);
+        params.height = Math.max(getMinimumResizeSizePx(), height);
+        params.rightMargin = 0;
+        params.bottomMargin = 0;
         requestLayout();
         invalidate();
     }
@@ -174,12 +218,10 @@ public abstract class keyBoardVirtualControllerElement extends View {
         }
 
         FrameLayout.LayoutParams layoutParams = (FrameLayout.LayoutParams) getLayoutParams();
-
         layoutParams.leftMargin = Math.max(0, newPos_x);
         layoutParams.topMargin = Math.max(0, newPos_y);
         layoutParams.rightMargin = 0;
         layoutParams.bottomMargin = 0;
-
         requestLayout();
     }
 
@@ -191,35 +233,16 @@ public abstract class keyBoardVirtualControllerElement extends View {
 
         layoutParams.height = Math.max(getMinimumResizeSizePx(), newHeight);
         layoutParams.width = Math.max(getMinimumResizeSizePx(), newWidth);
-
         requestLayout();
     }
 
     private void prepareGroupedResize() {
         resizeGroup = null;
-        if (virtualController == null || virtualController.getElements().size() < 2) {
+        if (virtualController == null) {
             return;
         }
 
-        ArrayDeque<keyBoardVirtualControllerElement> pending = new ArrayDeque<>();
-        Set<keyBoardVirtualControllerElement> connected = new HashSet<>();
-        connected.add(this);
-        pending.add(this);
-
-        while (!pending.isEmpty()) {
-            keyBoardVirtualControllerElement candidate = pending.removeFirst();
-            for (keyBoardVirtualControllerElement other : virtualController.getElements()) {
-                if (connected.contains(other) || other.hidden || !other.enabled ||
-                        other.getVisibility() != View.VISIBLE) {
-                    continue;
-                }
-                if (LayoutSnappingHelper.areGrouped(candidate, other)) {
-                    connected.add(other);
-                    pending.addLast(other);
-                }
-            }
-        }
-
+        List<keyBoardVirtualControllerElement> connected = virtualController.getConnectedGroup(this);
         if (connected.size() <= 1) {
             return;
         }
@@ -256,16 +279,23 @@ public abstract class keyBoardVirtualControllerElement extends View {
         resizeGroupBottom = maxBottom;
     }
 
-    private void resizeConnectedGroup(int pressedX, int pressedY, int x, int y) {
+    private void resizeConnectedGroup(float rawX, float rawY, int localX, int localY) {
         if (resizeGroup == null || resizeGroup.size() <= 1) {
-            resizeElement(pressedX, pressedY, x, y);
+            resizeElement(
+                    (int) position_pressed_x,
+                    (int) position_pressed_y,
+                    localX,
+                    localY);
             return;
         }
 
-        float candidateX = (startSize_x + (x - pressedX)) / (float) Math.max(1, startSize_x);
-        float candidateY = (startSize_y + (y - pressedY)) / (float) Math.max(1, startSize_y);
-        float scale = Math.abs(candidateX - 1f) >= Math.abs(candidateY - 1f)
-                ? candidateX : candidateY;
+        int groupWidth = Math.max(1, resizeGroupRight - resizeGroupOriginX);
+        int groupHeight = Math.max(1, resizeGroupBottom - resizeGroupOriginY);
+        float normalizedX = (rawX - resizeDownRawX) / groupWidth;
+        float normalizedY = (rawY - resizeDownRawY) / groupHeight;
+        float normalizedDelta = Math.abs(normalizedX) >= Math.abs(normalizedY)
+                ? normalizedX : normalizedY;
+        float scale = 1f + normalizedDelta;
 
         float minScale = 0.05f;
         for (GroupResizeSnapshot snapshot : resizeGroup) {
@@ -277,8 +307,6 @@ public abstract class keyBoardVirtualControllerElement extends View {
         float maxScale = Float.MAX_VALUE;
         if (getParent() instanceof View) {
             View parent = (View) getParent();
-            int groupWidth = Math.max(1, resizeGroupRight - resizeGroupOriginX);
-            int groupHeight = Math.max(1, resizeGroupBottom - resizeGroupOriginY);
             if (parent.getWidth() > resizeGroupOriginX) {
                 maxScale = Math.min(maxScale,
                         (parent.getWidth() - resizeGroupOriginX) / (float) groupWidth);
@@ -288,7 +316,6 @@ public abstract class keyBoardVirtualControllerElement extends View {
                         (parent.getHeight() - resizeGroupOriginY) / (float) groupHeight);
             }
         }
-
         if (maxScale == Float.MAX_VALUE) {
             maxScale = Math.max(1f, scale);
         }
@@ -310,12 +337,61 @@ public abstract class keyBoardVirtualControllerElement extends View {
         }
     }
 
+    private void resetConnectedGroupSizeToDefault() {
+        List<keyBoardVirtualControllerElement> group = virtualController.getConnectedGroup(this);
+        if (group.size() <= 1) {
+            resetSizeToDefault();
+            return;
+        }
+
+        int originX = Integer.MAX_VALUE;
+        int originY = Integer.MAX_VALUE;
+        float scaleSum = 0f;
+        int scaleSamples = 0;
+        for (keyBoardVirtualControllerElement element : group) {
+            if (!(element.getLayoutParams() instanceof FrameLayout.LayoutParams)) {
+                continue;
+            }
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) element.getLayoutParams();
+            originX = Math.min(originX, params.leftMargin);
+            originY = Math.min(originY, params.topMargin);
+            if (element.getDefaultWidth() > 0) {
+                scaleSum += params.width / (float) element.getDefaultWidth();
+                scaleSamples++;
+            }
+            if (element.getDefaultHeight() > 0) {
+                scaleSum += params.height / (float) element.getDefaultHeight();
+                scaleSamples++;
+            }
+        }
+        if (originX == Integer.MAX_VALUE || originY == Integer.MAX_VALUE) {
+            return;
+        }
+
+        float scale = scaleSamples == 0 ? 1f : scaleSum / scaleSamples;
+        if (scale <= 0.05f) {
+            scale = 1f;
+        }
+
+        for (keyBoardVirtualControllerElement element : group) {
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) element.getLayoutParams();
+            int newLeft = originX + Math.round((params.leftMargin - originX) / scale);
+            int newTop = originY + Math.round((params.topMargin - originY) / scale);
+            element.setGeometry(
+                    newLeft,
+                    newTop,
+                    element.getDefaultWidth(),
+                    element.getDefaultHeight());
+        }
+    }
+
     private void clearGroupedResize() {
         resizeGroup = null;
     }
 
     protected void checkAndApplyResize() {
-        if (virtualController.getControllerMode() == KeyBoardController.ControllerMode.MoveButtons) {
+        if (virtualController.getControllerMode() == KeyBoardController.ControllerMode.MoveButtons &&
+                !virtualController.isGroupMoveModeActive()) {
             View[] otherViews = new View[virtualController.getElements().size() - 1];
             int index = 0;
             for (keyBoardVirtualControllerElement element : virtualController.getElements()) {
@@ -386,15 +462,8 @@ public abstract class keyBoardVirtualControllerElement extends View {
 
     protected void showConfigurationDialog() {
         AlertDialog.Builder alertBuilder = new AlertDialog.Builder(getContext());
-
         alertBuilder.setTitle("Configuration");
-
-        CharSequence functions[] = new CharSequence[]{
-                "Move",
-                "Resize",
-                "Cancel"
-        };
-
+        CharSequence functions[] = new CharSequence[]{"Move", "Resize", "Cancel"};
         alertBuilder.setItems(functions, new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialog, int which) {
@@ -433,10 +502,20 @@ public abstract class keyBoardVirtualControllerElement extends View {
                 startSize_y = getHeight();
 
                 if (virtualController.getControllerMode() == KeyBoardController.ControllerMode.MoveButtons) {
-                    actionEnableMove();
+                    moveDownRawX = event.getRawX();
+                    moveDownRawY = event.getRawY();
+                    moveGestureMoved = false;
+                    if (virtualController.isGroupMoveModeActive()) {
+                        if (virtualController.isInActiveMoveGroup(this)) {
+                            virtualController.beginActiveGroupMove(event.getRawX(), event.getRawY());
+                            actionEnableMove();
+                        }
+                    } else {
+                        actionEnableMove();
+                    }
                 } else if (virtualController.getControllerMode() == KeyBoardController.ControllerMode.ResizeButtons) {
-                    resizeDownX = event.getX();
-                    resizeDownY = event.getY();
+                    resizeDownRawX = event.getRawX();
+                    resizeDownRawY = event.getRawY();
                     resizeGestureMoved = false;
                     prepareGroupedResize();
                     actionEnableResize();
@@ -448,20 +527,30 @@ public abstract class keyBoardVirtualControllerElement extends View {
             case MotionEvent.ACTION_MOVE: {
                 switch (currentMode) {
                     case Move:
-                        moveElement(
-                                (int) position_pressed_x,
-                                (int) position_pressed_y,
-                                (int) event.getX(),
-                                (int) event.getY());
+                        if (virtualController.isGroupMoveModeActive()) {
+                            if (virtualController.isInActiveMoveGroup(this)) {
+                                virtualController.moveActiveGroup(event.getRawX(), event.getRawY());
+                            }
+                        } else {
+                            if (Math.abs(event.getRawX() - moveDownRawX) > touchSlop ||
+                                    Math.abs(event.getRawY() - moveDownRawY) > touchSlop) {
+                                moveGestureMoved = true;
+                            }
+                            moveElement(
+                                    (int) position_pressed_x,
+                                    (int) position_pressed_y,
+                                    (int) event.getX(),
+                                    (int) event.getY());
+                        }
                         break;
                     case Resize:
-                        if (Math.abs(event.getX() - resizeDownX) > touchSlop ||
-                                Math.abs(event.getY() - resizeDownY) > touchSlop) {
+                        if (Math.abs(event.getRawX() - resizeDownRawX) > touchSlop ||
+                                Math.abs(event.getRawY() - resizeDownRawY) > touchSlop) {
                             resizeGestureMoved = true;
                         }
                         resizeConnectedGroup(
-                                (int) position_pressed_x,
-                                (int) position_pressed_y,
+                                event.getRawX(),
+                                event.getRawY(),
                                 (int) event.getX(),
                                 (int) event.getY());
                         break;
@@ -473,16 +562,33 @@ public abstract class keyBoardVirtualControllerElement extends View {
             case MotionEvent.ACTION_CANCEL:
             case MotionEvent.ACTION_UP: {
                 if (currentMode == Mode.Move) {
-                    checkAndApplyResize();
+                    if (virtualController.isGroupMoveModeActive()) {
+                        virtualController.finishActiveGroupMove();
+                    } else {
+                        checkAndApplyResize();
+                        if (event.getActionMasked() == MotionEvent.ACTION_CANCEL || moveGestureMoved) {
+                            lastMoveTapUpTime = 0;
+                        } else {
+                            long now = event.getEventTime();
+                            if (lastMoveTapUpTime != 0 &&
+                                    now - lastMoveTapUpTime <= ViewConfiguration.getDoubleTapTimeout()) {
+                                if (virtualController.enterGroupMoveMode(this)) {
+                                    virtualController.vibrate(KeyEvent.ACTION_DOWN);
+                                }
+                                lastMoveTapUpTime = 0;
+                            } else {
+                                lastMoveTapUpTime = now;
+                            }
+                        }
+                    }
                 } else if (currentMode == Mode.Resize) {
                     if (event.getActionMasked() == MotionEvent.ACTION_CANCEL || resizeGestureMoved) {
-                        // A drag/cancel must never remain as the first half of a later double-tap.
                         lastResizeTapUpTime = 0;
                     } else {
                         long now = event.getEventTime();
                         if (lastResizeTapUpTime != 0 &&
                                 now - lastResizeTapUpTime <= ViewConfiguration.getDoubleTapTimeout()) {
-                            resetSizeToDefault();
+                            resetConnectedGroupSizeToDefault();
                             lastResizeTapUpTime = 0;
                             virtualController.vibrate(KeyEvent.ACTION_DOWN);
                             KeyBoardControllerConfigurationLoader.saveProfile(virtualController, getContext());
@@ -536,7 +642,6 @@ public abstract class keyBoardVirtualControllerElement extends View {
         JSONObject configuration = new JSONObject();
 
         FrameLayout.LayoutParams layoutParams = (FrameLayout.LayoutParams) getLayoutParams();
-
         configuration.put("LEFT", layoutParams.leftMargin);
         configuration.put("TOP", layoutParams.topMargin);
         configuration.put("WIDTH", layoutParams.width);

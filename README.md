@@ -4,7 +4,7 @@ Artemis Plus is an experimental community derivative of **Artemis Android** focu
 
 It is built on **Marssvoodoo/artemis-android**, which carries forward Artemis with newer reconnect, Wi-Fi telemetry, performance-overlay, and stability work. Artemis Plus selectively ports useful On-Screen Controller (OSC) ideas from **ZDPepos/diana-oscsuite** instead of replacing the newer streaming base with Diana's older branch.
 
-> **Status:** active development. The first Diana-inspired OSC/action-button implementation is on `main`; follow-up audit work adds regression tests, state-recovery fixes, and an easy GitHub Actions APK build.
+> **Status:** active development. The first Diana-inspired OSC/action-button implementation has completed a second implementation audit with state-recovery fixes, dedicated regression tests, and a verified GitHub Actions debug-APK build.
 
 ## Project lineage
 
@@ -62,6 +62,7 @@ The first implementation selectively brings Diana-inspired controller editing id
 - **Paired sizing** — related groups can resize together, including A/B/X/Y, LT/RT, LB/RB, both sticks, both stick-clicks, and Start/Back.
 - Snapping and paired sizing can each be toggled from the OSC profile dialog.
 - Those two editing preferences persist between controller recreations/app sessions.
+- Loaded controller geometry is clamped to safe minimum sizes/positions instead of blindly accepting broken saved values.
 
 ### Multiple OSC profiles
 
@@ -96,7 +97,7 @@ Current local actions are:
 - **Gamepad Overlay** — toggle the virtual gamepad
 - **Custom Buttons Overlay** — toggle the custom-button/keyboard controller
 
-These use the existing custom OSC element system, so they can be moved, resized, hidden/enabled, and have their geometry persisted like normal buttons.
+These use the existing custom OSC element system, so they can be moved, resized, hidden/enabled, and have their geometry persisted like normal buttons. Unlike ordinary keyboard buttons, Artemis-local action buttons require a deliberate direct press: sliding a held finger across neighbouring keys cannot accidentally trigger actions such as Rotate, Menu, or HUD.
 
 ### Adding action buttons
 
@@ -107,7 +108,7 @@ These use the existing custom OSC element system, so they can be moved, resized,
 5. Continue tapping the settings gear to enter Move and Resize modes and place the buttons where you want them.
 6. Exit configuration mode to save the layout.
 
-The action selection is stored per existing keyboard OSC layout/profile. Support for putting Artemis actions directly into the existing custom-key import/export JSON format is still planned.
+The action selection is stored per existing keyboard OSC layout/profile. Hidden action state survives layout restoration, while explicitly re-adding an action makes it visible again. Support for putting Artemis actions directly into the existing custom-key import/export JSON format is still planned.
 
 ## Existing deposited controls
 
@@ -163,7 +164,15 @@ The generated APKs are placed under `app/build/outputs/apk/`.
 
 ## Verification
 
-GitHub Actions now performs both a Java compile check and the `nonRoot_gameDebug` unit-test suite on `main`, audit branches, and pull requests. OSC profile recovery has dedicated regression tests in addition to the existing project tests.
+GitHub Actions uses the non-root debug variant as the main verification target:
+
+- Java compilation is a hard gate.
+- Artemis Plus OSC/profile/action regression tests are hard gates.
+- The complete inherited Artemis/Marssvoodoo Robolectric suite is also run and its reports are uploaded for diagnostics.
+
+The inherited test baseline currently contains five known Robolectric failures across `LayoutInflationTest`, `SimpleStartupTest`, `StartupTest`, and `ProfilesNavigationTest`. The second audit reproduced the same five failures from the **pre-OSC base commit** (`f5587a81d73bf2501b68f1e5a48ca736aa5520a2`), proving they were not introduced by the Artemis Plus OSC changes. They remain visible in CI reports instead of being hidden, but do not make unrelated OSC commits fail their gate.
+
+Dedicated Artemis Plus regression coverage currently includes profile metadata recovery, profile lifecycle behavior, and the direct-press-only safety rule for local Artemis Action buttons.
 
 ## Credits
 

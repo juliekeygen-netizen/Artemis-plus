@@ -177,6 +177,7 @@ final class ArtemisActionButton extends KeyBoardDigitalButton {
 
     private boolean isToggleCapableAction() {
         switch (action) {
+            case FULL_KEYBOARD:
             case TOGGLE_HUD:
             case TOGGLE_STATS_OVERLAY:
             case TOGGLE_FLOATING_MENU:

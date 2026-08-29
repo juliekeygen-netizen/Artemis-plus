@@ -32,9 +32,6 @@ public final class ArtemisActionButtonFactory {
     private static final String PREFERENCES = "ArtemisPlusActionButtons";
     private static final String SELECTED_PREFIX = "selected_actions_";
 
-    // Collapsing the custom-button layer is intentionally session-only. A weak map avoids keeping
-    // controllers/activities alive after a stream ends, while still preserving the collapsed state
-    // across a layout refresh during the same session.
     private static final Map<KeyBoardController, Boolean> COLLAPSED_CONTROLLERS =
             Collections.synchronizedMap(new WeakHashMap<>());
 
@@ -82,7 +79,6 @@ public final class ArtemisActionButtonFactory {
                 .show();
     }
 
-    /** Recreates action buttons after the normal keyboard OSC layout has been rebuilt. */
     public static void restoreSelectedActions(KeyBoardController controller, Context context) {
         Set<String> selected = getSelectedActionIds(context);
         if (selected.isEmpty()) {
@@ -91,8 +87,6 @@ public final class ArtemisActionButtonFactory {
 
         for (ArtemisAction action : ArtemisAction.values()) {
             if (selected.contains(action.getId())) {
-                // During normal restoration, respect a saved hidden/disabled state (for example
-                // after Clear All). Explicitly selecting an action in the picker forces it visible.
                 ensureActionPresent(controller, context, action, false);
             }
         }
@@ -106,14 +100,12 @@ public final class ArtemisActionButtonFactory {
                 controller,
                 elementId(action),
                 context,
+                action,
                 primaryIcon(action),
                 alternateIcon(action));
         button.setContentDescription(action.getLabel());
-
-        // Normal keyboard buttons support sliding a held finger across neighbouring keys. Local
-        // Artemis actions can rotate the screen, open menus, or hide overlays, so they must only
-        // run from an intentional direct press rather than a slide gesture.
         button.setSlideActivationEnabled(false);
+
         button.addDigitalButtonListener(new KeyBoardDigitalButton.DigitalButtonListener() {
             @Override
             public void onClick() {
@@ -124,6 +116,9 @@ public final class ArtemisActionButtonFactory {
                     toggleCustomButtonsKeepingToggle(controller, button);
                 } else {
                     action.execute(Game.instance);
+                    // Runtime state is read from Game by ArtemisActionButton. Redraw immediately so
+                    // toggles respond visually on the same tap rather than waiting for polling.
+                    button.invalidate();
                 }
             }
 
@@ -192,9 +187,11 @@ public final class ArtemisActionButtonFactory {
     private static void setToggleCollapsedVisual(keyBoardVirtualControllerElement toggle,
                                                  boolean collapsed) {
         if (toggle instanceof ArtemisActionButton) {
-            // Expanded layer: closed-eye icon means "hide these controls".
-            // Collapsed layer: open-eye icon means "show the controls again".
-            ((ArtemisActionButton) toggle).setAlternateIcon(collapsed);
+            ArtemisActionButton button = (ArtemisActionButton) toggle;
+            // Expanded: closed-eye glyph means "hide" and green ring means the custom layer is ON.
+            // Collapsed: open-eye glyph means "show" and no green ring means the layer is OFF.
+            button.setAlternateIcon(collapsed);
+            button.setExplicitToggleState(!collapsed);
         }
     }
 
@@ -251,7 +248,6 @@ public final class ArtemisActionButtonFactory {
     }
 
     private static int calculateButtonSize(Context context) {
-        // Match the native floating Menu and Zoom/Pan buttons exactly at their default 36dp size.
         return Math.max(1, Math.round(
                 ArtemisActionButton.DEFAULT_SIZE_DP * context.getResources().getDisplayMetrics().density));
     }

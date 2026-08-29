@@ -4,7 +4,7 @@ Artemis Plus is an experimental community derivative of **Artemis Android** focu
 
 It is built on **Marssvoodoo/artemis-android**, which carries forward Artemis with newer reconnect, Wi-Fi telemetry, performance-overlay, and stability work. Artemis Plus selectively ports useful On-Screen Controller (OSC) ideas from **ZDPepos/diana-oscsuite** instead of replacing the newer streaming base with Diana's older branch.
 
-> **Status:** active development. The Diana-inspired OSC/action-button implementation has completed multiple implementation audits with state-recovery fixes, dedicated regression tests, verified APK builds, expanded local actions, and persistent native floating-control positions.
+> **Status:** active development. The Diana-inspired OSC/action-button implementation has completed multiple implementation audits with state-recovery fixes, dedicated regression tests, verified APK builds, expanded local actions, native-style icon controls, and persistent native floating-control positions.
 
 ## Project lineage
 
@@ -89,7 +89,7 @@ Current local actions are:
 
 - **Soft Keyboard** — show/hide the Android soft keyboard
 - **Full Keyboard** — toggle Artemis's full on-screen keyboard
-- **Rotate Screen** — manually switch landscape/portrait using the Artemis Plus rotation path
+- **Rotate Screen** — request a manual landscape/portrait switch; some devices currently do not apply the requested rotation until the activity is backgrounded/foregrounded, so this remains under investigation
 - **Quick Menu** — open Artemis's floating game menu
 - **Performance HUD** — toggle the legacy performance-statistics HUD (`performanceOverlay`); this is not a hide-all-UI control
 - **Stats Overlay** — toggle the newer Artemis/Marssvoodoo statistics overlay
@@ -103,6 +103,21 @@ Current local actions are:
 - **Custom Buttons** — collapse/restore the custom-key/action layer while leaving this toggle itself visible so it can always restore the hidden controls
 
 These use the existing custom OSC element system, so they can be moved, resized, hidden/enabled, and have their geometry persisted like normal buttons. Unlike ordinary keyboard buttons, Artemis-local action buttons require a deliberate direct press: sliding a held finger across neighbouring keys cannot accidentally trigger local actions such as Rotate, Menu, or Performance HUD.
+
+### Native-style action icons
+
+Artemis Action controls use icon-only buttons styled to match the native floating Quick Menu and Zoom/Pan controls:
+
+- Default size is **36dp × 36dp**, matching the native floating controls.
+- The controls reuse Artemis's existing `floating_menu_button` shell: translucent black circular fill, translucent white 2dp outline, and the same press ripple.
+- Action glyphs are white Android VectorDrawables rendered in the same 24dp inner region used by the native floating controls.
+- Resizing is **aspect-ratio locked**: action controls always remain square, so neither the circular shell nor its icon can be stretched on only one axis.
+- Saved rectangular geometry from the older text-button implementation is normalized to a square when restored.
+- Editor-state rings remain visible for Move, Resize, and Enable/Disable modes.
+- **Custom Buttons** is state-aware: while the layer is expanded it shows the closed-eye icon (hide); after collapsing the layer it changes to the open-eye icon (show/restore).
+- Soft Keyboard and Full Keyboard use related keyboard glyphs with different show/fullscreen cues, while Floating Menu Button uses a miniature circular-menu glyph so it remains distinct from Quick Menu.
+
+The icon set is adapted from user-selected [Lucide](https://lucide.dev/) and [Tabler Icons](https://tabler.io/icons) designs and converted to Android VectorDrawables for Artemis Plus. A few glyphs are combined/modified for Artemis-specific actions.
 
 ### Adding action buttons
 
@@ -134,8 +149,7 @@ The current pass intentionally does **not** include everything from Diana or eve
 
 - Automatic per-game OSC profile selection/UI
 - Artemis Action entries in custom-key import/export files
-- Icon-based Artemis Action buttons and aspect-ratio-locked action-button resizing
-- Final localization/icons/polish for the new menus
+- Final localization/menu polish
 - Diana's foldable cover-screen trigger controller and analog trigger emulation
 - Diana's full profile-overlay/cover-screen UX
 
@@ -214,7 +228,7 @@ GitHub Actions uses the non-root debug variant as the main verification target:
 
 The inherited test baseline currently contains five known Robolectric failures across `LayoutInflationTest`, `SimpleStartupTest`, `StartupTest`, and `ProfilesNavigationTest`. The second audit reproduced the same five failures from the **pre-OSC base commit** (`f5587a81d73bf2501b68f1e5a48ca736aa5520a2`), proving they were not introduced by the Artemis Plus OSC changes. They remain visible in CI reports instead of being hidden, but do not make unrelated OSC commits fail their gate.
 
-Dedicated Artemis Plus regression coverage currently includes profile metadata recovery, profile lifecycle behavior, and the direct-press-only safety rule for local Artemis Action buttons.
+Dedicated Artemis Plus regression coverage currently includes profile metadata recovery, profile lifecycle behavior, direct-press-only safety for local Artemis Action buttons, and state-aware icon switching for the Custom Buttons toggle.
 
 ## Credits
 
@@ -224,6 +238,7 @@ Artemis Plus builds on substantial work by many people. In particular:
 - **Artemis / Moonlight Noir and Apollo** — ClassicOldSong and contributors
 - **Marssvoodoo/artemis-android** — Marssvoodoo, including the newer Artemis reliability/streaming work used as this project's base
 - **Diana OSC Suite** — ZDPepos, whose OSC profile, snapping, paired-sizing, deposited-control, and foldable-control experiments are important references for this project
+- **Lucide Icons and Tabler Icons** — source designs for the Artemis Plus local-action icon set; several icons are adapted or combined for Artemis-specific meanings
 
 Please preserve upstream copyright and attribution notices when redistributing modified builds.
 

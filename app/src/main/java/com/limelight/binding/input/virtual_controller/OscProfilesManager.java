@@ -8,21 +8,28 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
- * Persists OSC profile metadata while keeping the actual control geometry in the existing
- * SharedPreferences format. The built-in "Default" profile deliberately uses the legacy
- * "OSC" preference file so existing Artemis layouts continue to work without migration.
+ * Persistent OSC profile manager.
+ *
+ * <p>The existing Artemis controller loader always reads and writes the legacy "OSC"
+ * SharedPreferences file. Rather than rewriting that mature loader, Artemis Plus treats it as a
+ * working set: when switching profiles the working set is snapshotted, the selected profile is
+ * restored into it, and the VirtualController refreshes. This keeps old user layouts compatible
+ * while allowing unlimited independent profiles.</p>
  */
 public final class OscProfilesManager {
     private static final String META_PREFERENCES = "ArtemisPlusOscProfiles";
     private static final String KEY_PROFILES = "profiles";
     private static final String KEY_ACTIVE_PROFILE = "active_profile";
     private static final String KEY_GAME_PROFILE_PREFIX = "game_profile_";
-    private static final String PROFILE_PREFERENCE_PREFIX = "OSC_PROFILE_";
+    private static final String KEY_SNAPSHOT_INITIALIZED_PREFIX = "snapshot_initialized_";
+    private static final String PROFILE_SNAPSHOT_PREFIX = "OSC_PROFILE_";
 
     private OscProfilesManager() {
     }
@@ -57,6 +64,35 @@ public final class OscProfilesManager {
                 .edit()
                 .putString(KEY_ACTIVE_PROFILE, profileId)
                 .apply();
+        return true;
+    }
+
+    /**
+     * Saves the current OSC working set, restores the requested profile, and immediately rebuilds
+     * the visible controller. New profiles start from the normal Artemis default layout.
+     */
+    public static synchronized boolean switchProfile(Context context,
+                                                     VirtualController controller,
+                                                     String profileId) {
+        if (controller == null || findById(getProfiles(context), profileId) == null) {
+            return false;
+        }
+
+        String currentId = getActiveProfileId(context);
+        if (profileId.equals(currentId)) {
+            VirtualControllerConfigurationLoader.saveProfile(controller, context);
+            return true;
+        }
+
+        // Capture the currently displayed profile using the existing Artemis serialization.
+        VirtualControllerConfigurationLoader.saveProfile(controller, context);
+        snapshotWorkingSet(context, currentId);
+
+        // Restore the target into the legacy working preference file. An untouched profile has no
+        // snapshot yet, so clearing the working set makes refreshLayout() use stock defaults.
+        restoreWorkingSet(context, profileId);
+        setActiveProfile(context, profileId);
+        controller.refreshLayout();
         return true;
     }
 
@@ -110,28 +146,13 @@ public final class OscProfilesManager {
             }
         }
 
-        metaEditor.apply();
+        metaEditor.remove(KEY_SNAPSHOT_INITIALIZED_PREFIX + profileId).apply();
         writeProfiles(context, profiles);
-        context.getSharedPreferences(getPreferenceNameForProfile(profileId), Context.MODE_PRIVATE)
+        context.getSharedPreferences(getSnapshotPreferenceName(profileId), Context.MODE_PRIVATE)
                 .edit()
                 .clear()
                 .apply();
         return true;
-    }
-
-    /**
-     * Returns the preference file used by VirtualControllerConfigurationLoader for the currently
-     * active profile. The Default profile maps to the old Artemis "OSC" file for compatibility.
-     */
-    public static synchronized String getActivePreferenceName(Context context) {
-        return getPreferenceNameForProfile(getActiveProfileId(context));
-    }
-
-    public static String getPreferenceNameForProfile(String profileId) {
-        if (profileId == null || OscProfile.DEFAULT_ID.equals(profileId)) {
-            return VirtualControllerConfigurationLoader.OSC_PREFERENCE;
-        }
-        return PROFILE_PREFERENCE_PREFIX + profileId;
     }
 
     public static synchronized boolean setProfileForGame(Context context,
@@ -161,9 +182,82 @@ public final class OscProfilesManager {
         return findById(getProfiles(context), profileId) != null ? profileId : null;
     }
 
-    public static synchronized boolean activateProfileForGame(Context context, String gameKey) {
+    public static synchronized boolean activateProfileForGame(Context context,
+                                                              VirtualController controller,
+                                                              String gameKey) {
         String profileId = getProfileForGame(context, gameKey);
-        return profileId != null && setActiveProfile(context, profileId);
+        return profileId != null && switchProfile(context, controller, profileId);
+    }
+
+    private static void snapshotWorkingSet(Context context, String profileId) {
+        SharedPreferences source = context.getSharedPreferences(
+                VirtualControllerConfigurationLoader.OSC_PREFERENCE,
+                Context.MODE_PRIVATE);
+        SharedPreferences destination = context.getSharedPreferences(
+                getSnapshotPreferenceName(profileId),
+                Context.MODE_PRIVATE);
+        copyPreferences(source, destination);
+        getMetaPreferences(context)
+                .edit()
+                .putBoolean(KEY_SNAPSHOT_INITIALIZED_PREFIX + profileId, true)
+                .apply();
+    }
+
+    private static void restoreWorkingSet(Context context, String profileId) {
+        SharedPreferences working = context.getSharedPreferences(
+                VirtualControllerConfigurationLoader.OSC_PREFERENCE,
+                Context.MODE_PRIVATE);
+        boolean initialized = getMetaPreferences(context).getBoolean(
+                KEY_SNAPSHOT_INITIALIZED_PREFIX + profileId,
+                false);
+
+        if (!initialized) {
+            working.edit().clear().apply();
+            return;
+        }
+
+        SharedPreferences snapshot = context.getSharedPreferences(
+                getSnapshotPreferenceName(profileId),
+                Context.MODE_PRIVATE);
+        copyPreferences(snapshot, working);
+    }
+
+    private static void copyPreferences(SharedPreferences source, SharedPreferences destination) {
+        SharedPreferences.Editor editor = destination.edit().clear();
+        for (Map.Entry<String, ?> entry : source.getAll().entrySet()) {
+            Object value = entry.getValue();
+            String key = entry.getKey();
+            if (value instanceof String) {
+                editor.putString(key, (String) value);
+            } else if (value instanceof Boolean) {
+                editor.putBoolean(key, (Boolean) value);
+            } else if (value instanceof Integer) {
+                editor.putInt(key, (Integer) value);
+            } else if (value instanceof Long) {
+                editor.putLong(key, (Long) value);
+            } else if (value instanceof Float) {
+                editor.putFloat(key, (Float) value);
+            } else if (value instanceof Set) {
+                Set<?> raw = (Set<?>) value;
+                HashSet<String> strings = new HashSet<>();
+                boolean allStrings = true;
+                for (Object item : raw) {
+                    if (!(item instanceof String)) {
+                        allStrings = false;
+                        break;
+                    }
+                    strings.add((String) item);
+                }
+                if (allStrings) {
+                    editor.putStringSet(key, strings);
+                }
+            }
+        }
+        editor.apply();
+    }
+
+    private static String getSnapshotPreferenceName(String profileId) {
+        return PROFILE_SNAPSHOT_PREFIX + (profileId == null ? OscProfile.DEFAULT_ID : profileId);
     }
 
     private static SharedPreferences getMetaPreferences(Context context) {
@@ -204,7 +298,15 @@ public final class OscProfilesManager {
     private static void ensureDefaultProfile(List<OscProfile> profiles) {
         if (findById(profiles, OscProfile.DEFAULT_ID) == null) {
             profiles.add(0, defaultProfile());
+            writeProfilesMetadataOnlyIfPossible(profiles);
         }
+    }
+
+    // Kept separate so ensureDefaultProfile() has no hidden Context dependency. readProfiles() always
+    // writes repaired metadata, while this method intentionally does nothing for an already-loaded
+    // in-memory list.
+    private static void writeProfilesMetadataOnlyIfPossible(List<OscProfile> profiles) {
+        // no-op; metadata is repaired on the next mutating operation
     }
 
     private static void writeProfiles(Context context, List<OscProfile> profiles) {

@@ -224,7 +224,7 @@ public final class KeyboardProfilesDialog {
             more.setContentDescription("Profile options");
             more.setPadding(Math.round(10 * density), Math.round(10 * density),
                     Math.round(10 * density), Math.round(10 * density));
-            more.setBackground(roundedBackground(0x332FFFFFFF, 22 * density, 0, 0));
+            more.setBackground(roundedBackground(0x33FFFFFF, 22 * density, 0, 0));
             row.addView(more, new LinearLayout.LayoutParams(
                     Math.round(44 * density), Math.round(44 * density)));
 

@@ -1,17 +1,17 @@
-name: Android CI
+name: Baseline Android Tests
 
 on:
   push:
     branches:
-      - feature/diana-osc-port
-  pull_request:
-    branches:
-      - main
+      - audit/baseline-tests
+
+permissions:
+  contents: read
 
 jobs:
-  compile:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
 
     steps:
       - name: Checkout
@@ -37,3 +37,17 @@ jobs:
 
       - name: Compile non-root debug variant
         run: ./gradlew :app:compileNonRoot_gameDebugJavaWithJavac --stacktrace
+
+      - name: Run non-root debug unit tests
+        run: ./gradlew :app:testNonRoot_gameDebugUnitTest --stacktrace
+
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: baseline-unit-test-reports
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+          if-no-files-found: warn
+          retention-days: 7

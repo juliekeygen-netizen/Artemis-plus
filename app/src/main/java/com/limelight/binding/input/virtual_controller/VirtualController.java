@@ -116,6 +116,13 @@ public class VirtualController {
                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show();
             }
         });
+        buttonConfigure.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                OscProfileDialog.show(VirtualController.this, context);
+                return true;
+            }
+        });
 
     }
 

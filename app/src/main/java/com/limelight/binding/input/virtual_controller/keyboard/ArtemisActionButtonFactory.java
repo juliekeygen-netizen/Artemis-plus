@@ -19,14 +19,23 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 
 /** Creates and restores local Artemis-action buttons in the custom keyboard OSC layer. */
 public final class ArtemisActionButtonFactory {
     private static final String PREFERENCES = "ArtemisPlusActionButtons";
     private static final String SELECTED_PREFIX = "selected_actions_";
+
+    // Collapsing the custom-button layer is intentionally session-only. A weak map avoids keeping
+    // controllers/activities alive after a stream ends, while still preserving the collapsed state
+    // across a layout refresh during the same session.
+    private static final Map<KeyBoardController, Boolean> COLLAPSED_CONTROLLERS =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     private ArtemisActionButtonFactory() {
     }
@@ -56,6 +65,14 @@ public final class ArtemisActionButtonFactory {
                             hideExistingAction(controller, actions[i]);
                         }
                     }
+
+                    if (!requested.contains(ArtemisAction.TOGGLE_KEYBOARD_CONTROLLER.getId())) {
+                        COLLAPSED_CONTROLLERS.remove(controller);
+                        controller.showEnabledElements();
+                    } else {
+                        applyCollapsedState(controller);
+                    }
+
                     saveSelectedActionIds(context, requested);
                     KeyBoardControllerConfigurationLoader.saveProfile(controller, context);
                     Toast.makeText(context, "Artemis action buttons updated", Toast.LENGTH_SHORT).show();
@@ -78,6 +95,7 @@ public final class ArtemisActionButtonFactory {
                 ensureActionPresent(controller, context, action, false);
             }
         }
+        applyCollapsedState(controller);
     }
 
     public static KeyBoardDigitalButton createButton(ArtemisAction action,
@@ -98,7 +116,11 @@ public final class ArtemisActionButtonFactory {
             @Override
             public void onClick() {
                 controller.vibrate(KeyEvent.ACTION_DOWN);
-                action.execute(Game.instance);
+                if (action == ArtemisAction.TOGGLE_KEYBOARD_CONTROLLER) {
+                    toggleCustomButtonsKeepingToggle(controller, button);
+                } else {
+                    action.execute(Game.instance);
+                }
             }
 
             @Override
@@ -112,6 +134,42 @@ public final class ArtemisActionButtonFactory {
             }
         });
         return button;
+    }
+
+    private static void toggleCustomButtonsKeepingToggle(KeyBoardController controller,
+                                                          keyBoardVirtualControllerElement toggle) {
+        boolean collapsed = Boolean.TRUE.equals(COLLAPSED_CONTROLLERS.get(controller));
+        if (collapsed) {
+            COLLAPSED_CONTROLLERS.put(controller, false);
+            controller.showEnabledElements();
+            if (!toggle.hidden && toggle.enabled) {
+                toggle.setVisibility(View.VISIBLE);
+            }
+            return;
+        }
+
+        COLLAPSED_CONTROLLERS.put(controller, true);
+        for (keyBoardVirtualControllerElement element : controller.getElements()) {
+            element.setVisibility(element == toggle ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    private static void applyCollapsedState(KeyBoardController controller) {
+        if (!Boolean.TRUE.equals(COLLAPSED_CONTROLLERS.get(controller))) {
+            return;
+        }
+
+        keyBoardVirtualControllerElement toggle = findElement(
+                controller,
+                ArtemisAction.TOGGLE_KEYBOARD_CONTROLLER);
+        if (toggle == null || toggle.hidden || !toggle.enabled) {
+            COLLAPSED_CONTROLLERS.remove(controller);
+            return;
+        }
+
+        for (keyBoardVirtualControllerElement element : controller.getElements()) {
+            element.setVisibility(element == toggle ? View.VISIBLE : View.GONE);
+        }
     }
 
     private static void ensureActionPresent(KeyBoardController controller,
@@ -265,7 +323,17 @@ public final class ArtemisActionButtonFactory {
             case QUICK_MENU:
                 return "Menu";
             case TOGGLE_HUD:
-                return "HUD";
+                return "Perf HUD";
+            case TOGGLE_STATS_OVERLAY:
+                return "Stats";
+            case TOGGLE_FLOATING_MENU:
+                return "Menu Btn";
+            case TOUCH_SENSITIVITY:
+                return "Touch Sens";
+            case SEND_CLIPBOARD:
+                return "Clip > PC";
+            case FETCH_CLIPBOARD:
+                return "PC > Clip";
             case MOUSE_MODE:
                 return "Mouse";
             case TOGGLE_ZOOM:

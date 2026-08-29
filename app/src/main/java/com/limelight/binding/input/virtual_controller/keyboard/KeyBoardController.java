@@ -6,6 +6,7 @@ package com.limelight.binding.input.virtual_controller.keyboard;
 
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Point;
 import android.graphics.Rect;
@@ -22,6 +23,8 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.Toast;
+
+import androidx.preference.PreferenceManager;
 
 import com.limelight.Game;
 import com.limelight.GameMenu;
@@ -72,6 +75,7 @@ public class KeyBoardController {
     private Button buttonClearAll = null;
     private Button buttonAddKeys = null;
     private Button buttonAddActions = null;
+    private Button buttonAddCombo = null;
 
     private Vibrator vibrator;
     private List<keyBoardVirtualControllerElement> elements = new ArrayList<>();
@@ -84,24 +88,21 @@ public class KeyBoardController {
 
         this.vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
 
-        // Configure button
         buttonConfigure = new Button(context);
         buttonConfigure.setAlpha(0.5f);
         buttonConfigure.setFocusable(false);
         buttonConfigure.setBackgroundResource(R.drawable.ic_keyboard_setting);
 
-        // Add long click listener for moving the configure button
         buttonConfigure.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View v) {
                 Toast.makeText(context, context.getString(R.string.keyboard_configure_movable), Toast.LENGTH_SHORT).show();
                 buttonConfigure.setTag("movable");
-                vibrator.vibrate(100); // Give haptic feedback
+                vibrator.vibrate(100);
                 return true;
             }
         });
 
-        // Add touch listener for moving
         buttonConfigure.setOnTouchListener(new View.OnTouchListener() {
             private float dX, dY;
             private float lastTouchX, lastTouchY;
@@ -177,14 +178,12 @@ public class KeyBoardController {
                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show();
 
                 buttonConfigure.invalidate();
-
                 for (keyBoardVirtualControllerElement element : elements) {
                     element.invalidate();
                 }
             }
         });
 
-        // Clear All button
         buttonClearAll = new Button(context);
         buttonClearAll.setBackgroundColor(Color.DKGRAY);
         buttonClearAll.setText(context.getString(R.string.keyboard_clear_all));
@@ -206,7 +205,6 @@ public class KeyBoardController {
             builder.show();
         });
 
-        // Add Keys button
         buttonAddKeys = new Button(context);
         buttonAddKeys.setBackgroundColor(Color.DKGRAY);
         buttonAddKeys.setText(context.getString(R.string.keyboard_add_keys));
@@ -214,8 +212,6 @@ public class KeyBoardController {
         buttonAddKeys.setVisibility(View.GONE);
         buttonAddKeys.setOnClickListener(v -> showKeySelectionDialog());
 
-        // Artemis Plus local-action buttons. These live in the same movable/resizable custom OSC
-        // layer but call Artemis itself instead of sending a key to the streamed PC.
         buttonAddActions = new Button(context);
         buttonAddActions.setBackgroundColor(Color.DKGRAY);
         buttonAddActions.setText("Add Actions");
@@ -223,6 +219,14 @@ public class KeyBoardController {
         buttonAddActions.setVisibility(View.GONE);
         buttonAddActions.setOnClickListener(v ->
                 ArtemisActionButtonFactory.showPicker(KeyBoardController.this, context));
+
+        buttonAddCombo = new Button(context);
+        buttonAddCombo.setBackgroundColor(Color.DKGRAY);
+        buttonAddCombo.setText("Add Combo");
+        buttonAddCombo.setAlpha(0.7f);
+        buttonAddCombo.setVisibility(View.GONE);
+        buttonAddCombo.setOnClickListener(v ->
+                KeyComboManager.showCreateDialog(KeyBoardController.this, context));
 
         refreshLayout();
     }
@@ -290,6 +294,7 @@ public class KeyBoardController {
         frame_layout.removeView(buttonClearAll);
         frame_layout.removeView(buttonAddKeys);
         frame_layout.removeView(buttonAddActions);
+        frame_layout.removeView(buttonAddCombo);
     }
 
     public void setOpacity(int opacity) {
@@ -302,12 +307,55 @@ public class KeyBoardController {
         elements.add(element);
         FrameLayout.LayoutParams layoutParams = new FrameLayout.LayoutParams(width, height);
         layoutParams.setMargins(x, y, 0, 0);
-
+        element.setDefaultSize(width, height);
         frame_layout.addView(element, layoutParams);
     }
 
     public List<keyBoardVirtualControllerElement> getElements() {
         return elements;
+    }
+
+    int getDefaultKeyButtonSize() {
+        DisplayMetrics screen = context.getResources().getDisplayMetrics();
+        int buttonSizeUnits = 10;
+        int size = KeyBoardControllerConfigurationLoader.screenScale(buttonSizeUnits, screen.heightPixels);
+        int maxSize = screen.widthPixels / 18;
+        if (size > maxSize) {
+            size = maxSize;
+        }
+        return Math.max(20, size);
+    }
+
+    Point findFreePositionForElement(int elementSize) {
+        List<Rect> existingPositions = new ArrayList<>();
+        for (keyBoardVirtualControllerElement element : elements) {
+            if (element.hidden || element.getLayoutParams() == null) {
+                continue;
+            }
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) element.getLayoutParams();
+            existingPositions.add(new Rect(
+                    params.leftMargin,
+                    params.topMargin,
+                    params.leftMargin + params.width,
+                    params.topMargin + params.height));
+        }
+        return findNonOverlappingPosition(existingPositions, elementSize);
+    }
+
+    void loadSavedElementConfiguration(keyBoardVirtualControllerElement element) {
+        String layoutPreference = PreferenceManager.getDefaultSharedPreferences(context).getString(
+                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE,
+                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);
+        SharedPreferences preferences = context.getSharedPreferences(layoutPreference, Context.MODE_PRIVATE);
+        String serialized = preferences.getString(element.elementId, null);
+        if (serialized == null) {
+            return;
+        }
+        try {
+            element.loadConfiguration(new JSONObject(serialized));
+        } catch (JSONException e) {
+            preferences.edit().remove(element.elementId).apply();
+        }
     }
 
     private static final void _DBG(String text) {
@@ -330,13 +378,15 @@ public class KeyBoardController {
         buttonClearAll.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
         buttonAddKeys.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
         buttonAddActions.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+        buttonAddCombo.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
         int clearAllWidth = buttonClearAll.getMeasuredWidth();
         int addKeysWidth = buttonAddKeys.getMeasuredWidth();
         int addActionsWidth = buttonAddActions.getMeasuredWidth();
+        int addComboWidth = buttonAddCombo.getMeasuredWidth();
 
-        int totalWidth = clearAllWidth + addKeysWidth + addActionsWidth + 6;
+        int totalWidth = clearAllWidth + addKeysWidth + addActionsWidth + addComboWidth + 9;
         int screenCenter = screen.widthPixels / 2;
-        int startX = screenCenter - (totalWidth / 2);
+        int startX = Math.max(0, screenCenter - (totalWidth / 2));
 
         FrameLayout.LayoutParams clearParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -359,9 +409,17 @@ public class KeyBoardController {
         actionParams.topMargin = 15;
         frame_layout.addView(buttonAddActions, actionParams);
 
+        FrameLayout.LayoutParams comboParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT);
+        comboParams.leftMargin = startX + clearAllWidth + addKeysWidth + addActionsWidth + 9;
+        comboParams.topMargin = 15;
+        frame_layout.addView(buttonAddCombo, comboParams);
+
         KeyBoardControllerConfigurationLoader.createDefaultLayout(this, context, conn);
         KeyBoardControllerConfigurationLoader.loadFromPreferences(this, context);
         ArtemisActionButtonFactory.restoreSelectedActions(this, context);
+        KeyComboManager.restore(this, context);
     }
 
     public ControllerMode getControllerMode() {
@@ -414,6 +472,7 @@ public class KeyBoardController {
         buttonClearAll.setVisibility(visibility);
         buttonAddKeys.setVisibility(visibility);
         buttonAddActions.setVisibility(visibility);
+        buttonAddCombo.setVisibility(visibility);
     }
 
     private void showKeySelectionDialog() {
@@ -524,8 +583,10 @@ public class KeyBoardController {
                 Set<String> existingElementIds = new HashSet<>();
                 List<Rect> existingPositions = new ArrayList<>();
                 for (keyBoardVirtualControllerElement element : elements) {
+                    // Include hidden controls in duplicate detection so Clear All cannot create two
+                    // elements with the same persistence key when a control is re-added later.
+                    existingElementIds.add(element.elementId);
                     if (element.getVisibility() != View.GONE) {
-                        existingElementIds.add(element.elementId);
                         try {
                             FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) element.getLayoutParams();
                             if (params != null) {
@@ -639,8 +700,12 @@ public class KeyBoardController {
                                 addElement(newElement, position.x, position.y, w, w);
                             }
 
+                            FrameLayout.LayoutParams addedParams = newElement == null ? null
+                                    : (FrameLayout.LayoutParams) newElement.getLayoutParams();
+                            int addedWidth = addedParams == null ? elementSize : addedParams.width;
+                            int addedHeight = addedParams == null ? elementSize : addedParams.height;
                             existingPositions.add(new Rect(position.x, position.y,
-                                    position.x + elementSize, position.y + elementSize));
+                                    position.x + addedWidth, position.y + addedHeight));
                             existingElementIds.add(elementId);
 
                             elementsAdded++;
@@ -737,19 +802,17 @@ public class KeyBoardController {
     private Point findNonOverlappingPositionFromTopLeft(List<Rect> existingPositions, int elementSize) {
         int spacing = 10;
         int startY = 100;
-        int x = spacing;
-        int y = startY;
 
-        while (isPositionFree(new Point(x, y), elementSize, existingPositions)) {
-            x += elementSize + spacing;
-
-            if (!isPositionFree(new Point(x, y), elementSize, existingPositions)) {
-                x = spacing;
-                y += elementSize + spacing;
-            }
-
-            if (isPositionFree(new Point(x, y), elementSize, existingPositions)) {
-                return new Point(x, y);
+        // Search row-by-row for the first free slot. The old loop's condition was inverted and
+        // could return the fallback even when later free slots existed.
+        for (int y = startY; y + elementSize < context.getResources().getDisplayMetrics().heightPixels - 50;
+             y += elementSize + spacing) {
+            for (int x = spacing; x + elementSize < context.getResources().getDisplayMetrics().widthPixels - spacing;
+                 x += elementSize + spacing) {
+                Point candidate = new Point(x, y);
+                if (isPositionFree(candidate, elementSize, existingPositions)) {
+                    return candidate;
+                }
             }
         }
 

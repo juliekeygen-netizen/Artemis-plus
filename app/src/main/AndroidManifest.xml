@@ -58,6 +58,25 @@
         android:theme="@style/AppTheme"
         >
 
+        <!--
+          Artemis intentionally manages stream orientation at runtime. Android 12+ device makers
+          can enable compatibility policies that replace or ignore setRequestedOrientation(), or
+          suppress repeated requests as an orientation loop. Opt out so the stream's explicit
+          Rotate command remains authoritative instead of being deferred by OEM compatibility mode.
+        -->
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE"
+            android:value="false" />
+        <property
+            android:name="android.window.PROPERTY_COMPAT_IGNORE_REQUESTED_ORIENTATION"
+            android:value="false" />
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_IGNORING_ORIENTATION_REQUEST_WHEN_LOOP_DETECTED"
+            android:value="false" />
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_DISPLAY_ORIENTATION_OVERRIDE"
+            android:value="false" />
+
         <provider
             android:name=".PosterContentProvider"
             android:authorities="poster.${applicationId}"
@@ -223,7 +242,7 @@
             android:label="Computer Management Service" />
         <service
             android:name=".binding.input.driver.UsbDriverService"
-            android:label="Usb Driver Service" />
+            android:label="USB Driver Service" />
 
         <activity
             android:name=".HelpActivity"

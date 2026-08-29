@@ -9,6 +9,12 @@ public class LayoutSnappingHelper {
     private static final int SPACING_MIN = 4; // Minimum spacing between parallel edges
     private static final int SPACING_THRESHOLD = 30; // Maximum distance to trigger spacing adjustment
 
+    // Group resizing is intentionally geometry-derived instead of persisted. Controls that the move
+    // editor has snapped edge-to-edge remain a connected cluster after save/reload, so legacy and
+    // new layouts get grouped scaling automatically without a migration step.
+    private static final int GROUP_EDGE_TOLERANCE = SNAP_THRESHOLD;
+    private static final float GROUP_PARALLEL_OVERLAP = 0.40f;
+
     public static class SnapResult {
         public int newX;
         public int newY;
@@ -35,13 +41,11 @@ public class LayoutSnappingHelper {
         int right2 = x2 + view2.getWidth();
         int bottom2 = y2 + view2.getHeight();
 
-        // Calculate overlap area
         int overlapX = Math.min(right1, right2) - Math.max(x1, x2);
         int overlapY = Math.min(bottom1, bottom2) - Math.max(y1, y2);
 
         if (overlapX <= 0 || overlapY <= 0) return false;
 
-        // Calculate overlap percentage
         float overlapArea = overlapX * overlapY;
         float view1Area = view1.getWidth() * view1.getHeight();
         float view2Area = view2.getWidth() * view2.getHeight();
@@ -57,17 +61,53 @@ public class LayoutSnappingHelper {
     }
 
     private static boolean hasParallelEdges(int edge1Start, int edge1End, int edge2Start, int edge2End) {
-        // Check if edges have significant overlap
         int overlapStart = Math.max(edge1Start, edge2Start);
         int overlapEnd = Math.min(edge1End, edge2End);
         return overlapEnd - overlapStart > Math.min(edge1End - edge1Start, edge2End - edge2Start) * 0.5;
     }
 
-    private static int adjustSpacing(int distance) {
-        if (distance > SPACING_MIN && distance < SPACING_THRESHOLD) {
-            return SPACING_MIN;
+    /**
+     * Returns true when two controls form an edge-connected snapped cluster.
+     *
+     * Move-mode spacing snaps neighbouring controls to 4 px, while normal snapping has a 10 px
+     * tolerance. We therefore accept a <=10 px edge gap with meaningful overlap on the parallel
+     * axis. Merely sharing a left/top alignment does not group distant controls.
+     */
+    public static boolean areGrouped(View first, View second) {
+        if (first == null || second == null || first == second ||
+                first.getVisibility() != View.VISIBLE || second.getVisibility() != View.VISIBLE ||
+                !(first.getLayoutParams() instanceof FrameLayout.LayoutParams) ||
+                !(second.getLayoutParams() instanceof FrameLayout.LayoutParams)) {
+            return false;
         }
-        return distance;
+
+        FrameLayout.LayoutParams a = (FrameLayout.LayoutParams) first.getLayoutParams();
+        FrameLayout.LayoutParams b = (FrameLayout.LayoutParams) second.getLayoutParams();
+
+        int aLeft = a.leftMargin;
+        int aTop = a.topMargin;
+        int aRight = aLeft + Math.max(1, a.width);
+        int aBottom = aTop + Math.max(1, a.height);
+        int bLeft = b.leftMargin;
+        int bTop = b.topMargin;
+        int bRight = bLeft + Math.max(1, b.width);
+        int bBottom = bTop + Math.max(1, b.height);
+
+        int verticalOverlap = Math.min(aBottom, bBottom) - Math.max(aTop, bTop);
+        int horizontalOverlap = Math.min(aRight, bRight) - Math.max(aLeft, bLeft);
+
+        int minHeight = Math.min(Math.max(1, a.height), Math.max(1, b.height));
+        int minWidth = Math.min(Math.max(1, a.width), Math.max(1, b.width));
+
+        boolean sideBySide = verticalOverlap >= minHeight * GROUP_PARALLEL_OVERLAP &&
+                (Math.abs(aRight - bLeft) <= GROUP_EDGE_TOLERANCE ||
+                        Math.abs(bRight - aLeft) <= GROUP_EDGE_TOLERANCE);
+
+        boolean stacked = horizontalOverlap >= minWidth * GROUP_PARALLEL_OVERLAP &&
+                (Math.abs(aBottom - bTop) <= GROUP_EDGE_TOLERANCE ||
+                        Math.abs(bBottom - aTop) <= GROUP_EDGE_TOLERANCE);
+
+        return sideBySide || stacked;
     }
 
     public static SnapResult calculateSnappedPosition(View movingView, View[] otherViews, int proposedX, int proposedY) {
@@ -89,25 +129,21 @@ public class LayoutSnappingHelper {
             }
 
             FrameLayout.LayoutParams otherParams = (FrameLayout.LayoutParams) otherView.getLayoutParams();
-            
-            // Check for overlap and resize if needed
+
             if (isOverlapping(movingView, proposedX, proposedY, otherView, otherParams.leftMargin, otherParams.topMargin)) {
                 newWidth = otherView.getWidth();
                 newHeight = otherView.getHeight();
                 didResize = true;
             }
 
-            // Check vertical parallel edges
-            if (hasParallelEdges(proposedY, proposedY + movingHeight, 
-                               otherParams.topMargin, otherParams.topMargin + otherView.getHeight())) {
-                // Left edges
+            if (hasParallelEdges(proposedY, proposedY + movingHeight,
+                    otherParams.topMargin, otherParams.topMargin + otherView.getHeight())) {
                 int leftDistance = Math.abs(proposedX - (otherParams.leftMargin + otherView.getWidth()));
                 if (leftDistance > SPACING_MIN && leftDistance < SPACING_THRESHOLD) {
                     snappedX = otherParams.leftMargin + otherView.getWidth() + SPACING_MIN;
                     didAdjustSpacing = true;
                 }
-                
-                // Right edges
+
                 int rightDistance = Math.abs((proposedX + movingWidth) - otherParams.leftMargin);
                 if (rightDistance > SPACING_MIN && rightDistance < SPACING_THRESHOLD) {
                     snappedX = otherParams.leftMargin - SPACING_MIN - movingWidth;
@@ -115,17 +151,14 @@ public class LayoutSnappingHelper {
                 }
             }
 
-            // Check horizontal parallel edges
             if (hasParallelEdges(proposedX, proposedX + movingWidth,
-                               otherParams.leftMargin, otherParams.leftMargin + otherView.getWidth())) {
-                // Top edges
+                    otherParams.leftMargin, otherParams.leftMargin + otherView.getWidth())) {
                 int topDistance = Math.abs(proposedY - (otherParams.topMargin + otherView.getHeight()));
                 if (topDistance > SPACING_MIN && topDistance < SPACING_THRESHOLD) {
                     snappedY = otherParams.topMargin + otherView.getHeight() + SPACING_MIN;
                     didAdjustSpacing = true;
                 }
-                
-                // Bottom edges
+
                 int bottomDistance = Math.abs((proposedY + movingHeight) - otherParams.topMargin);
                 if (bottomDistance > SPACING_MIN && bottomDistance < SPACING_THRESHOLD) {
                     snappedY = otherParams.topMargin - SPACING_MIN - movingHeight;
@@ -133,7 +166,6 @@ public class LayoutSnappingHelper {
                 }
             }
 
-            // Normal snapping checks
             if (Math.abs(proposedX - otherParams.leftMargin) < SNAP_THRESHOLD) {
                 snappedX = otherParams.leftMargin;
                 didSnap = true;
@@ -154,4 +186,4 @@ public class LayoutSnappingHelper {
 
         return new SnapResult(snappedX, snappedY, newWidth, newHeight, didSnap, didResize, didAdjustSpacing);
     }
-} 
+}

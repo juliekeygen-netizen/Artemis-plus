@@ -67,11 +67,25 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement {
         if (value == null || value.isEmpty()) {
             return safeHeight;
         }
+
         Paint measurePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        measurePaint.setTextSize(safeHeight * 0.25f);
+        float textSize = safeHeight * 0.25f;
+        measurePaint.setTextSize(textSize);
+
         float density = context.getResources().getDisplayMetrics().density;
         float horizontalPadding = Math.max(8f * density, safeHeight * 0.20f);
-        int required = (int) Math.ceil(measurePaint.measureText(value) + horizontalPadding * 2f);
+
+        // Paint.measureText() is the authoritative measurement on a real device. Some test/runtime
+        // environments can return zero or otherwise unusable font metrics, though, so keep a
+        // conservative deterministic fallback based on code-point count. Using the larger value
+        // also avoids clipping unusually narrow-reported fonts while preserving the square minimum
+        // for ordinary short labels.
+        float measuredWidth = Math.max(0f, measurePaint.measureText(value));
+        int codePointCount = value.codePointCount(0, value.length());
+        float fallbackWidth = codePointCount * safeHeight * 0.14f;
+        float textWidth = Math.max(measuredWidth, fallbackWidth);
+
+        int required = (int) Math.ceil(textWidth + horizontalPadding * 2f);
         return Math.max(safeHeight, required);
     }
 

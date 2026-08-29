@@ -83,21 +83,29 @@ public class LayoutSnappingHelper {
 
         FrameLayout.LayoutParams a = (FrameLayout.LayoutParams) first.getLayoutParams();
         FrameLayout.LayoutParams b = (FrameLayout.LayoutParams) second.getLayoutParams();
+        return areGrouped(
+                a.leftMargin, a.topMargin, a.width, a.height,
+                b.leftMargin, b.topMargin, b.width, b.height);
+    }
 
-        int aLeft = a.leftMargin;
-        int aTop = a.topMargin;
-        int aRight = aLeft + Math.max(1, a.width);
-        int aBottom = aTop + Math.max(1, a.height);
-        int bLeft = b.leftMargin;
-        int bTop = b.topMargin;
-        int bRight = bLeft + Math.max(1, b.width);
-        int bBottom = bTop + Math.max(1, b.height);
+    /** Pure geometry form used by grouped-resize regression tests. */
+    static boolean areGrouped(int aLeft, int aTop, int aWidth, int aHeight,
+                              int bLeft, int bTop, int bWidth, int bHeight) {
+        aWidth = Math.max(1, aWidth);
+        aHeight = Math.max(1, aHeight);
+        bWidth = Math.max(1, bWidth);
+        bHeight = Math.max(1, bHeight);
+
+        int aRight = aLeft + aWidth;
+        int aBottom = aTop + aHeight;
+        int bRight = bLeft + bWidth;
+        int bBottom = bTop + bHeight;
 
         int verticalOverlap = Math.min(aBottom, bBottom) - Math.max(aTop, bTop);
         int horizontalOverlap = Math.min(aRight, bRight) - Math.max(aLeft, bLeft);
 
-        int minHeight = Math.min(Math.max(1, a.height), Math.max(1, b.height));
-        int minWidth = Math.min(Math.max(1, a.width), Math.max(1, b.width));
+        int minHeight = Math.min(aHeight, bHeight);
+        int minWidth = Math.min(aWidth, bWidth);
 
         boolean sideBySide = verticalOverlap >= minHeight * GROUP_PARALLEL_OVERLAP &&
                 (Math.abs(aRight - bLeft) <= GROUP_EDGE_TOLERANCE ||

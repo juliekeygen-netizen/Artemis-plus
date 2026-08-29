@@ -159,7 +159,7 @@ if (-not $keystoreExists) {
         throw "keytool failed to create the Artemis Plus keystore."
     }
 
-    $gradleStorePath = $KeystorePath.Replace('\\', '/')
+    $gradleStorePath = $KeystorePath -replace '\\', '/'
     @(
         "# Local-only Artemis Plus signing configuration. NEVER COMMIT THIS FILE.",
         "storeFile=$gradleStorePath",

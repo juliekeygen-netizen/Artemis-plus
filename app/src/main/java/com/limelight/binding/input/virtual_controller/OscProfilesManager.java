@@ -36,18 +36,29 @@ public final class OscProfilesManager {
 
     public static synchronized List<OscProfile> getProfiles(Context context) {
         ArrayList<OscProfile> profiles = readProfiles(context);
-        ensureDefaultProfile(profiles);
+        if (ensureDefaultProfile(profiles)) {
+            // Repair metadata immediately rather than only fixing the in-memory result.
+            writeProfiles(context, profiles);
+        }
         return profiles;
     }
 
     public static synchronized OscProfile getActiveProfile(Context context) {
         List<OscProfile> profiles = getProfiles(context);
-        String activeId = getMetaPreferences(context).getString(
-                KEY_ACTIVE_PROFILE,
-                OscProfile.DEFAULT_ID);
+        SharedPreferences meta = getMetaPreferences(context);
+        String activeId = meta.getString(KEY_ACTIVE_PROFILE, OscProfile.DEFAULT_ID);
 
         OscProfile profile = findById(profiles, activeId);
-        return profile != null ? profile : findById(profiles, OscProfile.DEFAULT_ID);
+        if (profile != null) {
+            return profile;
+        }
+
+        // Recover cleanly if metadata references a profile that no longer exists.
+        OscProfile fallback = findById(profiles, OscProfile.DEFAULT_ID);
+        if (fallback != null) {
+            meta.edit().putString(KEY_ACTIVE_PROFILE, OscProfile.DEFAULT_ID).apply();
+        }
+        return fallback;
     }
 
     public static synchronized String getActiveProfileId(Context context) {
@@ -84,6 +95,8 @@ public final class OscProfilesManager {
             return true;
         }
 
+        VirtualController.ControllerMode previousMode = controller.getControllerMode();
+
         // Capture the currently displayed profile using the existing Artemis serialization.
         VirtualControllerConfigurationLoader.saveProfile(controller, context);
         snapshotWorkingSet(context, currentId);
@@ -91,8 +104,17 @@ public final class OscProfilesManager {
         // Restore the target into the legacy working preference file. An untouched profile has no
         // snapshot yet, so clearing the working set makes refreshLayout() use stock defaults.
         restoreWorkingSet(context, profileId);
-        setActiveProfile(context, profileId);
+        if (!setActiveProfile(context, profileId)) {
+            // This should be unreachable because the profile was validated above, but avoid
+            // rebuilding into an inconsistent state if metadata changes unexpectedly.
+            restoreWorkingSet(context, currentId);
+            return false;
+        }
+
         controller.refreshLayout();
+        // A profile switch can happen while the user is in Move/Resize/Enable mode. Restore the
+        // controller mode so disabled-button visibility and editing behaviour stay consistent.
+        controller.setControllerMode(previousMode);
         return true;
     }
 
@@ -277,11 +299,17 @@ public final class OscProfilesManager {
             JSONArray array = new JSONArray(serialized);
             for (int i = 0; i < array.length(); i++) {
                 JSONObject object = array.optJSONObject(i);
-                if (object != null) {
-                    OscProfile profile = OscProfile.fromJson(object);
-                    if (findById(profiles, profile.getId()) == null) {
-                        profiles.add(profile);
-                    }
+                if (object == null) {
+                    continue;
+                }
+
+                OscProfile profile = OscProfile.fromJson(object);
+                String id = profile.getId();
+                if (id == null || id.trim().isEmpty()) {
+                    continue;
+                }
+                if (findById(profiles, id) == null) {
+                    profiles.add(profile);
                 }
             }
         } catch (JSONException ignored) {
@@ -295,18 +323,13 @@ public final class OscProfilesManager {
         return profiles;
     }
 
-    private static void ensureDefaultProfile(List<OscProfile> profiles) {
-        if (findById(profiles, OscProfile.DEFAULT_ID) == null) {
-            profiles.add(0, defaultProfile());
-            writeProfilesMetadataOnlyIfPossible(profiles);
+    /** @return true when the list was repaired. */
+    private static boolean ensureDefaultProfile(List<OscProfile> profiles) {
+        if (findById(profiles, OscProfile.DEFAULT_ID) != null) {
+            return false;
         }
-    }
-
-    // Kept separate so ensureDefaultProfile() has no hidden Context dependency. readProfiles() always
-    // writes repaired metadata, while this method intentionally does nothing for an already-loaded
-    // in-memory list.
-    private static void writeProfilesMetadataOnlyIfPossible(List<OscProfile> profiles) {
-        // no-op; metadata is repaired on the next mutating operation
+        profiles.add(0, defaultProfile());
+        return true;
     }
 
     private static void writeProfiles(Context context, List<OscProfile> profiles) {

@@ -2,9 +2,9 @@
 
 Artemis Plus is an experimental community derivative of **Artemis Android** focused on richer on-screen controls, better desktop/keyboard use, and continued improvements to the Android GameStream experience.
 
-It is built on **Marssvoodoo/artemis-android**, which carries forward Artemis with newer reconnect, Wi-Fi telemetry, performance-overlay, and stability work. Artemis Plus is also selectively porting useful On-Screen Controller (OSC) ideas from **ZDPepos/diana-oscsuite** instead of replacing the newer streaming code with the older Diana base.
+It is built on **Marssvoodoo/artemis-android**, which carries forward Artemis with newer reconnect, Wi-Fi telemetry, performance-overlay, and stability work. Artemis Plus selectively ports useful On-Screen Controller (OSC) ideas from **ZDPepos/diana-oscsuite** instead of replacing the newer streaming base with Diana's older branch.
 
-> **Status:** active development. The OSC port and Artemis-local action buttons described below are being implemented incrementally and should not be treated as finished until they are marked complete.
+> **Status:** active development. The first OSC/action-button implementation is on `feature/diana-osc-port` while it is compiled and reviewed before merging to `main`.
 
 ## Project lineage
 
@@ -20,7 +20,7 @@ Artemis Plus is an independent community derivative and is not an official Moonl
 
 ## What is OSC?
 
-In this project, **OSC means On-Screen Controller**: the touch controls drawn over the streamed PC image. This includes virtual gamepad controls, keyboard buttons, mouse buttons, sticks, D-pads, triggers, and custom controls.
+In this project, **OSC means On-Screen Controller**: touch controls drawn over the streamed PC image. This includes virtual gamepad controls, keyboard buttons, mouse buttons, sticks, D-pads, triggers, and custom controls.
 
 ## Inherited Artemis features
 
@@ -32,21 +32,14 @@ The Marssvoodoo base retains the broad Artemis feature set, including:
 - Optimized virtual gamepad controls and free joystick mode
 - External-monitor support
 - Custom shortcut commands
-- Soft-keyboard switching
-- Full on-screen keyboard
-- Portrait mode
-- Trackpad/touchpad improvements
-- Non-QWERTY keyboard-layout support
+- Easy Android soft-keyboard switching and a full on-screen keyboard
+- Portrait mode and in-game screen rotation
+- Trackpad/touchpad improvements and non-QWERTY keyboard-layout support
 - Video scaling: Fit / Fill / Stretch
 - Pan/zoom support
-- In-game screen rotation
 - Samsung DeX input improvements
-- Apollo virtual-display integration
-- Apollo server-command integration
-- Clipboard synchronization with Apollo
+- Apollo virtual-display, server-command, and clipboard integration
 - SBS 3D support for external displays
-
-See the upstream Artemis repositories for the history behind these features.
 
 ## Marssvoodoo-base improvements
 
@@ -59,37 +52,75 @@ Artemis Plus deliberately starts from the newer Marssvoodoo code rather than the
 - Thread-safety improvements
 - Reduced avoidable UI/GC pressure
 
-## OSC work being ported
+## Artemis Plus OSC additions
 
-The Diana OSC work is being brought over selectively so it can coexist with the newer base.
+The first implementation selectively brings Diana-inspired controller editing ideas onto the newer base.
 
-### Planned / in progress
+### Gamepad OSC editing
 
-- **Multiple OSC profiles** — save and switch between independent controller layouts
-- **Per-game OSC profiles** — automatically choose a preferred layout for a game
-- **Smart snapping** — align controls to screen edges, useful grid points, and nearby controls
-- **Paired sizing** — resize related controls such as A/B/X/Y or LB/RB together
-- **Deposited controls** — add keyboard, mouse, number, control, and function-key buttons to an OSC layout
-- **OSC profile/configuration menu** — manage modes and layouts from the in-game quick menu
+- **Smart snapping** — gamepad controls can snap to screen edges, a layout grid, and nearby controls while moving.
+- **Paired sizing** — related groups can resize together, including A/B/X/Y, LT/RT, LB/RB, both sticks, both stick-clicks, and Start/Back.
+- Snapping and paired sizing can each be toggled from the OSC profile dialog.
 
-Diana's foldable/cover-screen controller experiments are intentionally **not part of the first port**. They can be evaluated separately later without adding their extra dependencies to the initial OSC work.
+### Multiple OSC profiles
 
-## Artemis Action buttons
+The gamepad OSC now has a basic multi-profile system:
 
-A major Artemis Plus goal is to let an OSC button trigger an action **inside Artemis itself**, rather than only sending a keyboard/mouse/gamepad input to the PC.
+- Create unlimited named layouts
+- Switch layouts while streaming
+- Rename profiles
+- Delete profiles (the built-in `Default` profile is protected)
+- Save the current layout
+- Existing Artemis `OSC` layout data remains compatible; Artemis Plus snapshots/restores profiles around the original format rather than replacing it.
 
-Planned local actions include:
+**Usage:** long-press the gamepad OSC settings gear to open **OSC Profiles**. A normal tap on the gear still cycles through enable/disable, move, resize, and active modes as before.
 
-- Show / hide Android soft keyboard
-- Toggle Artemis full on-screen keyboard
-- Rotate stream screen
-- Open the Quick Menu
-- Toggle HUD / performance overlay
-- Toggle or select mouse mode
-- Toggle zoom mode
-- Toggle virtual controller / keyboard controller
+Per-game profile metadata support is being laid down internally, but automatic per-game selection and its UI are **not wired yet**.
 
-These are intended to behave like normal OSC elements: movable, resizable, saveable in profiles, and eventually import/export capable.
+## Floating Artemis Action buttons
+
+The custom keyboard/buttons OSC layer can now contain controls that execute an action **inside Artemis itself** instead of sending a keyboard/mouse/gamepad input to the PC.
+
+Current local actions are:
+
+- **Soft Keyboard** — show/hide the Android soft keyboard
+- **Full Keyboard** — toggle Artemis's full on-screen keyboard
+- **Rotate Screen**
+- **Quick Menu**
+- **Toggle HUD**
+- **Mouse Mode** — open Artemis's mouse-mode selector
+- **Toggle Zoom**
+- **Gamepad Overlay** — toggle the virtual gamepad
+- **Custom Buttons Overlay** — toggle the custom-button/keyboard controller
+
+These use the existing custom OSC element system, so they can be moved, resized, hidden/enabled, and have their geometry persisted like normal buttons.
+
+### Adding action buttons
+
+1. Show Artemis's custom-buttons / keyboard OSC layer.
+2. Tap its settings gear to enter the first configuration mode.
+3. Alongside **Clear All** and **Add Keys**, tap **Add Actions**.
+4. Select the Artemis actions you want and tap **Apply**.
+5. Continue tapping the settings gear to enter Move and Resize modes and place the buttons where you want them.
+6. Exit configuration mode to save the layout.
+
+The action selection is stored per existing keyboard OSC layout/profile. Support for putting Artemis actions directly into the existing custom-key import/export JSON format is still planned.
+
+## Existing deposited controls
+
+The Marssvoodoo base already contained much of Diana's useful keyboard-OSC work, including the **Add Keys** flow for depositing keyboard keys, mouse controls, joysticks/D-pads, and imported custom key combinations into the movable on-screen layer. Artemis Plus keeps that code and extends the same layer with **Add Actions** rather than replacing it.
+
+## Not ported yet
+
+The first pass intentionally does **not** include everything from Diana:
+
+- Automatic per-game OSC profile selection/UI
+- Artemis Action entries in custom-key import/export files
+- Final localization/icons/polish for the new menus
+- Diana's foldable cover-screen trigger controller and analog trigger emulation
+- Diana's full profile-overlay/cover-screen UX
+
+Those can be evaluated independently without pulling Diana's foldable dependencies into the initial OSC port.
 
 ## Server compatibility
 
@@ -106,6 +137,8 @@ Artemis Plus is primarily intended for [Apollo](https://github.com/ClassicOldSon
 
 3. Create `local.properties` in the project root if needed and point `ndk.dir` at your installed Android NDK.
 4. Build the APK using Android Studio or Gradle.
+
+The repository also includes an Android CI compile check for the active OSC port branch/PRs.
 
 ## Credits
 

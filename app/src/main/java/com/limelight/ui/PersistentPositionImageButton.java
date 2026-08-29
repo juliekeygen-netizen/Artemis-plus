@@ -39,6 +39,16 @@ public class PersistentPositionImageButton extends ImageButton {
     }
 
     @Override
+    protected void onVisibilityChanged(View changedView, int visibility) {
+        super.onVisibilityChanged(changedView, visibility);
+        if (changedView == this && visibility == View.VISIBLE) {
+            // These controls start as GONE in XML, so restoring again when they become visible
+            // ensures their real measured width/height is available for accurate clamping.
+            post(this::restorePosition);
+        }
+    }
+
+    @Override
     public void setOnTouchListener(OnTouchListener listener) {
         if (listener == null) {
             super.setOnTouchListener(null);
@@ -57,7 +67,7 @@ public class PersistentPositionImageButton extends ImageButton {
 
     private void savePosition() {
         ViewParent parent = getParent();
-        if (!(parent instanceof View)) {
+        if (!(parent instanceof View) || getWidth() <= 0 || getHeight() <= 0) {
             return;
         }
 
@@ -81,7 +91,7 @@ public class PersistentPositionImageButton extends ImageButton {
 
     private void restorePosition() {
         ViewParent parent = getParent();
-        if (!(parent instanceof View)) {
+        if (!(parent instanceof View) || getWidth() <= 0 || getHeight() <= 0) {
             return;
         }
 
@@ -94,8 +104,6 @@ public class PersistentPositionImageButton extends ImageButton {
         int maxX = Math.max(0, parentView.getWidth() - getWidth());
         int maxY = Math.max(0, parentView.getHeight() - getHeight());
         if (maxX == 0 || maxY == 0) {
-            // Layout may not be measured on the first post on unusual devices.
-            post(this::restorePosition);
             return;
         }
 

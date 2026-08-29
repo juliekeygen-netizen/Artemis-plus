@@ -34,6 +34,9 @@ public final class ArtemisActionStateReader {
                     ? null : (PreferenceConfiguration) prefConfigField.get(game);
 
             switch (action) {
+                case FULL_KEYBOARD:
+                    return game.isKeyboardLayoutVisible();
+
                 case TOGGLE_HUD:
                     return prefConfig == null ? null : prefConfig.enablePerfOverlay;
 

@@ -26,11 +26,13 @@ public final class ArtemisOrientationHelper {
     private static final long VERIFY_DELAY_MS = 1250L;
     private static final long MIN_REQUEST_INTERVAL_MS = 1050L;
 
-    private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
     private static final Map<Game, RotationRequest> PENDING_REQUESTS =
             Collections.synchronizedMap(new WeakHashMap<>());
 
-    private static final Field CURRENT_ORIENTATION_FIELD = findCurrentOrientationField();
+    // Keep Android-runtime objects and reflective Game lookup lazy so the deterministic mapping
+    // helpers can be covered by ordinary JVM unit tests without requiring a prepared Looper.
+    private static Field currentOrientationField;
+    private static boolean currentOrientationFieldResolved;
 
     private ArtemisOrientationHelper() {
     }
@@ -45,8 +47,10 @@ public final class ArtemisOrientationHelper {
         // same direction twice just because Android hasn't updated the window yet.
         RotationRequest previous = PENDING_REQUESTS.get(game);
         int logicalCurrent;
-        if (previous != null && !isTargetApplied(game, previous.targetOrientation)) {
-            logicalCurrent = previous.targetOrientation;
+        if (previous != null) {
+            logicalCurrent = !isTargetApplied(game, previous.targetOrientation)
+                    ? previous.targetOrientation
+                    : getDisplayedOrientation(game);
             removeFocusRetry(previous);
         } else {
             logicalCurrent = getDisplayedOrientation(game);
@@ -68,7 +72,7 @@ public final class ArtemisOrientationHelper {
         // a short interval. Wait beyond that window, verify the *actual app window*, then use
         // sensorPortrait/sensorLandscape as an axis-constrained fallback. Those modes still use the
         // sensor even when the user has system rotation locked.
-        MAIN_HANDLER.postDelayed(() -> verifyOrUseSensorFallback(game, request), VERIFY_DELAY_MS);
+        mainHandler().postDelayed(() -> verifyOrUseSensorFallback(game, request), VERIFY_DELAY_MS);
         return true;
     }
 
@@ -82,7 +86,7 @@ public final class ArtemisOrientationHelper {
         }
 
         issueRequest(game, request, sensorRequestFor(request.targetOrientation), "sensor-axis fallback");
-        MAIN_HANDLER.postDelayed(() -> verifyOrUseFinalFixedRetry(game, request), VERIFY_DELAY_MS);
+        mainHandler().postDelayed(() -> verifyOrUseFinalFixedRetry(game, request), VERIFY_DELAY_MS);
     }
 
     private static void verifyOrUseFinalFixedRetry(Game game, RotationRequest request) {
@@ -99,7 +103,7 @@ public final class ArtemisOrientationHelper {
         // honor the pending request on the next visibility/focus transition (the same transition
         // that can occur when leaving Recents and returning to the stream).
         issueRequest(game, request, fixedRequestFor(request.targetOrientation), "final fixed retry");
-        MAIN_HANDLER.postDelayed(() -> finalVerification(game, request), VERIFY_DELAY_MS);
+        mainHandler().postDelayed(() -> finalVerification(game, request), VERIFY_DELAY_MS);
     }
 
     private static void finalVerification(Game game, RotationRequest request) {
@@ -288,15 +292,28 @@ public final class ArtemisOrientationHelper {
                 : ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
     }
 
+    private static Handler mainHandler() {
+        return new Handler(Looper.getMainLooper());
+    }
+
     private static void syncGameOrientationState(Game game, int targetOrientation) {
-        if (CURRENT_ORIENTATION_FIELD == null) {
+        Field orientationField = getCurrentOrientationField();
+        if (orientationField == null) {
             return;
         }
         try {
-            CURRENT_ORIENTATION_FIELD.setInt(game, targetOrientation);
+            orientationField.setInt(game, targetOrientation);
         } catch (IllegalAccessException e) {
             LimeLog.warning("Unable to synchronize manual orientation state: " + e.getMessage());
         }
+    }
+
+    private static synchronized Field getCurrentOrientationField() {
+        if (!currentOrientationFieldResolved) {
+            currentOrientationField = findCurrentOrientationField();
+            currentOrientationFieldResolved = true;
+        }
+        return currentOrientationField;
     }
 
     private static Field findCurrentOrientationField() {

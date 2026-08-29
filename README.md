@@ -1,84 +1,123 @@
-# Artemis Android
+# Artemis Plus
 
-Previously named Moonlight Noir
+Artemis Plus is an experimental community derivative of **Artemis Android** focused on richer on-screen controls, better desktop/keyboard use, and continued improvements to the Android GameStream experience.
 
-An open source client for [Apollo](https://github.com/ClassicOldSong/Apollo)/[Sunshine](https://github.com/LizardByte/Sunshine).
+It is built on **Marssvoodoo/artemis-android**, which carries forward Artemis with newer reconnect, Wi-Fi telemetry, performance-overlay, and stability work. Artemis Plus is also selectively porting useful On-Screen Controller (OSC) ideas from **ZDPepos/diana-oscsuite** instead of replacing the newer streaming code with the older Diana base.
 
-Artemis Android will allow you to stream your collection of games from your Windows PC to your Android device,
-whether in your own home or over the internet.
+> **Status:** active development. The OSC port and Artemis-local action buttons described below are being implemented incrementally and should not be treated as finished until they are marked complete.
 
-Artemis is currently the best fork of Moonlight with loads of optimizations for office usage.
+## Project lineage
 
-A more seamless experience with virtual display will be Artemis paired with [Apollo](https://github.com/ClassicOldSong/Apollo).
+Artemis Plus exists because several open-source projects and community forks built on one another:
 
-# Features
+1. [Moonlight Android](https://github.com/moonlight-stream/moonlight-android) — the original Android GameStream client.
+2. [Artemis / Moonlight Noir](https://github.com/ClassicOldSong/moonlight-android) by ClassicOldSong — expanded Moonlight with Apollo integration, custom virtual controls, extra mouse modes, portrait/external-display features, custom shortcuts, and many other desktop-oriented additions.
+3. [Marssvoodoo/artemis-android](https://github.com/Marssvoodoo/artemis-android) — the base used by Artemis Plus, with newer work such as smarter reconnect behavior, Wi-Fi quality monitoring, enhanced stream statistics, and lifecycle/thread-safety fixes.
+4. [Diana OSC Suite](https://github.com/ZDPepos/diana-oscsuite) by ZDPepos — reference implementation for advanced On-Screen Controller ideas such as OSC profiles, smart snapping, paired sizing, deposited controls, and foldable-device experiments.
+5. **Artemis Plus** — combines the newer Marssvoodoo base with selected Diana OSC ideas and new local Artemis-action controls.
 
-If you switch back to the main stream version, you'll be missing the following awesome features which are very unlikely to be added there:
+Artemis Plus is an independent community derivative and is not an official Moonlight, Artemis, Apollo, Marssvoodoo, or Diana release.
 
-1. Custom virtual buttons with import and export support.
-2. [Custom resolutions](https://github.com/moonlight-stream/moonlight-android/pull/1349).
-3. Custom bitrates.
-4. [Multiple mouse mode switching](https://github.com/moonlight-stream/moonlight-android/pull/1304) (normal mouse, [multi-touch](https://github.com/moonlight-stream/moonlight-android/pull/1364), touchpad, disabled, local cursor mode).
-5. Optimized virtual gamepad skins and free joystick.
-6. External monitor mode.
-7. Joycon D-pad support.
-8. Simplified performance information display.
-9. [Game back menu](https://github.com/moonlight-stream/moonlight-android/pull/1171).
-10. Custom shortcut commands.
-11. Easy soft keyboard switching.
-12. Portrait mode.
-13. Display on top mode, useful for foldable phones.
-14. [Virtual touchpad space and sensitivity adjustment](https://github.com/moonlight-stream/moonlight-android/issues/1348#issuecomment-2236344729) for playing right-click view games, such as Warcraft.
-15. Force use device's own vibration motor (in case your gamepad's vibration is not effective).
-16. Gamepad debugging page to view gamepad vibration and gyroscope information, as well as Android kernel version information.
-17. Trackpad tap/scrolling support
-18. Natural track pad mode with touch screen
-19. Non-QWERTY keyboard layout support
-20. Quick Meta key with physical BACK button
-21. Frame rate lock fix for some devices
-22. Video scale mode: Fit/Fill/Stretch
-23. View pan/zoom support
-24. Rotate screen in-game
-25. Add option to quit app directly
-26. Samsung DeX scrolling support
-27. Proper click/scroll/right-click for trackpad on generic Android tablet when using local cursor
-28. Virtual Display integration with [Apollo](https://github.com/ClassicOldSong/Apollo)
-29. Server Command integration with [Apollo](https://github.com/ClassicOldSong/Apollo)
-30. Clipboard sync (requires Apollo)
-31. SBS 3D for external Displays (Using AI MiDaS v2 Lite)
+## What is OSC?
 
-# Disclaimer
+In this project, **OSC means On-Screen Controller**: the touch controls drawn over the streamed PC image. This includes virtual gamepad controls, keyboard buttons, mouse buttons, sticks, D-pads, triggers, and custom controls.
 
-This is the `go away` version of Moonlight Android.
+## Inherited Artemis features
 
-I got kicked from Moonlight and Sunshine's Discord server literally for helping people out.
+The Marssvoodoo base retains the broad Artemis feature set, including:
 
-This is what I got for finding a bug, opened an issue, getting no response, troubleshoot myself, fixed the issue myself, shared it by PR to the main repo hoping my efforts can help someone else during the maintainance gap.
+- Custom virtual buttons with import/export support
+- Custom resolutions and bitrates
+- Multiple mouse modes: normal mouse, multi-touch, touchpad, disabled, and local-cursor modes
+- Optimized virtual gamepad controls and free joystick mode
+- External-monitor support
+- Custom shortcut commands
+- Soft-keyboard switching
+- Full on-screen keyboard
+- Portrait mode
+- Trackpad/touchpad improvements
+- Non-QWERTY keyboard-layout support
+- Video scaling: Fit / Fill / Stretch
+- Pan/zoom support
+- In-game screen rotation
+- Samsung DeX input improvements
+- Apollo virtual-display integration
+- Apollo server-command integration
+- Clipboard synchronization with Apollo
+- SBS 3D support for external displays
 
-Yes, I'm going away. Fixes and improvements on this fork are not necessarily be merged to the main repo either. I have also started [a fork of Sunshine called Apollo](https://github.com/ClassicOldSong/Apollo) and will add useful features that will never get merged by the main repo shortly. [Apollo](https://github.com/ClassicOldSong/Apollo) and [Moonlight Noir](https://github.com/ClassicOldSong/moonlight-android) will no longer be compatible with OG Sunshine and OG Moonlight eventually, but they'll work even better with much more carefully designed features.
+See the upstream Artemis repositories for the history behind these features.
 
-The main repo had stayed silent for 5 months, with nobody actually responding to issues, and people are getting totally no help besides the limited FAQ in their Discord server. I tried to answer issues and questions, solve problems within my ablilty but I got kicked out just for helping others.
+## Marssvoodoo-base improvements
 
-**PRs for feature improvements are welcomed here unlike the main repo, your ideas are more likely to be appreciated and your efforts are actually being respected. We welcome people who can and willing to share their efforts, helping yourselves and other people in need.**
+Artemis Plus deliberately starts from the newer Marssvoodoo code rather than the older Diana branch. That preserves work such as:
 
-**Update**: They have contacted me and apologized for this incident, but the fact it **happened** still motivated me to start my own fork.
+- Smarter automatic reconnect behavior
+- Wi-Fi quality monitoring for adaptive streaming
+- Expanded stream statistics and diagnostics
+- Reconnect/overlay lifecycle fixes
+- Thread-safety improvements
+- Reduced avoidable UI/GC pressure
 
-## Downloads
-* [Download APK directly](https://github.com/ClassicOldSong/moonlight-android/releases)
-* [Use Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.limelight.noir%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FClassicOldSong%2Fmoonlight-android%22%2C%22author%22%3A%22ClassicOldSong%22%2C%22name%22%3A%22Artemis%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22nonRoot%5C%22%2C%5C%22matchGroutToUse%5C%22%3A%5C%22%241%5C%22%2C%5C%22versionExtractionRegEx%5C%22%3A%5C%22v(.%2B)%5C%22%7D%22%7D) (recommended)
+## OSC work being ported
+
+The Diana OSC work is being brought over selectively so it can coexist with the newer base.
+
+### Planned / in progress
+
+- **Multiple OSC profiles** — save and switch between independent controller layouts
+- **Per-game OSC profiles** — automatically choose a preferred layout for a game
+- **Smart snapping** — align controls to screen edges, useful grid points, and nearby controls
+- **Paired sizing** — resize related controls such as A/B/X/Y or LB/RB together
+- **Deposited controls** — add keyboard, mouse, number, control, and function-key buttons to an OSC layout
+- **OSC profile/configuration menu** — manage modes and layouts from the in-game quick menu
+
+Diana's foldable/cover-screen controller experiments are intentionally **not part of the first port**. They can be evaluated separately later without adding their extra dependencies to the initial OSC work.
+
+## Artemis Action buttons
+
+A major Artemis Plus goal is to let an OSC button trigger an action **inside Artemis itself**, rather than only sending a keyboard/mouse/gamepad input to the PC.
+
+Planned local actions include:
+
+- Show / hide Android soft keyboard
+- Toggle Artemis full on-screen keyboard
+- Rotate stream screen
+- Open the Quick Menu
+- Toggle HUD / performance overlay
+- Toggle or select mouse mode
+- Toggle zoom mode
+- Toggle virtual controller / keyboard controller
+
+These are intended to behave like normal OSC elements: movable, resizable, saveable in profiles, and eventually import/export capable.
+
+## Server compatibility
+
+Artemis Plus is primarily intended for [Apollo](https://github.com/ClassicOldSong/Apollo), while retaining the compatibility inherited from its Artemis base where possible.
 
 ## Building
-* Install Android Studio and the Android NDK
-* Run ‘git submodule update --init --recursive’ from within moonlight-android/
-* In moonlight-android/, create a file called ‘local.properties’. Add an ‘ndk.dir=’ property to the local.properties file and set it equal to your NDK directory.
-* Build the APK using Android Studio or gradle
 
-## Authors
+1. Install Android Studio and the Android NDK required by the project.
+2. Clone the repository with its submodules, or run:
 
-* [Cameron Gutman](https://github.com/cgutman)  
-* [Diego Waxemberg](https://github.com/dwaxemberg)  
-* [Aaron Neyer](https://github.com/Aaronneyer)  
-* [Andrew Hennessy](https://github.com/yetanothername)
+   ```bash
+   git submodule update --init --recursive
+   ```
 
-Moonlight is the work of students at [Case Western](http://case.edu) and was
-started as a project at [MHacks](http://mhacks.org).
+3. Create `local.properties` in the project root if needed and point `ndk.dir` at your installed Android NDK.
+4. Build the APK using Android Studio or Gradle.
+
+## Credits
+
+Artemis Plus builds on substantial work by many people. In particular:
+
+- **Moonlight Android** — Cameron Gutman, Diego Waxemberg, Aaron Neyer, Andrew Hennessy, and the wider Moonlight contributor community
+- **Artemis / Moonlight Noir and Apollo** — ClassicOldSong and contributors
+- **Marssvoodoo/artemis-android** — Marssvoodoo, including the newer Artemis reliability/streaming work used as this project's base
+- **Diana OSC Suite** — ZDPepos, whose OSC profile, snapping, paired-sizing, deposited-control, and foldable-control experiments are important references for this project
+
+Please preserve upstream copyright and attribution notices when redistributing modified builds.
+
+## License
+
+This project inherits the **GNU General Public License v3.0** licensing of the upstream Moonlight/Artemis codebase. See [LICENSE.txt](LICENSE.txt) for the full license text.

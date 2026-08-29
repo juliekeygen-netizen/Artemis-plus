@@ -1,0 +1,29 @@
+name: StreamSettings Line Endings One Shot
+
+on:
+  push:
+    branches:
+      - feature/editor-profiles-v3
+    paths:
+      - .github/workflows/streamsettings-line-endings-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/editor-profiles-v3
+      - name: Restore inherited CRLF line endings
+        run: python3 scripts/restore_streamsettings_crlf.py
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/limelight/preferences/StreamSettings.java
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: preserve StreamSettings line endings"
+          git push origin HEAD:feature/editor-profiles-v3

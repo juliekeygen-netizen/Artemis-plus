@@ -1,0 +1,68 @@
+name: One-shot Zoom Toast Cleanup
+
+on:
+  push:
+    branches:
+      - feature/editor-combos-pairing-resilience
+    paths:
+      - .github/workflows/one-shot-remove-zoom-toast.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/editor-combos-pairing-resilience
+          fetch-depth: 0
+
+      - name: Remove Zoom/Pan toggle toast only
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/java/com/limelight/Game.java')
+          text = path.read_text(encoding='utf-8')
+          old = '''    public void toggleZoomMode() {
+              this.isPanZoomMode = !this.isPanZoomMode;
+              if (this.isPanZoomMode) {
+                  Toast.makeText(this, getString(R.string.pan_zoom_mode_enabled), Toast.LENGTH_SHORT).show();
+              } else {
+                  Toast.makeText(this, getString(R.string.pan_zoom_mode_disabled), Toast.LENGTH_SHORT).show();
+              }
+              updateZoomButtonAppearance();
+          
+              if (ExternalDisplayControlActivity.instance != null) {
+                  ExternalDisplayControlActivity.instance.toggleZoomMode(false);
+              }
+          }
+          '''
+          new = '''    public void toggleZoomMode() {
+              this.isPanZoomMode = !this.isPanZoomMode;
+              updateZoomButtonAppearance();
+          
+              if (ExternalDisplayControlActivity.instance != null) {
+                  ExternalDisplayControlActivity.instance.toggleZoomMode(false);
+              }
+          }
+          '''
+          if old not in text:
+              raise SystemExit('Expected toggleZoomMode block not found exactly; refusing broad edit')
+          updated = text.replace(old, new, 1)
+          if updated.count('Toast.makeText(this, getString(R.string.pan_zoom_mode_enabled)') != 0 or updated.count('Toast.makeText(this, getString(R.string.pan_zoom_mode_disabled)') != 0:
+              raise SystemExit('Zoom toast calls still present')
+          path.write_text(updated, encoding='utf-8')
+          PY
+
+      - name: Commit exact cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/limelight/Game.java
+          git diff --cached --check
+          git diff --cached --exit-code >/dev/null && exit 0 || true
+          git commit -m "fix: remove zoom pan toggle toast"
+          git push origin HEAD:feature/editor-combos-pairing-resilience

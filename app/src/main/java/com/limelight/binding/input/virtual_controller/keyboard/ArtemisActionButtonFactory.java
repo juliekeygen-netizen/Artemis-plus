@@ -51,7 +51,7 @@ public final class ArtemisActionButtonFactory {
                     for (int i = 0; i < actions.length; i++) {
                         if (checked[i]) {
                             requested.add(actions[i].getId());
-                            ensureActionPresent(controller, context, actions[i]);
+                            ensureActionPresent(controller, context, actions[i], true);
                         } else {
                             hideExistingAction(controller, actions[i]);
                         }
@@ -73,7 +73,9 @@ public final class ArtemisActionButtonFactory {
 
         for (ArtemisAction action : ArtemisAction.values()) {
             if (selected.contains(action.getId())) {
-                ensureActionPresent(controller, context, action);
+                // During normal restoration, respect a saved hidden/disabled state (for example
+                // after Clear All). Explicitly selecting an action in the picker forces it visible.
+                ensureActionPresent(controller, context, action, false);
             }
         }
     }
@@ -89,26 +91,19 @@ public final class ArtemisActionButtonFactory {
         button.setText(shortLabel(action));
         button.setIcon(-1);
         button.addDigitalButtonListener(new KeyBoardDigitalButton.DigitalButtonListener() {
-            private boolean fired;
-
             @Override
             public void onClick() {
-                if (fired) {
-                    return;
-                }
-                fired = true;
                 controller.vibrate(KeyEvent.ACTION_DOWN);
                 action.execute(Game.instance);
             }
 
             @Override
             public void onLongClick() {
-                // Local actions intentionally fire once per press. Long-press is not a second action.
+                // Local actions intentionally have no separate long-press command.
             }
 
             @Override
             public void onRelease() {
-                fired = false;
                 controller.vibrate(KeyEvent.ACTION_UP);
             }
         });
@@ -117,13 +112,16 @@ public final class ArtemisActionButtonFactory {
 
     private static void ensureActionPresent(KeyBoardController controller,
                                             Context context,
-                                            ArtemisAction action) {
+                                            ArtemisAction action,
+                                            boolean forceVisible) {
         keyBoardVirtualControllerElement existing = findElement(controller, action);
         if (existing != null) {
-            existing.hidden = false;
-            existing.enabled = true;
-            existing.setVisibility(View.VISIBLE);
-            existing.invalidate();
+            if (forceVisible) {
+                existing.hidden = false;
+                existing.enabled = true;
+                existing.setVisibility(View.VISIBLE);
+                existing.invalidate();
+            }
             return;
         }
 
@@ -132,6 +130,13 @@ public final class ArtemisActionButtonFactory {
         KeyBoardDigitalButton button = createButton(action, controller, context);
         controller.addElement(button, position[0], position[1], size, size);
         loadSavedConfiguration(button, context);
+
+        if (forceVisible) {
+            button.hidden = false;
+            button.enabled = true;
+            button.setVisibility(View.VISIBLE);
+            button.invalidate();
+        }
     }
 
     private static void hideExistingAction(KeyBoardController controller, ArtemisAction action) {

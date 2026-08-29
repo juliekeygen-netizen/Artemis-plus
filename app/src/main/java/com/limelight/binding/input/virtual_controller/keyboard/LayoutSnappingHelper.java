@@ -24,6 +24,9 @@ public class LayoutSnappingHelper {
         public boolean didSnap;
         public boolean didResize;
         public boolean didAdjustSpacing;
+        /** Axis locks let the editor keep a snapped relationship until the user deliberately pulls away. */
+        public boolean lockX;
+        public boolean lockY;
 
         public SnapResult(int x, int y, int width, int height, boolean snapped, boolean resized, boolean adjustedSpacing) {
             this.newX = x;
@@ -127,6 +130,8 @@ public class LayoutSnappingHelper {
         boolean didSnap = false;
         boolean didResize = false;
         boolean didAdjustSpacing = false;
+        boolean lockX = false;
+        boolean lockY = false;
 
         FrameLayout.LayoutParams movingParams = (FrameLayout.LayoutParams) movingView.getLayoutParams();
         int movingWidth = movingParams.width;
@@ -151,12 +156,14 @@ public class LayoutSnappingHelper {
                 if (leftDistance > SPACING_MIN && leftDistance < SPACING_THRESHOLD) {
                     snappedX = otherParams.leftMargin + otherView.getWidth() + SPACING_MIN;
                     didAdjustSpacing = true;
+                    lockX = true;
                 }
 
                 int rightDistance = Math.abs((proposedX + movingWidth) - otherParams.leftMargin);
                 if (rightDistance > SPACING_MIN && rightDistance < SPACING_THRESHOLD) {
                     snappedX = otherParams.leftMargin - SPACING_MIN - movingWidth;
                     didAdjustSpacing = true;
+                    lockX = true;
                 }
             }
 
@@ -166,33 +173,43 @@ public class LayoutSnappingHelper {
                 if (topDistance > SPACING_MIN && topDistance < SPACING_THRESHOLD) {
                     snappedY = otherParams.topMargin + otherView.getHeight() + SPACING_MIN;
                     didAdjustSpacing = true;
+                    lockY = true;
                 }
 
                 int bottomDistance = Math.abs((proposedY + movingHeight) - otherParams.topMargin);
                 if (bottomDistance > SPACING_MIN && bottomDistance < SPACING_THRESHOLD) {
                     snappedY = otherParams.topMargin - SPACING_MIN - movingHeight;
                     didAdjustSpacing = true;
+                    lockY = true;
                 }
             }
 
             if (Math.abs(proposedX - otherParams.leftMargin) < SNAP_THRESHOLD) {
                 snappedX = otherParams.leftMargin;
                 didSnap = true;
+                lockX = true;
             }
             if (Math.abs((proposedX + movingWidth) - (otherParams.leftMargin + otherView.getWidth())) < SNAP_THRESHOLD) {
                 snappedX = otherParams.leftMargin + otherView.getWidth() - movingWidth;
                 didSnap = true;
+                lockX = true;
             }
             if (Math.abs(proposedY - otherParams.topMargin) < SNAP_THRESHOLD) {
                 snappedY = otherParams.topMargin;
                 didSnap = true;
+                lockY = true;
             }
             if (Math.abs((proposedY + movingHeight) - (otherParams.topMargin + otherView.getHeight())) < SNAP_THRESHOLD) {
                 snappedY = otherParams.topMargin + otherView.getHeight() - movingHeight;
                 didSnap = true;
+                lockY = true;
             }
         }
 
-        return new SnapResult(snappedX, snappedY, newWidth, newHeight, didSnap, didResize, didAdjustSpacing);
+        SnapResult result = new SnapResult(
+                snappedX, snappedY, newWidth, newHeight, didSnap, didResize, didAdjustSpacing);
+        result.lockX = lockX;
+        result.lockY = lockY;
+        return result;
     }
 }

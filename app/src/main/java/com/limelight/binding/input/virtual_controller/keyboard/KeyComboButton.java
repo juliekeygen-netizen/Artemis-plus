@@ -73,6 +73,11 @@ final class KeyComboButton extends KeyBoardDigitalButton {
         modifierKeys = definition.modifiers.clone();
         regularKeys = definition.keys.clone();
         setText(displayName);
+        post(() -> {
+            if (virtualController != null) {
+                virtualController.ensureTextButtonWidth(this, displayName);
+            }
+        });
     }
 
     String getComboId() {
@@ -134,7 +139,12 @@ final class KeyComboButton extends KeyBoardDigitalButton {
     public boolean onTouchEvent(MotionEvent event) {
         if (virtualController == null ||
                 virtualController.getControllerMode() != KeyBoardController.ControllerMode.DisableEnableButtons) {
-            return super.onTouchEvent(event);
+            boolean handled = super.onTouchEvent(event);
+            if ((event.getActionMasked() == MotionEvent.ACTION_UP ||
+                    event.getActionMasked() == MotionEvent.ACTION_CANCEL) && virtualController != null) {
+                post(() -> virtualController.ensureTextButtonWidth(this, displayName));
+            }
+            return handled;
         }
 
         switch (event.getActionMasked()) {

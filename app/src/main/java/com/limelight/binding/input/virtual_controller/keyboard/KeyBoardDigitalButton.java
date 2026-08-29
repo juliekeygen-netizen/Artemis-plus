@@ -8,6 +8,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.view.MotionEvent;
@@ -58,6 +59,36 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement {
 
     private final Paint paint = new Paint();
     private final RectF rect = new RectF();
+    private final Rect textBounds = new Rect();
+
+    /** Minimum bubble width that keeps text readable while never shrinking below a square. */
+    static int minimumWidthForText(Context context, String value, int height) {
+        int safeHeight = Math.max(20, height);
+        if (value == null || value.isEmpty()) {
+            return safeHeight;
+        }
+        Paint measurePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        measurePaint.setTextSize(safeHeight * 0.25f);
+        float density = context.getResources().getDisplayMetrics().density;
+        float horizontalPadding = Math.max(8f * density, safeHeight * 0.20f);
+        int required = (int) Math.ceil(measurePaint.measureText(value) + horizontalPadding * 2f);
+        return Math.max(safeHeight, required);
+    }
+
+    /** Baseline that centers the glyphs that are actually drawn, not the font's full line box. */
+    static float visualTextBaseline(Paint paint, Rect reusableBounds, String value, float centerY) {
+        if (value == null || value.isEmpty()) {
+            Paint.FontMetrics metrics = paint.getFontMetrics();
+            return centerY - (metrics.ascent + metrics.descent) / 2f;
+        }
+        reusableBounds.setEmpty();
+        paint.getTextBounds(value, 0, value.length(), reusableBounds);
+        if (reusableBounds.isEmpty()) {
+            Paint.FontMetrics metrics = paint.getFontMetrics();
+            return centerY - (metrics.ascent + metrics.descent) / 2f;
+        }
+        return centerY - (reusableBounds.top + reusableBounds.bottom) / 2f;
+    }
 
     private int layer;
     private KeyBoardDigitalButton movingButton = null;
@@ -169,7 +200,9 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement {
         // set transparent background
         canvas.drawColor(Color.TRANSPARENT);
 
-        paint.setTextSize(getPercent(getWidth(), 25));
+        // Text size follows the short edge, so widening a long-label bubble does not recursively
+        // make the text larger and wider again.
+        paint.setTextSize(getPercent(Math.min(getWidth(), getHeight()), 25));
         paint.setTextAlign(Paint.Align.CENTER);
         paint.setStrokeWidth(getDefaultStrokeWidth());
 
@@ -196,7 +229,8 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement {
         } else {
             paint.setStyle(Paint.Style.FILL_AND_STROKE);
             paint.setStrokeWidth(getDefaultStrokeWidth()/2);
-            canvas.drawText(text, getPercent(getWidth(), 50), getPercent(getHeight(), 63), paint);
+            float baseline = visualTextBaseline(paint, textBounds, text, getHeight() / 2f);
+            canvas.drawText(text, getWidth() / 2f, baseline, paint);
         }
     }
 

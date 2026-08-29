@@ -72,6 +72,7 @@ public class KeyBoardController {
     private final List<keyBoardVirtualControllerElement> elements = new ArrayList<>();
 
     private final List<keyBoardVirtualControllerElement> activeMoveGroup = new ArrayList<>();
+    private final List<keyBoardVirtualControllerElement> outlinedGroup = new ArrayList<>();
     private float groupLastRawX;
     private float groupLastRawY;
 
@@ -342,6 +343,85 @@ public class KeyBoardController {
 
     public List<keyBoardVirtualControllerElement> getElements() {
         return elements;
+    }
+
+    void removeElement(keyBoardVirtualControllerElement element) {
+        if (element == null) {
+            return;
+        }
+        elements.remove(element);
+        activeMoveGroup.remove(element);
+        outlinedGroup.remove(element);
+        frame_layout.removeView(element);
+        context.getSharedPreferences(
+                KeyboardProfilesManager.getActiveStorageName(context),
+                Context.MODE_PRIVATE)
+                .edit()
+                .remove(element.elementId)
+                .apply();
+        if (outlinedGroup.size() <= 1) {
+            clearGestureGroupOutline();
+        } else {
+            updateGroupOutline();
+        }
+    }
+
+    /**
+     * Grow a text button horizontally when its label no longer fits. Controls connected to its
+     * right edge are shifted as a unit so the wider bubble cannot overlap the rest of the group.
+     */
+    void ensureTextButtonWidth(KeyBoardDigitalButton element, String text) {
+        if (element == null || !(element.getLayoutParams() instanceof FrameLayout.LayoutParams)) {
+            return;
+        }
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) element.getLayoutParams();
+        int targetWidth = KeyBoardDigitalButton.minimumWidthForText(context, text, params.height);
+        if (targetWidth <= params.width) {
+            return;
+        }
+
+        List<keyBoardVirtualControllerElement> group = getConnectedGroup(element);
+        if (group.isEmpty()) {
+            group.add(element);
+        }
+        int oldRight = params.leftMargin + params.width;
+        int delta = targetWidth - params.width;
+        int elementTop = params.topMargin;
+        int elementBottom = params.topMargin + params.height;
+        params.width = targetWidth;
+        element.requestLayout();
+
+        for (keyBoardVirtualControllerElement other : group) {
+            if (other == element || !(other.getLayoutParams() instanceof FrameLayout.LayoutParams)) {
+                continue;
+            }
+            FrameLayout.LayoutParams otherParams = (FrameLayout.LayoutParams) other.getLayoutParams();
+            int overlap = Math.min(elementBottom, otherParams.topMargin + otherParams.height) -
+                    Math.max(elementTop, otherParams.topMargin);
+            int minHeight = Math.min(params.height, otherParams.height);
+            if (otherParams.leftMargin >= oldRight - 6 && overlap >= minHeight * 0.35f) {
+                otherParams.leftMargin += delta;
+                other.requestLayout();
+            }
+        }
+
+        int parentWidth = frame_layout.getWidth() > 0
+                ? frame_layout.getWidth()
+                : context.getResources().getDisplayMetrics().widthPixels;
+        Rect bounds = getBounds(group);
+        int shiftLeft = Math.max(0, bounds.right - parentWidth);
+        if (shiftLeft > 0) {
+            int available = Math.min(shiftLeft, bounds.left);
+            for (keyBoardVirtualControllerElement member : group) {
+                FrameLayout.LayoutParams memberParams =
+                        (FrameLayout.LayoutParams) member.getLayoutParams();
+                memberParams.leftMargin = Math.max(0, memberParams.leftMargin - available);
+                member.requestLayout();
+            }
+        }
+
+        element.invalidate();
+        KeyBoardControllerConfigurationLoader.saveProfile(this, context);
     }
 
     int getDefaultKeyButtonSize() {
@@ -714,6 +794,8 @@ public class KeyBoardController {
         }
         activeMoveGroup.clear();
         activeMoveGroup.addAll(group);
+        outlinedGroup.clear();
+        outlinedGroup.addAll(group);
         buttonAcceptGroupMove.setVisibility(View.VISIBLE);
         updateGroupOutline();
         return true;
@@ -777,6 +859,7 @@ public class KeyBoardController {
             KeyBoardControllerConfigurationLoader.saveProfile(this, context);
         }
         activeMoveGroup.clear();
+        outlinedGroup.clear();
         if (buttonAcceptGroupMove != null) {
             buttonAcceptGroupMove.setVisibility(View.GONE);
         }
@@ -803,11 +886,58 @@ public class KeyBoardController {
         return new Rect(left, top, right, bottom);
     }
 
-    private void updateGroupOutline() {
-        if (activeMoveGroup.isEmpty() || groupOutline == null) {
+    void showGestureGroupOutline(List<keyBoardVirtualControllerElement> group) {
+        if (isGroupMoveModeActive()) {
+            outlinedGroup.clear();
+            outlinedGroup.addAll(activeMoveGroup);
+            updateGroupOutline();
             return;
         }
-        Rect bounds = getBounds(activeMoveGroup);
+        outlinedGroup.clear();
+        if (group != null) {
+            for (keyBoardVirtualControllerElement element : group) {
+                if (element != null && !element.hidden && element.getVisibility() == View.VISIBLE) {
+                    outlinedGroup.add(element);
+                }
+            }
+        }
+        if (outlinedGroup.size() <= 1) {
+            clearGestureGroupOutline();
+            return;
+        }
+        updateGroupOutline();
+    }
+
+    void showSnapGroupOutline(keyBoardVirtualControllerElement seed) {
+        showGestureGroupOutline(getConnectedGroup(seed));
+    }
+
+    void clearGestureGroupOutline() {
+        if (isGroupMoveModeActive()) {
+            outlinedGroup.clear();
+            outlinedGroup.addAll(activeMoveGroup);
+            updateGroupOutline();
+            return;
+        }
+        outlinedGroup.clear();
+        if (groupOutline != null) {
+            groupOutline.setVisibility(View.GONE);
+        }
+    }
+
+    boolean isElementCoveredByGroupOutline(keyBoardVirtualControllerElement element) {
+        return groupOutline != null && groupOutline.getVisibility() == View.VISIBLE &&
+                outlinedGroup.contains(element);
+    }
+
+    private void updateGroupOutline() {
+        if (outlinedGroup.size() <= 1 || groupOutline == null || groupOutline.getLayoutParams() == null) {
+            if (groupOutline != null) {
+                groupOutline.setVisibility(View.GONE);
+            }
+            return;
+        }
+        Rect bounds = getBounds(outlinedGroup);
         int pad = Math.max(4,
                 Math.round(5 * context.getResources().getDisplayMetrics().density));
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) groupOutline.getLayoutParams();
@@ -818,10 +948,12 @@ public class KeyBoardController {
         groupOutline.setVisibility(View.VISIBLE);
         groupOutline.requestLayout();
         groupOutline.bringToFront();
-        for (keyBoardVirtualControllerElement element : activeMoveGroup) {
+        for (keyBoardVirtualControllerElement element : outlinedGroup) {
             element.bringToFront();
         }
-        buttonAcceptGroupMove.bringToFront();
+        if (buttonAcceptGroupMove.getVisibility() == View.VISIBLE) {
+            buttonAcceptGroupMove.bringToFront();
+        }
     }
 
     void switchKeyboardProfile(String profileId) {

@@ -98,6 +98,10 @@ public abstract class keyBoardVirtualControllerElement extends View {
     private float moveDownRawX;
     private float moveDownRawY;
     private long lastMoveTapUpTime;
+    private boolean stickyMoveX;
+    private boolean stickyMoveY;
+    private int stickyMoveAnchorX;
+    private int stickyMoveAnchorY;
 
     private static final class GroupResizeSnapshot {
         final keyBoardVirtualControllerElement element;
@@ -193,8 +197,29 @@ public abstract class keyBoardVirtualControllerElement extends View {
         int newPos_x = (int) getX() + x - pressed_x;
         int newPos_y = (int) getY() + y - pressed_y;
 
+        // Once an axis snaps, keep it attached for a larger release distance than the initial snap
+        // threshold. This hysteresis prevents tiny finger wobble from immediately tearing a control
+        // back out of its group while still allowing deliberate movement parallel to the joined edge.
+        int releaseThreshold = Math.max(18,
+                Math.round(28 * getResources().getDisplayMetrics().density));
+        if (stickyMoveX) {
+            if (Math.abs(newPos_x - stickyMoveAnchorX) < releaseThreshold) {
+                newPos_x = stickyMoveAnchorX;
+            } else {
+                stickyMoveX = false;
+            }
+        }
+        if (stickyMoveY) {
+            if (Math.abs(newPos_y - stickyMoveAnchorY) < releaseThreshold) {
+                newPos_y = stickyMoveAnchorY;
+            } else {
+                stickyMoveY = false;
+            }
+        }
+
         lastMoveX = newPos_x;
         lastMoveY = newPos_y;
+        boolean newlyLocked = false;
 
         if (virtualController.getControllerMode() == KeyBoardController.ControllerMode.MoveButtons) {
             View[] otherViews = new View[virtualController.getElements().size() - 1];
@@ -205,16 +230,23 @@ public abstract class keyBoardVirtualControllerElement extends View {
                 }
             }
 
+            boolean wasStickyX = stickyMoveX;
+            boolean wasStickyY = stickyMoveY;
             LayoutSnappingHelper.SnapResult snapResult = LayoutSnappingHelper.calculateSnappedPosition(
                     this, otherViews, newPos_x, newPos_y
             );
 
             newPos_x = snapResult.newX;
             newPos_y = snapResult.newY;
-
-            if (snapResult.didSnap || snapResult.didAdjustSpacing) {
-                virtualController.vibrate(KeyEvent.ACTION_DOWN);
+            if (snapResult.lockX) {
+                stickyMoveX = true;
+                stickyMoveAnchorX = newPos_x;
             }
+            if (snapResult.lockY) {
+                stickyMoveY = true;
+                stickyMoveAnchorY = newPos_y;
+            }
+            newlyLocked = (snapResult.lockX && !wasStickyX) || (snapResult.lockY && !wasStickyY);
         }
 
         FrameLayout.LayoutParams layoutParams = (FrameLayout.LayoutParams) getLayoutParams();
@@ -223,6 +255,15 @@ public abstract class keyBoardVirtualControllerElement extends View {
         layoutParams.rightMargin = 0;
         layoutParams.bottomMargin = 0;
         requestLayout();
+
+        if (stickyMoveX || stickyMoveY) {
+            virtualController.showSnapGroupOutline(this);
+            if (newlyLocked) {
+                virtualController.vibrate(KeyEvent.ACTION_DOWN);
+            }
+        } else {
+            virtualController.clearGestureGroupOutline();
+        }
     }
 
     protected void resizeElement(int pressed_x, int pressed_y, int width, int height) {
@@ -273,6 +314,7 @@ public abstract class keyBoardVirtualControllerElement extends View {
         }
 
         resizeGroup = snapshots;
+        virtualController.showGestureGroupOutline(connected);
         resizeGroupOriginX = minLeft;
         resizeGroupOriginY = minTop;
         resizeGroupRight = maxRight;
@@ -335,6 +377,11 @@ public abstract class keyBoardVirtualControllerElement extends View {
             snapshot.element.requestLayout();
             snapshot.element.invalidate();
         }
+        List<keyBoardVirtualControllerElement> outlined = new ArrayList<>(resizeGroup.size());
+        for (GroupResizeSnapshot snapshot : resizeGroup) {
+            outlined.add(snapshot.element);
+        }
+        virtualController.showGestureGroupOutline(outlined);
     }
 
     private void resetConnectedGroupSizeToDefault() {
@@ -387,6 +434,9 @@ public abstract class keyBoardVirtualControllerElement extends View {
 
     private void clearGroupedResize() {
         resizeGroup = null;
+        if (virtualController != null) {
+            virtualController.clearGestureGroupOutline();
+        }
     }
 
     protected void checkAndApplyResize() {
@@ -418,7 +468,8 @@ public abstract class keyBoardVirtualControllerElement extends View {
     protected void onDraw(Canvas canvas) {
         onElementDraw(canvas);
 
-        if (currentMode != Mode.Normal) {
+        if (currentMode != Mode.Normal &&
+                (virtualController == null || !virtualController.isElementCoveredByGroupOutline(this))) {
             paint.setColor(configSelectedColor);
             paint.setStrokeWidth(getDefaultStrokeWidth());
             paint.setStyle(Paint.Style.STROKE);
@@ -505,6 +556,8 @@ public abstract class keyBoardVirtualControllerElement extends View {
                     moveDownRawX = event.getRawX();
                     moveDownRawY = event.getRawY();
                     moveGestureMoved = false;
+                    stickyMoveX = false;
+                    stickyMoveY = false;
                     if (virtualController.isGroupMoveModeActive()) {
                         if (virtualController.isInActiveMoveGroup(this)) {
                             virtualController.beginActiveGroupMove(event.getRawX(), event.getRawY());
@@ -568,6 +621,9 @@ public abstract class keyBoardVirtualControllerElement extends View {
                         if (moveGestureMoved) {
                             checkAndApplyResize();
                         }
+                        stickyMoveX = false;
+                        stickyMoveY = false;
+                        virtualController.clearGestureGroupOutline();
                         if (event.getActionMasked() == MotionEvent.ACTION_CANCEL || moveGestureMoved) {
                             lastMoveTapUpTime = 0;
                         } else {

@@ -3,11 +3,9 @@ package com.limelight.binding.input.virtual_controller.keyboard;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.graphics.Rect;
-import android.util.DisplayMetrics;
+import android.graphics.Point;
 import android.view.KeyEvent;
 import android.view.View;
-import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import androidx.preference.PreferenceManager;
@@ -16,13 +14,12 @@ import com.limelight.ArtemisAction;
 import com.limelight.Game;
 import com.limelight.R;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -116,8 +113,6 @@ public final class ArtemisActionButtonFactory {
                     toggleCustomButtonsKeepingToggle(controller, button);
                 } else {
                     action.execute(Game.instance);
-                    // Runtime state is read from Game by ArtemisActionButton. Redraw immediately so
-                    // toggles respond visually on the same tap rather than waiting for polling.
                     button.invalidate();
                 }
             }
@@ -188,8 +183,6 @@ public final class ArtemisActionButtonFactory {
                                                  boolean collapsed) {
         if (toggle instanceof ArtemisActionButton) {
             ArtemisActionButton button = (ArtemisActionButton) toggle;
-            // Expanded: closed-eye glyph means "hide" and green ring means the custom layer is ON.
-            // Collapsed: open-eye glyph means "show" and no green ring means the layer is OFF.
             button.setAlternateIcon(collapsed);
             button.setExplicitToggleState(!collapsed);
         }
@@ -211,9 +204,9 @@ public final class ArtemisActionButtonFactory {
         }
 
         int size = calculateButtonSize(context);
-        int[] position = findFreePosition(controller, context, size);
+        Point position = controller.findGroupedSpawnPosition(size, size);
         KeyBoardDigitalButton button = createButton(action, controller, context);
-        controller.addElement(button, position[0], position[1], size, size);
+        controller.addElement(button, position.x, position.y, size, size);
         loadSavedConfiguration(button, context);
 
         if (forceVisible) {
@@ -252,42 +245,6 @@ public final class ArtemisActionButtonFactory {
                 ArtemisActionButton.DEFAULT_SIZE_DP * context.getResources().getDisplayMetrics().density));
     }
 
-    private static int[] findFreePosition(KeyBoardController controller, Context context, int size) {
-        DisplayMetrics screen = context.getResources().getDisplayMetrics();
-        int spacing = Math.max(8, Math.round(8 * screen.density));
-        int startY = Math.max(100, Math.round(72 * screen.density));
-        List<Rect> occupied = new ArrayList<>();
-
-        for (keyBoardVirtualControllerElement element : controller.getElements()) {
-            if (element.getVisibility() == View.GONE || element.getLayoutParams() == null) {
-                continue;
-            }
-            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) element.getLayoutParams();
-            occupied.add(new Rect(
-                    params.leftMargin,
-                    params.topMargin,
-                    params.leftMargin + params.width,
-                    params.topMargin + params.height));
-        }
-
-        for (int y = startY; y + size < screen.heightPixels; y += size + spacing) {
-            for (int x = spacing; x + size < screen.widthPixels; x += size + spacing) {
-                Rect candidate = new Rect(x, y, x + size, y + size);
-                boolean intersects = false;
-                for (Rect rect : occupied) {
-                    if (Rect.intersects(candidate, rect)) {
-                        intersects = true;
-                        break;
-                    }
-                }
-                if (!intersects) {
-                    return new int[]{x, y};
-                }
-            }
-        }
-        return new int[]{spacing, startY};
-    }
-
     private static void loadSavedConfiguration(keyBoardVirtualControllerElement element,
                                                Context context) {
         String layoutPreference = PreferenceManager.getDefaultSharedPreferences(context).getString(
@@ -309,23 +266,70 @@ public final class ArtemisActionButtonFactory {
     }
 
     private static Set<String> getSelectedActionIds(Context context) {
+        return getSelectedActionIdsForLayout(context, activeLayout(context));
+    }
+
+    private static Set<String> getSelectedActionIdsForLayout(Context context, String layout) {
         SharedPreferences preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
-        Set<String> values = preferences.getStringSet(selectionKey(context), null);
+        Set<String> values = preferences.getStringSet(selectionKey(layout), null);
         return values == null ? new HashSet<>() : new HashSet<>(values);
     }
 
     private static void saveSelectedActionIds(Context context, Set<String> actionIds) {
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 .edit()
-                .putStringSet(selectionKey(context), new HashSet<>(actionIds))
+                .putStringSet(selectionKey(activeLayout(context)), new HashSet<>(actionIds))
                 .apply();
     }
 
-    private static String selectionKey(Context context) {
-        String layoutPreference = PreferenceManager.getDefaultSharedPreferences(context).getString(
+    static JSONArray exportSelectionForLayout(Context context, String layout) {
+        JSONArray array = new JSONArray();
+        for (String id : getSelectedActionIdsForLayout(context, layout)) {
+            array.put(id);
+        }
+        return array;
+    }
+
+    static void importSelectionForLayout(Context context, String layout, JSONArray array) {
+        HashSet<String> values = new HashSet<>();
+        if (array != null) {
+            for (int i = 0; i < array.length(); i++) {
+                String value = array.optString(i, "");
+                if (!value.isEmpty()) {
+                    values.add(value);
+                }
+            }
+        }
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .edit()
+                .putStringSet(selectionKey(layout), values)
+                .apply();
+    }
+
+    static void copySelectionForLayout(Context context, String fromLayout, String toLayout) {
+        Set<String> values = getSelectedActionIdsForLayout(context, fromLayout);
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .edit()
+                .putStringSet(selectionKey(toLayout), new HashSet<>(values))
+                .apply();
+    }
+
+    static void deleteSelectionForLayout(Context context, String layout) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .edit()
+                .remove(selectionKey(layout))
+                .apply();
+    }
+
+    private static String activeLayout(Context context) {
+        KeyboardProfilesManager.ensureInitialized(context);
+        return PreferenceManager.getDefaultSharedPreferences(context).getString(
                 KeyBoardControllerConfigurationLoader.OSC_PREFERENCE,
                 KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);
-        return SELECTED_PREFIX + layoutPreference;
+    }
+
+    private static String selectionKey(String layout) {
+        return SELECTED_PREFIX + layout;
     }
 
     private static String elementId(ArtemisAction action) {

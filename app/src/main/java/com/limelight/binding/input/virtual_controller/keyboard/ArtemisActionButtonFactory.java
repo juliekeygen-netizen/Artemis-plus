@@ -90,6 +90,10 @@ public final class ArtemisActionButtonFactory {
                 context);
         button.setText(shortLabel(action));
         button.setIcon(-1);
+        // Normal keyboard buttons support sliding a held finger across neighbouring keys. Local
+        // Artemis actions can rotate the screen, open menus, or hide overlays, so they must only
+        // run from an intentional direct press rather than a slide gesture.
+        button.setSlideActivationEnabled(false);
         button.addDigitalButtonListener(new KeyBoardDigitalButton.DigitalButtonListener() {
             @Override
             public void onClick() {

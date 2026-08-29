@@ -72,9 +72,7 @@ public abstract class VirtualControllerElement extends android.view.View {
         this.elementId = elementId;
     }
 
-    /**
-     * Stable controller element identifier used by OSC layout helpers and profile persistence.
-     */
+    /** Stable controller element identifier used by OSC layout helpers and profile persistence. */
     public int getElementId() {
         return elementId;
     }
@@ -144,6 +142,8 @@ public abstract class VirtualControllerElement extends android.view.View {
 
     protected void actionDisableEnableButton(){
         enabled = !enabled;
+        // Immediately redraw the configuration-state color instead of waiting for another event.
+        invalidate();
     }
 
     @Override
@@ -342,11 +342,11 @@ public abstract class VirtualControllerElement extends android.view.View {
     public void loadConfiguration(JSONObject configuration) throws JSONException {
         FrameLayout.LayoutParams layoutParams = (FrameLayout.LayoutParams) getLayoutParams();
 
-        layoutParams.leftMargin = configuration.getInt("LEFT");
-        layoutParams.topMargin = configuration.getInt("TOP");
-        layoutParams.width = configuration.getInt("WIDTH");
-        layoutParams.height = configuration.getInt("HEIGHT");
-        enabled = configuration.getBoolean("ENABLED");
+        layoutParams.leftMargin = Math.max(0, configuration.getInt("LEFT"));
+        layoutParams.topMargin = Math.max(0, configuration.getInt("TOP"));
+        layoutParams.width = Math.max(20, configuration.getInt("WIDTH"));
+        layoutParams.height = Math.max(20, configuration.getInt("HEIGHT"));
+        enabled = configuration.optBoolean("ENABLED", true);
         setVisibility(enabled ? VISIBLE: GONE);
         requestLayout();
     }

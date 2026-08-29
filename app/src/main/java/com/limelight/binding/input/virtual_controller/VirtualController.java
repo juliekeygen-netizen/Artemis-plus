@@ -11,7 +11,6 @@ import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.util.DisplayMetrics;
-import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.widget.Button;
 import android.widget.FrameLayout;
@@ -64,11 +63,17 @@ public class VirtualController {
 
     private Button buttonConfigure = null;
 
-    private List<VirtualControllerElement> elements = new ArrayList<>();
+    private final List<VirtualControllerElement> elements = new ArrayList<>();
 
     private Vibrator vibrator;
 
     private final VibrationEffect defaultVibrationEffect;
+
+    // OSC layout editing helpers. These are deliberately local to the controller rather than
+    // preferences for now, matching Diana's quick configuration behaviour while keeping the
+    // newer Marssvoodoo streaming base untouched.
+    private boolean snappingEnabled = true;
+    private boolean pairedSizingEnabled = true;
 
     public VirtualController(final ControllerHandler controllerHandler, FrameLayout layout, final Context context) {
         this.controllerHandler = controllerHandler;
@@ -91,31 +96,24 @@ public class VirtualController {
             @Override
             public void onClick(View v) {
                 String message;
+                ControllerMode nextMode;
 
                 if (currentMode == ControllerMode.Active) {
-                    currentMode = ControllerMode.DisableEnableButtons;
-                    showElements();
+                    nextMode = ControllerMode.DisableEnableButtons;
                     message = context.getString(R.string.configuration_mode_disable_enable_buttons);
                 } else if (currentMode == ControllerMode.DisableEnableButtons){
-                    currentMode = ControllerMode.MoveButtons;
-                    showEnabledElements();
+                    nextMode = ControllerMode.MoveButtons;
                     message = context.getString(R.string.configuration_mode_move_buttons);
                 } else if (currentMode == ControllerMode.MoveButtons) {
-                    currentMode = ControllerMode.ResizeButtons;
+                    nextMode = ControllerMode.ResizeButtons;
                     message = context.getString(R.string.configuration_mode_resize_buttons);
                 } else {
-                    currentMode = ControllerMode.Active;
-                    VirtualControllerConfigurationLoader.saveProfile(VirtualController.this, context);
+                    nextMode = ControllerMode.Active;
                     message = context.getString(R.string.configuration_mode_exiting);
                 }
 
+                setControllerMode(nextMode);
                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show();
-
-                buttonConfigure.invalidate();
-
-                for (VirtualControllerElement element : elements) {
-                    element.invalidate();
-                }
             }
         });
 
@@ -157,7 +155,7 @@ public class VirtualController {
 
     public void showEnabledElements(){
         for(VirtualControllerElement element: elements){
-            element.setVisibility( element.enabled ? View.VISIBLE : View.GONE );
+            element.setVisibility(element.enabled ? View.VISIBLE : View.GONE);
         }
     }
 
@@ -189,6 +187,44 @@ public class VirtualController {
         return elements;
     }
 
+    public DisplayMetrics getDisplayMetrics() {
+        return context.getResources().getDisplayMetrics();
+    }
+
+    public int getLayoutWidth() {
+        return frame_layout != null ? frame_layout.getWidth() : 0;
+    }
+
+    public int getLayoutHeight() {
+        return frame_layout != null ? frame_layout.getHeight() : 0;
+    }
+
+    public boolean isSnappingEnabled() {
+        return snappingEnabled;
+    }
+
+    public boolean toggleSnapping() {
+        snappingEnabled = !snappingEnabled;
+        return snappingEnabled;
+    }
+
+    public void setSnappingEnabled(boolean enabled) {
+        snappingEnabled = enabled;
+    }
+
+    public boolean isPairedSizingEnabled() {
+        return pairedSizingEnabled;
+    }
+
+    public boolean togglePairedSizing() {
+        pairedSizingEnabled = !pairedSizingEnabled;
+        return pairedSizingEnabled;
+    }
+
+    public void setPairedSizingEnabled(boolean enabled) {
+        pairedSizingEnabled = enabled;
+    }
+
     private static final void _DBG(String text) {
         if (_PRINT_DEBUG_INFORMATION) {
             LimeLog.info("VirtualController: " + text);
@@ -215,6 +251,34 @@ public class VirtualController {
 
     public ControllerMode getControllerMode() {
         return currentMode;
+    }
+
+    /**
+     * Sets a configuration mode directly. This is used by the normal configure button today and
+     * gives the in-game OSC menu/profile UI a clean entry point without simulating button taps.
+     */
+    public void setControllerMode(ControllerMode mode) {
+        if (mode == null) {
+            return;
+        }
+
+        currentMode = mode;
+        if (currentMode == ControllerMode.DisableEnableButtons) {
+            showElements();
+        } else {
+            showEnabledElements();
+        }
+
+        if (currentMode == ControllerMode.Active) {
+            VirtualControllerConfigurationLoader.saveProfile(this, context);
+        }
+
+        if (buttonConfigure != null) {
+            buttonConfigure.invalidate();
+        }
+        for (VirtualControllerElement element : elements) {
+            element.invalidate();
+        }
     }
 
     public ControllerInputContext getControllerInputContext() {

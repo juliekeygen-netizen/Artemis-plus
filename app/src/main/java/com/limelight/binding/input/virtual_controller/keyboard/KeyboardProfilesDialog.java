@@ -34,10 +34,12 @@ public final class KeyboardProfilesDialog {
         LinearLayout rows = new LinearLayout(context);
         rows.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(rows);
+        int listHeight = Math.min(
+                Math.round(360 * context.getResources().getDisplayMetrics().density),
+                Math.max(1, context.getResources().getDisplayMetrics().heightPixels / 2));
         root.addView(scroll, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f));
+                listHeight));
 
         Button add = new Button(context);
         add.setText("+ Add Profile");

@@ -790,14 +790,14 @@
 
         <Preference
             android:key="import_keyboard_file"
-            android:summary="@string/summary_import_keyboard_layout"
-            android:title="@string/title_import_keyboard_layout"
+            android:summary="Add profiles from an Artemis Plus profile bundle or legacy layout file."
+            android:title="Import Keyboard Profiles"
             app:iconSpaceReserved="false" />
 
         <Preference
             android:key="export_keyboard_file"
-            android:summary="@string/summary_export_keyboard_layout"
-            android:title="@string/title_export_keyboard_layout"
+            android:summary="Export all keyboard profiles, custom keys, and Artemis action selections."
+            android:title="Export Keyboard Profiles"
             app:iconSpaceReserved="false" />
 
     </PreferenceCategory>

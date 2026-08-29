@@ -565,7 +565,9 @@ public abstract class keyBoardVirtualControllerElement extends View {
                     if (virtualController.isGroupMoveModeActive()) {
                         virtualController.finishActiveGroupMove();
                     } else {
-                        checkAndApplyResize();
+                        if (moveGestureMoved) {
+                            checkAndApplyResize();
+                        }
                         if (event.getActionMasked() == MotionEvent.ACTION_CANCEL || moveGestureMoved) {
                             lastMoveTapUpTime = 0;
                         } else {

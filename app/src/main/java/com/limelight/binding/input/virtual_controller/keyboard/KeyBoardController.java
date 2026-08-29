@@ -205,6 +205,7 @@ public class KeyBoardController {
                 0xEEFFFFFF);
         outline.setCornerRadius(Math.round(8 * context.getResources().getDisplayMetrics().density));
         groupOutline.setBackground(outline);
+        groupOutline.setVisibility(View.GONE);
     }
 
     private Button editorButton(String text) {
@@ -507,6 +508,16 @@ public class KeyBoardController {
         KeyBoardControllerConfigurationLoader.loadFromPreferences(this, context);
         ArtemisActionButtonFactory.restoreSelectedActions(this, context);
         KeyComboManager.restore(this, context);
+
+        // Native/custom controls are appended after the editor chrome. Bring the editor controls
+        // back above them so Profiles/top buttons cannot be covered by a large user control.
+        buttonConfigure.bringToFront();
+        buttonClearAll.bringToFront();
+        buttonAddKeys.bringToFront();
+        buttonAddActions.bringToFront();
+        buttonResetAll.bringToFront();
+        buttonProfiles.bringToFront();
+        buttonAcceptGroupMove.bringToFront();
 
         // Re-apply editor visibility because refreshLayout() is also used for profile switching.
         if (currentMode == ControllerMode.DisableEnableButtons) {

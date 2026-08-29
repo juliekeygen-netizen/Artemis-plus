@@ -17,13 +17,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: feature/editor-profiles-v3
-      - name: Apply settings/profile patch
+      - name: Apply final editor/profile cleanup
         run: python3 scripts/apply_editor_profiles_v3_settings.py
-      - name: Commit patch
+      - name: Commit cleanup
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/src/main/res/xml/preferences.xml app/src/main/java/com/limelight/preferences/StreamSettings.java app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyboardProfilesDialog.java
+          git add \
+            app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/keyBoardVirtualControllerElement.java \
+            app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardController.java \
+            app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyboardProfilesDialog.java \
+            app/src/main/res/xml/preferences.xml
           git diff --cached --quiet && exit 0
-          git commit -m "feat: make keyboard settings profile-aware"
+          git commit -m "fix: polish editor group and profile UX"
           git push origin HEAD:feature/editor-profiles-v3

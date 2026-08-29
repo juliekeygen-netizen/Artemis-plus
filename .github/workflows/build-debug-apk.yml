@@ -38,6 +38,67 @@ jobs:
       - name: Install SDK and NDK
         run: sdkmanager "platforms;android-36" "ndk;27.0.12077973"
 
+      - name: Configure Artemis Plus signing and version
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ARTEMIS_PLUS_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ARTEMIS_PLUS_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ARTEMIS_PLUS_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ARTEMIS_PLUS_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          KEYSTORE_PATH="$RUNNER_TEMP/artemis-plus.jks"
+          USING_PERSISTENT_SIGNER=false
+
+          if [[ -n "${KEYSTORE_BASE64}" && -n "${KEYSTORE_PASSWORD}" && -n "${KEY_ALIAS}" && -n "${KEY_PASSWORD}" ]]; then
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+            USING_PERSISTENT_SIGNER=true
+          elif [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            echo "Persistent Artemis Plus signing secrets are not configured." >&2
+            echo "Run .\\setup-signing.ps1 once from a local clone before publishing main builds." >&2
+            exit 1
+          else
+            # Audit branches need to prove that the configured signing path compiles and packages,
+            # but they must never publish. Generate a throw-away audit key when repository secrets
+            # have not been configured yet.
+            KEYSTORE_PASSWORD='artemis-plus-audit-only'
+            KEY_PASSWORD="$KEYSTORE_PASSWORD"
+            KEY_ALIAS='artemis-plus-audit'
+            keytool -genkeypair \
+              -keystore "$KEYSTORE_PATH" \
+              -storetype JKS \
+              -storepass "$KEYSTORE_PASSWORD" \
+              -keypass "$KEY_PASSWORD" \
+              -alias "$KEY_ALIAS" \
+              -keyalg RSA \
+              -keysize 3072 \
+              -validity 365 \
+              -dname 'CN=Artemis Plus Audit,O=Artemis Plus,C=FI' \
+              -noprompt >/dev/null 2>&1
+          fi
+
+          VERSION_CODE="$(( $(date +%s) / 60 ))"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          VERSION_NAME="20.2.6-plus.${VERSION_CODE}.${SHORT_SHA}"
+          SIGNER_SHA256="$(keytool -exportcert \
+            -keystore "$KEYSTORE_PATH" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" 2>/dev/null | sha256sum | awk '{print $1}')"
+
+          echo "ARTEMIS_PLUS_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          echo "ARTEMIS_PLUS_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "ARTEMIS_PLUS_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "ARTEMIS_PLUS_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo "ARTEMIS_PLUS_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "ARTEMIS_PLUS_VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+          echo "ARTEMIS_PLUS_SIGNER_SHA256=$SIGNER_SHA256" >> "$GITHUB_ENV"
+          echo "ARTEMIS_PLUS_PERSISTENT_SIGNER=$USING_PERSISTENT_SIGNER" >> "$GITHUB_ENV"
+
+          echo "Version: $VERSION_NAME ($VERSION_CODE)"
+          echo "Signer SHA-256: $SIGNER_SHA256"
+          echo "Persistent signer: $USING_PERSISTENT_SIGNER"
+
       - name: Make Gradle executable
         run: chmod +x gradlew
 
@@ -61,20 +122,35 @@ jobs:
             sha256sum ./*.apk > SHA256SUMS.txt
           )
 
-          cat > dist/INSTALL.txt <<'EOF'
+          cat > dist/INSTALL.txt <<EOF
           Artemis Plus debug APKs
           =======================
 
-          These APKs are debug-signed and are intended for testing Artemis Plus.
+          These APKs are debug test builds of Artemis Plus.
 
           Choose the APK matching your Android device CPU:
           - arm64-v8a: almost all modern Android phones/tablets
           - armeabi-v7a: older 32-bit ARM devices
           - x86_64 / x86: mainly emulators or uncommon Intel Android devices
 
-          Android may ask you to allow installs from your browser/file manager before installing.
-          The debug build uses the project's debug application ID, so it can normally coexist with
-          a regular Artemis installation rather than replacing it.
+          Version: ${ARTEMIS_PLUS_VERSION_NAME}
+          Version code: ${ARTEMIS_PLUS_VERSION_CODE}
+          Signer SHA-256: ${ARTEMIS_PLUS_SIGNER_SHA256}
+          Persistent project signer: ${ARTEMIS_PLUS_PERSISTENT_SIGNER}
+
+          Once the persistent Artemis Plus signer is installed on your phone, later APKs signed by
+          this same key can be installed directly as updates without uninstalling the app first.
+          EOF
+
+          cat > dist/SIGNING.txt <<EOF
+          Artemis Plus signing identity
+          =============================
+
+          Commit: ${GITHUB_SHA}
+          Version: ${ARTEMIS_PLUS_VERSION_NAME}
+          Version code: ${ARTEMIS_PLUS_VERSION_CODE}
+          Certificate SHA-256: ${ARTEMIS_PLUS_SIGNER_SHA256}
+          Persistent project signer: ${ARTEMIS_PLUS_PERSISTENT_SIGNER}
           EOF
 
           echo 'Produced APKs:'
@@ -96,6 +172,11 @@ jobs:
         run: |
           set -euo pipefail
 
+          if [[ "$ARTEMIS_PLUS_PERSISTENT_SIGNER" != "true" ]]; then
+            echo "Refusing to publish a rolling release without the persistent Artemis Plus signer." >&2
+            exit 1
+          fi
+
           TAG='debug-latest'
           TITLE='Artemis Plus Debug (Latest)'
           SHORT_SHA="${GITHUB_SHA::7}"
@@ -109,11 +190,16 @@ jobs:
           - Commit: \`${GITHUB_SHA}\`
           - Short commit: \`${SHORT_SHA}\`
           - Built: ${BUILT_AT}
+          - Version: \`${ARTEMIS_PLUS_VERSION_NAME}\`
+          - Version code: \`${ARTEMIS_PLUS_VERSION_CODE}\`
+          - Signer SHA-256: \`${ARTEMIS_PLUS_SIGNER_SHA256}\`
           - Build type: non-root debug
 
           **Most modern Android phones/tablets should use the \`arm64-v8a\` APK.**
 
-          These are debug-signed test builds. See \`INSTALL.txt\` for the CPU/ABI guide and \`SHA256SUMS.txt\` for checksums.
+          After installing the first build signed with this Artemis Plus key, later builds can be
+          installed directly as updates without uninstalling. See \`INSTALL.txt\`, \`SIGNING.txt\`,
+          and \`SHA256SUMS.txt\` for details.
           EOF
 
           # Keep one stable download location instead of creating a release for every commit.
@@ -129,6 +215,7 @@ jobs:
             dist/*.apk \
             dist/SHA256SUMS.txt \
             dist/INSTALL.txt \
+            dist/SIGNING.txt \
             --title "$TITLE" \
             --notes-file release-notes.md \
             --prerelease \

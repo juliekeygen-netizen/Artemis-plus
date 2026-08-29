@@ -11,15 +11,12 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.util.DisplayMetrics;
 import android.view.MotionEvent;
-import android.view.View;
 import android.widget.FrameLayout;
-
-import com.limelight.Game;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
-public abstract class VirtualControllerElement extends View {
+public abstract class VirtualControllerElement extends android.view.View {
     protected static boolean _PRINT_DEBUG_INFORMATION = false;
 
     public static final int EID_DPAD = 1;
@@ -75,14 +72,35 @@ public abstract class VirtualControllerElement extends View {
         this.elementId = elementId;
     }
 
+    /**
+     * Stable controller element identifier used by OSC layout helpers and profile persistence.
+     */
+    public int getElementId() {
+        return elementId;
+    }
+
     protected void moveElement(int pressed_x, int pressed_y, int x, int y) {
         int newPos_x = (int) getX() + x - pressed_x;
         int newPos_y = (int) getY() + y - pressed_y;
 
         FrameLayout.LayoutParams layoutParams = (FrameLayout.LayoutParams) getLayoutParams();
+        int width = getWidth() > 0 ? getWidth() : layoutParams.width;
+        int height = getHeight() > 0 ? getHeight() : layoutParams.height;
 
-        layoutParams.leftMargin = newPos_x > 0 ? newPos_x : 0;
-        layoutParams.topMargin = newPos_y > 0 ? newPos_y : 0;
+        if (virtualController.isSnappingEnabled()) {
+            int[] snapped = SnapHelper.applySnapping(
+                    this,
+                    newPos_x,
+                    newPos_y,
+                    width,
+                    height,
+                    virtualController);
+            newPos_x = snapped[0];
+            newPos_y = snapped[1];
+        }
+
+        layoutParams.leftMargin = Math.max(newPos_x, 0);
+        layoutParams.topMargin = Math.max(newPos_y, 0);
         layoutParams.rightMargin = 0;
         layoutParams.bottomMargin = 0;
 
@@ -92,16 +110,39 @@ public abstract class VirtualControllerElement extends View {
     protected void resizeElement(int pressed_x, int pressed_y, int width, int height) {
         FrameLayout.LayoutParams layoutParams = (FrameLayout.LayoutParams) getLayoutParams();
 
-        int newHeight = height + (startSize_y - pressed_y);
-        int newWidth = width + (startSize_x - pressed_x);
+        int newHeight = Math.max(height + (startSize_y - pressed_y), 20);
+        int newWidth = Math.max(width + (startSize_x - pressed_x), 20);
 
-        layoutParams.height = newHeight > 20 ? newHeight : 20;
-        layoutParams.width = newWidth > 20 ? newWidth : 20;
-
+        layoutParams.height = newHeight;
+        layoutParams.width = newWidth;
         requestLayout();
+
+        if (!virtualController.isPairedSizingEnabled()) {
+            return;
+        }
+
+        SnapHelper.ButtonSubset subset = SnapHelper.getButtonSubset(elementId);
+        if (subset == SnapHelper.ButtonSubset.NONE) {
+            return;
+        }
+
+        // Keep related controls visually consistent while resizing a member of the group.
+        for (VirtualControllerElement other : virtualController.getElements()) {
+            if (other == this || SnapHelper.getButtonSubset(other.getElementId()) != subset) {
+                continue;
+            }
+
+            FrameLayout.LayoutParams otherParams = (FrameLayout.LayoutParams) other.getLayoutParams();
+            if (otherParams == null) {
+                continue;
+            }
+            otherParams.width = newWidth;
+            otherParams.height = newHeight;
+            other.requestLayout();
+        }
     }
 
-    protected  void actionDisableEnableButton(){
+    protected void actionDisableEnableButton(){
         enabled = !enabled;
     }
 
@@ -121,38 +162,6 @@ public abstract class VirtualControllerElement extends View {
 
         super.onDraw(canvas);
     }
-
-    /*
-    protected void actionShowNormalColorChooser() {
-        AmbilWarnaDialog colorDialog = new AmbilWarnaDialog(getContext(), normalColor, true, new AmbilWarnaDialog.OnAmbilWarnaListener() {
-            @Override
-            public void onCancel(AmbilWarnaDialog dialog)
-            {}
-
-            @Override
-            public void onOk(AmbilWarnaDialog dialog, int color) {
-                normalColor = color;
-                invalidate();
-            }
-        });
-        colorDialog.show();
-    }
-
-    protected void actionShowPressedColorChooser() {
-        AmbilWarnaDialog colorDialog = new AmbilWarnaDialog(getContext(), normalColor, true, new AmbilWarnaDialog.OnAmbilWarnaListener() {
-            @Override
-            public void onCancel(AmbilWarnaDialog dialog) {
-            }
-
-            @Override
-            public void onOk(AmbilWarnaDialog dialog, int color) {
-                pressedColor = color;
-                invalidate();
-            }
-        });
-        colorDialog.show();
-    }
-    */
 
     protected void actionEnableMove() {
         currentMode = Mode.Move;
@@ -190,11 +199,6 @@ public abstract class VirtualControllerElement extends View {
         CharSequence functions[] = new CharSequence[]{
                 "Move",
                 "Resize",
-            /*election
-            "Set n
-            Disable color sormal color",
-            "Set pressed color",
-            */
                 "Cancel"
         };
 
@@ -211,16 +215,6 @@ public abstract class VirtualControllerElement extends View {
                         actionEnableResize();
                         break;
                     }
-                /*
-                case 2: { // set default color
-                    actionShowNormalColorChooser();
-                    break;
-                }
-                case 3: { // set pressed color
-                    actionShowPressedColorChooser();
-                    break;
-                }
-                */
                     default: { // cancel
                         actionCancel();
                         break;
@@ -229,7 +223,6 @@ public abstract class VirtualControllerElement extends View {
             }
         });
         AlertDialog alert = alertBuilder.create();
-        // show menu
         alert.show();
     }
 

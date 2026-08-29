@@ -97,9 +97,27 @@ function Set-GitHubSecretFromStdin {
         [string]$Repository
     )
 
-    $Value | & gh secret set $Name --repo $Repository
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to set GitHub secret '$Name'."
+    # Write the secret directly to gh's stdin without PowerShell's usual trailing newline. A hidden
+    # newline in a keystore password is enough to make every CI signing attempt fail.
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = "gh"
+    $startInfo.Arguments = "secret set $Name --repo $Repository"
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    if (-not $process.Start()) {
+        throw "Unable to start GitHub CLI while setting secret '$Name'."
+    }
+    $process.StandardInput.Write($Value)
+    $process.StandardInput.Close()
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+    if ($process.ExitCode -ne 0) {
+        throw "Failed to set GitHub secret '$Name': $stderr$stdout"
     }
 }
 
@@ -189,18 +207,12 @@ Write-Host ""
 if (-not $SkipGitHub) {
     $gh = Get-Command gh -ErrorAction SilentlyContinue
     if (-not $gh) {
-        Write-Host "The local signing key is ready, but GitHub CLI (gh) is not installed." -ForegroundColor Yellow
-        Write-Host "Install it with: winget install --id GitHub.cli" -ForegroundColor Yellow
-        Write-Host "Then reopen PowerShell, run 'gh auth login', and run this script again." -ForegroundColor Yellow
-        exit 2
+        throw "The local signing key is ready, but GitHub CLI is not installed. Install it with 'winget install --id GitHub.cli', reopen PowerShell, run 'gh auth login', then run this script again."
     }
 
     & gh auth status 2>$null
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "The local signing key is ready, but GitHub CLI is not authenticated." -ForegroundColor Yellow
-        Write-Host "Run: gh auth login" -ForegroundColor Yellow
-        Write-Host "Then run this script again." -ForegroundColor Yellow
-        exit 3
+        throw "The local signing key is ready, but GitHub CLI is not authenticated. Run 'gh auth login', then run this script again."
     }
 
     Write-Host "Uploading the signing material to encrypted GitHub Actions secrets..." -ForegroundColor Yellow

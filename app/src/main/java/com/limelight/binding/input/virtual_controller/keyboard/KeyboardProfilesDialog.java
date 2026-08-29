@@ -46,7 +46,7 @@ public final class KeyboardProfilesDialog {
         AlertDialog dialog = new AlertDialog.Builder(context)
                 .setTitle("Keyboard Profiles")
                 .setView(root)
-                .setNegativeButton(android.R.string.closeButtonLabel, null)
+                .setNegativeButton("Close", null)
                 .create();
 
         Runnable[] rebuildHolder = new Runnable[1];

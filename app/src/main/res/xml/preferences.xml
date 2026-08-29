@@ -762,14 +762,11 @@
             android:title="@string/title_checkbox_vibrate_osc"
             app:iconSpaceReserved="false" />
 
-        <ListPreference
-            android:defaultValue="OSC_Keyboard"
+        <com.limelight.preferences.KeyboardProfilesPreference
             android:dependency="checkbox_enable_keyboard"
-            android:entries="@array/keyboard_axi_names"
-            android:entryValues="@array/keyboard_axi_values"
-            android:key="keyboard_axi_list"
-            android:summary="@string/summary_default_layout_scheme"
-            android:title="@string/title_default_layout_scheme"
+            android:key="manage_keyboard_profiles"
+            android:summary="Create, switch, rename, duplicate, reorder, and delete special-key layouts."
+            android:title="Profiles"
             app:iconSpaceReserved="false" />
 
         <CheckBoxPreference

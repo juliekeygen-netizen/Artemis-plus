@@ -51,6 +51,7 @@ import com.limelight.LimeLog;
 import com.limelight.PcView;
 import com.limelight.R;
 import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardControllerConfigurationLoader;
+import com.limelight.binding.input.virtual_controller.keyboard.KeyboardProfilesManager;
 import com.limelight.binding.video.MediaCodecHelper;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.FileUriUtils;
@@ -1006,18 +1007,14 @@ public class StreamSettings extends AppCompatActivity {
                         Toast.makeText(getActivity(), getString(R.string.pref_empty_file), Toast.LENGTH_SHORT).show();
                         return;
                     }
-                    String name = getPrefs().getString(KeyBoardControllerConfigurationLoader.OSC_PREFERENCE, KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);
-                    SharedPreferences.Editor prefEditor = requireActivity().getSharedPreferences(name, Activity.MODE_PRIVATE).edit();
-                    JSONObject object = new JSONObject(json);
-                    Iterator it = object.keys();
-                    prefEditor.clear();
-                    while (it.hasNext()) {
-                        String key = (String) it.next();// 获得key
-                        String value = object.getString(key);// 获得value
-                        prefEditor.putString(key, value);
+                    int importedProfiles = KeyboardProfilesManager.importProfiles(requireActivity(), json);
+                    if (importedProfiles <= 0) {
+                        Toast.makeText(getActivity(), "No keyboard profiles found in file", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(getActivity(),
+                                "Imported " + importedProfiles + (importedProfiles == 1 ? " keyboard profile" : " keyboard profiles"),
+                                Toast.LENGTH_SHORT).show();
                     }
-                    prefEditor.apply();
-                    Toast.makeText(getActivity(), getString(R.string.pref_import_success), Toast.LENGTH_SHORT).show();
                 } catch (Exception e) {
                     e.printStackTrace();
                     Toast.makeText(getActivity(), getString(R.string.pref_error_occurred) + e.getMessage(), Toast.LENGTH_SHORT).show();
@@ -1057,16 +1054,18 @@ public class StreamSettings extends AppCompatActivity {
             } else super.onDisplayPreferenceDialog(preference);
         }
 
-        private File getJsonContent(Context context,File file){
-            String name = getPrefs().getString(KeyBoardControllerConfigurationLoader.OSC_PREFERENCE, KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);
-            SharedPreferences pref = context.getSharedPreferences(name, Activity.MODE_PRIVATE);
-            Map<String,?> map = pref.getAll();
-            File file1= new File(file,name+".json");
-            String jsonStr=new Gson().toJson(map);
-            if(!FileUriUtils.writerFileString(file1,jsonStr)){
+        private File getJsonContent(Context context, File file){
+            try {
+                File file1 = new File(file, "artemis-keyboard-profiles.json");
+                String jsonStr = KeyboardProfilesManager.exportProfiles(context).toString(2);
+                if (!FileUriUtils.writerFileString(file1, jsonStr)) {
+                    return null;
+                }
+                return file1;
+            } catch (Exception e) {
+                LimeLog.warning("Failed to export keyboard profiles: " + e.getMessage());
                 return null;
             }
-            return file1;
         }
 
         //获取所有设置项配置文件

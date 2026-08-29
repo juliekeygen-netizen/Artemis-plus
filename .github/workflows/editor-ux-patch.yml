@@ -21,17 +21,50 @@ jobs:
           ref: feature/keyboard-editor-ux-input-fix
           fetch-depth: 0
 
-      - name: Fix profile menu backdrop literal
-        run: sed -i 's/0x332FFFFFFF/0x33FFFFFF/' app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyboardProfilesDialog.java
+      - name: Apply final source cleanup
+        shell: python
+        run: |
+          from pathlib import Path
 
-      - name: Commit patched source
+          controller = Path("app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardController.java")
+          text = controller.read_text(encoding="utf-8")
+          old = "    public void removeElements() {\n        activeMoveGroup.clear();\n"
+          new = "    public void removeElements() {\n        activeMoveGroup.clear();\n        outlinedGroup.clear();\n"
+          if old not in text:
+              raise SystemExit("KeyBoardController cleanup anchor missing")
+          controller.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          combos = Path("app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyComboManager.java")
+          text = combos.read_text(encoding="utf-8")
+          old = '''    private static void deleteDefinition(Context context, String id) {
+              List<Definition> definitions = loadDefinitions(context);
+              definitions.removeIf(definition -> definition.id.equals(id));
+              saveDefinitions(context, definitions);
+          }
+          '''
+          new = '''    private static void deleteDefinition(Context context, String id) {
+              List<Definition> definitions = loadDefinitions(context);
+              for (int i = definitions.size() - 1; i >= 0; i--) {
+                  if (definitions.get(i).id.equals(id)) {
+                      definitions.remove(i);
+                  }
+              }
+              saveDefinitions(context, definitions);
+          }
+          '''
+          if old not in text:
+              raise SystemExit("KeyComboManager cleanup anchor missing")
+          combos.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+      - name: Commit patched sources
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyboardProfilesDialog.java
+          git add app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardController.java
+          git add app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyComboManager.java
           if git diff --cached --quiet; then
             echo "No source changes to commit"
             exit 0
           fi
-          git commit -m "fix: correct profile menu backdrop color"
+          git commit -m "fix: harden editor cleanup and key deletion"
           git push origin HEAD:feature/keyboard-editor-ux-input-fix

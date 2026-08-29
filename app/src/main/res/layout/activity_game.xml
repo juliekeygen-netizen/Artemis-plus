@@ -89,7 +89,7 @@
     </LinearLayout>
 
     <!-- Floating Menu Button -->
-    <ImageButton
+    <com.limelight.ui.PersistentPositionImageButton
         android:id="@+id/floatingMenuButton"
         android:layout_width="36dp"
         android:layout_height="36dp"
@@ -102,7 +102,7 @@
         android:visibility="gone"
         android:elevation="9999dp" />
 
-    <ImageButton
+    <com.limelight.ui.PersistentPositionImageButton
         android:id="@+id/overlayToggleZoomButton"
         android:layout_width="36dp"
         android:layout_height="36dp"

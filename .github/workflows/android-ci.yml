@@ -44,9 +44,10 @@ jobs:
       - name: Compile non-root debug variant
         run: ./gradlew :app:compileNonRoot_gameDebugJavaWithJavac --stacktrace
 
-      - name: Run Artemis Plus OSC regression tests
+      - name: Run Artemis Plus regression tests
         run: >-
           ./gradlew :app:testNonRoot_gameDebugUnitTest
+          --tests "com.limelight.ArtemisOrientationHelperTest"
           --tests "com.limelight.binding.input.virtual_controller.OscProfilesManagerTest"
           --tests "com.limelight.binding.input.virtual_controller.keyboard.ArtemisActionButtonFactoryTest"
           --stacktrace

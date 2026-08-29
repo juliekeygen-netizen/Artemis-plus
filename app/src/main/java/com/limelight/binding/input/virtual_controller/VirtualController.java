@@ -5,6 +5,7 @@
 package com.limelight.binding.input.virtual_controller;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -44,6 +45,9 @@ public class VirtualController {
     }
 
     private static final boolean _PRINT_DEBUG_INFORMATION = false;
+    private static final String OSC_EDITING_PREFERENCES = "ArtemisPlusOscEditing";
+    private static final String KEY_SNAPPING_ENABLED = "snapping_enabled";
+    private static final String KEY_PAIRED_SIZING_ENABLED = "paired_sizing_enabled";
 
     private final ControllerHandler controllerHandler;
     private final Context context;
@@ -69,17 +73,20 @@ public class VirtualController {
 
     private final VibrationEffect defaultVibrationEffect;
 
-    // OSC layout editing helpers. These are deliberately local to the controller rather than
-    // preferences for now, matching Diana's quick configuration behaviour while keeping the
-    // newer Marssvoodoo streaming base untouched.
-    private boolean snappingEnabled = true;
-    private boolean pairedSizingEnabled = true;
+    private boolean snappingEnabled;
+    private boolean pairedSizingEnabled;
 
     public VirtualController(final ControllerHandler controllerHandler, FrameLayout layout, final Context context) {
         this.controllerHandler = controllerHandler;
         this.frame_layout = layout;
         this.context = context;
         this.handler = new Handler(Looper.getMainLooper());
+
+        SharedPreferences editingPreferences = context.getSharedPreferences(
+                OSC_EDITING_PREFERENCES,
+                Context.MODE_PRIVATE);
+        this.snappingEnabled = editingPreferences.getBoolean(KEY_SNAPPING_ENABLED, true);
+        this.pairedSizingEnabled = editingPreferences.getBoolean(KEY_PAIRED_SIZING_ENABLED, true);
 
         this.vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -211,12 +218,13 @@ public class VirtualController {
     }
 
     public boolean toggleSnapping() {
-        snappingEnabled = !snappingEnabled;
+        setSnappingEnabled(!snappingEnabled);
         return snappingEnabled;
     }
 
     public void setSnappingEnabled(boolean enabled) {
         snappingEnabled = enabled;
+        persistEditingPreference(KEY_SNAPPING_ENABLED, enabled);
     }
 
     public boolean isPairedSizingEnabled() {
@@ -224,12 +232,20 @@ public class VirtualController {
     }
 
     public boolean togglePairedSizing() {
-        pairedSizingEnabled = !pairedSizingEnabled;
+        setPairedSizingEnabled(!pairedSizingEnabled);
         return pairedSizingEnabled;
     }
 
     public void setPairedSizingEnabled(boolean enabled) {
         pairedSizingEnabled = enabled;
+        persistEditingPreference(KEY_PAIRED_SIZING_ENABLED, enabled);
+    }
+
+    private void persistEditingPreference(String key, boolean value) {
+        context.getSharedPreferences(OSC_EDITING_PREFERENCES, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(key, value)
+                .apply();
     }
 
     private static final void _DBG(String text) {

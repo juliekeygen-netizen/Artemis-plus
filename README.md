@@ -130,35 +130,53 @@ Those can be evaluated independently without pulling Diana's foldable dependenci
 
 Artemis Plus is primarily intended for [Apollo](https://github.com/ClassicOldSong/Apollo), while retaining the compatibility inherited from its Artemis base where possible.
 
-## Easy debug APK build
+## Download the latest debug APK
 
-You do **not** need Android Studio just to get a test APK. The repository includes a GitHub Actions workflow that builds debug-signed APKs in the cloud.
+The easiest download is the rolling [**Artemis Plus Debug (Latest)**](https://github.com/juliekeygen-netizen/Artemis-plus/releases/tag/debug-latest) prerelease.
+
+Every successful build of `main` automatically refreshes that same release and moves the `debug-latest` tag to the newly built commit, so the URL stays stable instead of creating hundreds of release entries.
+
+1. Open **Releases** and choose **Artemis Plus Debug (Latest)**.
+2. Download the APK matching your device CPU.
+3. For almost all modern Android phones/tablets, choose **`app-nonRoot_game-arm64-v8a-debug.apk`**.
+4. Install the APK on Android.
+
+The release also contains `INSTALL.txt` and `SHA256SUMS.txt`. These are debug-signed test builds, and the debug application ID is separate from the normal release application ID, so the build can normally coexist with a regular Artemis installation.
+
+The workflow also keeps the **Artemis-Plus-debug-APKs** GitHub Actions artifact for 30 days as a secondary download method.
+
+### Trigger a cloud build manually
+
+You do **not** need Android Studio just to get a test APK:
 
 1. Open the repository's **Actions** tab.
 2. Choose **Build Debug APK**.
 3. Click **Run workflow** and run it from `main`.
-4. Open the completed workflow run and download the **Artemis-Plus-debug-APKs** artifact.
-5. Extract the ZIP and install the APK matching your device CPU. `arm64-v8a` is the usual choice for modern Android phones/tablets.
-
-The artifact also contains `INSTALL.txt` and SHA-256 checksums. The debug application ID is separate from the normal release application ID, so the debug build can normally coexist with a regular Artemis installation.
+4. When the build succeeds, the **Artemis Plus Debug (Latest)** Release is refreshed automatically and the Actions artifact is uploaded too.
 
 ### Local build
 
 If you want to build locally instead:
 
-1. Install Android Studio and the Android NDK required by the project.
+1. Install Android Studio / the Android SDK and the Android NDK required by the project.
 2. Clone the repository with its submodules, or run:
 
    ```bash
    git submodule update --init --recursive
    ```
 
-3. Create `local.properties` in the project root if needed and point `ndk.dir` at your installed Android NDK.
+3. Create `local.properties` in the project root and point `sdk.dir` at your Android SDK if Gradle does not find it automatically. Install Android platform 36 and NDK `27.0.12077973` to match CI.
 4. Run:
 
    ```bash
    ./gradlew :app:assembleNonRoot_gameDebug
    ```
+
+On Windows PowerShell use:
+
+```powershell
+.\gradlew.bat :app:assembleNonRoot_gameDebug
+```
 
 The generated APKs are placed under `app/build/outputs/apk/`.
 

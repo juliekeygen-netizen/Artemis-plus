@@ -3,8 +3,19 @@ package com.limelight.binding.input.virtual_controller.keyboard;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import org.junit.Test;
+import android.content.Context;
+import android.view.View;
+import android.widget.FrameLayout;
 
+import androidx.test.core.app.ApplicationProvider;
+
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
+
+@Config(sdk = {33})
+@RunWith(RobolectricTestRunner.class)
 public class LayoutSnappingHelperTest {
     @Test
     public void groupsSideBySideControlsAtMoveSnapSpacing() {
@@ -54,5 +65,47 @@ public class LayoutSnappingHelperTest {
         assertFalse(LayoutSnappingHelper.areGrouped(
                 100, 100, 40, 40,
                 144, 145, 40, 40));
+    }
+
+    @Test
+    public void sideSpacingSnapLocksHorizontalAxisForMoveHysteresis() {
+        Context context = ApplicationProvider.getApplicationContext();
+        View moving = sizedView(context, 0, 0, 40, 40);
+        View anchor = sizedView(context, 100, 100, 40, 40);
+
+        LayoutSnappingHelper.SnapResult result = LayoutSnappingHelper.calculateSnappedPosition(
+                moving,
+                new View[]{anchor},
+                146,
+                100);
+
+        assertTrue(result.didAdjustSpacing || result.didSnap);
+        assertTrue(result.lockX);
+    }
+
+    @Test
+    public void stackedSpacingSnapLocksVerticalAxisForMoveHysteresis() {
+        Context context = ApplicationProvider.getApplicationContext();
+        View moving = sizedView(context, 0, 0, 40, 40);
+        View anchor = sizedView(context, 100, 100, 40, 40);
+
+        LayoutSnappingHelper.SnapResult result = LayoutSnappingHelper.calculateSnappedPosition(
+                moving,
+                new View[]{anchor},
+                100,
+                146);
+
+        assertTrue(result.didAdjustSpacing || result.didSnap);
+        assertTrue(result.lockY);
+    }
+
+    private static View sizedView(Context context, int left, int top, int width, int height) {
+        View view = new View(context);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
+        params.leftMargin = left;
+        params.topMargin = top;
+        view.setLayoutParams(params);
+        view.layout(left, top, left + width, top + height);
+        return view;
     }
 }

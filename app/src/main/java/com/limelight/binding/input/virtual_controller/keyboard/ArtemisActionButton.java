@@ -8,6 +8,9 @@ import android.widget.FrameLayout;
 
 import androidx.core.content.ContextCompat;
 
+import com.limelight.ArtemisAction;
+import com.limelight.ArtemisActionStateReader;
+import com.limelight.Game;
 import com.limelight.R;
 
 import org.json.JSONException;
@@ -25,33 +28,39 @@ final class ArtemisActionButton extends KeyBoardDigitalButton {
     private static final float MIN_SIZE_DP = 24f;
     private static final float ICON_PADDING_RATIO = 6f / 36f;
     private static final float EDITOR_RING_RATIO = 2f / 36f;
+    private static final long STATE_REFRESH_MS = 400L;
 
     private static final int EDIT_MOVE_COLOR = 0xF0FF0000;
     private static final int EDIT_RESIZE_COLOR = 0xF0FF00FF;
     private static final int EDIT_ENABLED_COLOR = 0xF000FF00;
     private static final int EDIT_DISABLED_COLOR = 0xF0AAAAAA;
+    // Match the active native Zoom/Pan control's #FF4CAF50 outline exactly.
+    private static final int ACTIVE_TOGGLE_COLOR = 0xFF4CAF50;
 
+    private final ArtemisAction action;
     private final int primaryIconRes;
     private final int alternateIconRes;
     private final int minimumSizePx;
     private final Paint editorPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private int displayedIconRes;
+    private Boolean explicitToggleState;
 
     ArtemisActionButton(KeyBoardController controller,
                         String elementId,
                         Context context,
+                        ArtemisAction action,
                         int primaryIconRes,
                         int alternateIconRes) {
         super(controller, elementId, 1, context);
+        this.action = action;
         this.primaryIconRes = primaryIconRes;
         this.alternateIconRes = alternateIconRes;
         this.displayedIconRes = primaryIconRes;
         this.minimumSizePx = Math.max(1,
                 Math.round(MIN_SIZE_DP * context.getResources().getDisplayMetrics().density));
 
-        // This is the exact shell used by Artemis's native floating Menu and Zoom/Pan buttons:
-        // #CC000000 oval, 2dp #AAFFFFFF stroke, and the same white ripple feedback.
+        // Exact shell used by Artemis's native floating Menu and Zoom/Pan buttons.
         setBackgroundResource(R.drawable.floating_menu_button);
     }
 
@@ -63,14 +72,35 @@ final class ArtemisActionButton extends KeyBoardDigitalButton {
         }
     }
 
+    void setExplicitToggleState(Boolean state) {
+        if (explicitToggleState == null ? state != null : !explicitToggleState.equals(state)) {
+            explicitToggleState = state;
+            invalidate();
+        }
+    }
+
     int getDisplayedIconResForTest() {
         return displayedIconRes;
+    }
+
+    Boolean getExplicitToggleStateForTest() {
+        return explicitToggleState;
     }
 
     @Override
     protected void onElementDraw(Canvas canvas) {
         drawActionIcon(canvas);
+        drawRuntimeToggleState(canvas);
         drawEditorStateRing(canvas);
+
+        // Some states can also be changed by the native quick menu/floating controls. A very light
+        // periodic redraw keeps these action indicators synchronized without wiring invasive
+        // callbacks through the legacy Game class.
+        if (virtualController != null &&
+                virtualController.getControllerMode() == KeyBoardController.ControllerMode.Active &&
+                isToggleCapableAction()) {
+            postInvalidateDelayed(STATE_REFRESH_MS);
+        }
     }
 
     private void drawActionIcon(Canvas canvas) {
@@ -91,10 +121,29 @@ final class ArtemisActionButton extends KeyBoardDigitalButton {
         drawable.draw(canvas);
     }
 
-    /**
-     * The old text-style keyboard buttons changed their outline color while editing. Since action
-     * controls now reuse the native floating-button shell, draw the same editor-state cue over it.
-     */
+    private void drawRuntimeToggleState(Canvas canvas) {
+        if (virtualController == null ||
+                virtualController.getControllerMode() != KeyBoardController.ControllerMode.Active) {
+            return;
+        }
+
+        Boolean active = explicitToggleState != null
+                ? explicitToggleState
+                : ArtemisActionStateReader.getToggleState(action, Game.instance);
+        if (!Boolean.TRUE.equals(active)) {
+            return;
+        }
+
+        float side = Math.min(getWidth(), getHeight());
+        float stroke = Math.max(1f, side * EDITOR_RING_RATIO);
+        float inset = stroke / 2f;
+        editorPaint.setStyle(Paint.Style.STROKE);
+        editorPaint.setStrokeWidth(stroke);
+        editorPaint.setColor(ACTIVE_TOGGLE_COLOR);
+        canvas.drawOval(inset, inset, getWidth() - inset, getHeight() - inset, editorPaint);
+    }
+
+    /** Editor colors always win over the runtime green on/off indicator. */
     private void drawEditorStateRing(Canvas canvas) {
         if (virtualController == null) {
             return;
@@ -126,6 +175,26 @@ final class ArtemisActionButton extends KeyBoardDigitalButton {
         canvas.drawOval(inset, inset, getWidth() - inset, getHeight() - inset, editorPaint);
     }
 
+    private boolean isToggleCapableAction() {
+        switch (action) {
+            case TOGGLE_HUD:
+            case TOGGLE_STATS_OVERLAY:
+            case TOGGLE_FLOATING_MENU:
+            case TOUCH_SENSITIVITY:
+            case TOGGLE_ZOOM:
+            case TOGGLE_VIRTUAL_CONTROLLER:
+            case TOGGLE_KEYBOARD_CONTROLLER:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    @Override
+    protected int getMinimumResizeSizePx() {
+        return minimumSizePx;
+    }
+
     @Override
     protected void resizeElement(int pressedX, int pressedY, int x, int y) {
         int deltaX = x - pressedX;
@@ -147,10 +216,14 @@ final class ArtemisActionButton extends KeyBoardDigitalButton {
     }
 
     @Override
+    public void resetSizeToDefault() {
+        super.resetSizeToDefault();
+        enforceSquareGeometry();
+    }
+
+    @Override
     public void loadConfiguration(JSONObject configuration) throws JSONException {
         super.loadConfiguration(configuration);
-        // Existing installs may have rectangular text-action geometry saved from the pre-icon
-        // implementation. Migrate that geometry to a square once it is loaded.
         enforceSquareGeometry();
     }
 

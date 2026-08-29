@@ -28,7 +28,15 @@ public class LayoutSnappingHelperTest {
     }
 
     @Test
-    public void doesNotGroupBeyondSpacingAdjustmentRange() {
+    public void veryLargeUniformScaleKeepsProportionalGapGrouped() {
+        // A 4px gap on a 40px button becomes 40px after a 10x uniform group scale.
+        assertTrue(LayoutSnappingHelper.areGrouped(
+                100, 100, 400, 400,
+                540, 100, 400, 400));
+    }
+
+    @Test
+    public void doesNotGroupBeyondSpacingAdjustmentRangeAtNormalSize() {
         assertFalse(LayoutSnappingHelper.areGrouped(
                 100, 100, 40, 40,
                 171, 100, 40, 40));

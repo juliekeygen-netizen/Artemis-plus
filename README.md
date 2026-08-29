@@ -4,7 +4,7 @@ Artemis Plus is an experimental community derivative of **Artemis Android** focu
 
 It is built on **Marssvoodoo/artemis-android**, which carries forward Artemis with newer reconnect, Wi-Fi telemetry, performance-overlay, and stability work. Artemis Plus selectively ports useful On-Screen Controller (OSC) ideas from **ZDPepos/diana-oscsuite** instead of replacing the newer streaming base with Diana's older branch.
 
-> **Status:** active development. The first Diana-inspired OSC/action-button implementation has completed a second implementation audit with state-recovery fixes, dedicated regression tests, and a verified GitHub Actions debug-APK build.
+> **Status:** active development. The Diana-inspired OSC/action-button implementation has completed multiple implementation audits with state-recovery fixes, dedicated regression tests, verified APK builds, expanded local actions, and persistent native floating-control positions.
 
 ## Project lineage
 
@@ -83,21 +83,26 @@ Per-game profile metadata support is being laid down internally, but automatic p
 
 ## Floating Artemis Action buttons
 
-The custom keyboard/buttons OSC layer can now contain controls that execute an action **inside Artemis itself** instead of sending a keyboard/mouse/gamepad input to the PC.
+The custom keyboard/buttons OSC layer can contain controls that execute an action **inside Artemis itself** instead of sending a keyboard/mouse/gamepad input to the PC.
 
 Current local actions are:
 
 - **Soft Keyboard** — show/hide the Android soft keyboard
 - **Full Keyboard** — toggle Artemis's full on-screen keyboard
-- **Rotate Screen**
-- **Quick Menu**
-- **Toggle HUD**
+- **Rotate Screen** — manually switch landscape/portrait using the Artemis Plus rotation path
+- **Quick Menu** — open Artemis's floating game menu
+- **Performance HUD** — toggle the legacy performance-statistics HUD (`performanceOverlay`); this is not a hide-all-UI control
+- **Stats Overlay** — toggle the newer Artemis/Marssvoodoo statistics overlay
+- **Floating Menu Button** — show/hide the native floating Quick Menu button
+- **Touch Sensitivity** — toggle Artemis's custom touch-sensitivity processing
+- **Clipboard to PC** — force-send the Android clipboard to the host
+- **Clipboard from PC** — fetch the host clipboard into Android
 - **Mouse Mode** — open Artemis's mouse-mode selector
-- **Toggle Zoom**
+- **Toggle Zoom** — toggle pan/zoom interaction mode
 - **Gamepad Overlay** — toggle the virtual gamepad
-- **Custom Buttons Overlay** — toggle the custom-button/keyboard controller
+- **Custom Buttons** — collapse/restore the custom-key/action layer while leaving this toggle itself visible so it can always restore the hidden controls
 
-These use the existing custom OSC element system, so they can be moved, resized, hidden/enabled, and have their geometry persisted like normal buttons. Unlike ordinary keyboard buttons, Artemis-local action buttons require a deliberate direct press: sliding a held finger across neighbouring keys cannot accidentally trigger actions such as Rotate, Menu, or HUD.
+These use the existing custom OSC element system, so they can be moved, resized, hidden/enabled, and have their geometry persisted like normal buttons. Unlike ordinary keyboard buttons, Artemis-local action buttons require a deliberate direct press: sliding a held finger across neighbouring keys cannot accidentally trigger local actions such as Rotate, Menu, or Performance HUD.
 
 ### Adding action buttons
 
@@ -110,16 +115,26 @@ These use the existing custom OSC element system, so they can be moved, resized,
 
 The action selection is stored per existing keyboard OSC layout/profile. Hidden action state survives layout restoration, while explicitly re-adding an action makes it visible again. Support for putting Artemis actions directly into the existing custom-key import/export JSON format is still planned.
 
+### Native floating-control position memory
+
+The native **floating Quick Menu button** and **Zoom/Pan button** now remember where you drag them between stream sessions.
+
+- Their final positions are saved automatically when a drag ends.
+- Position is stored as normalized screen coordinates instead of raw pixels, making restoration safer across resolution changes.
+- Portrait and landscape positions are stored independently.
+- Existing click/drag behavior is otherwise unchanged.
+
 ## Existing deposited controls
 
 The Marssvoodoo base already contained much of Diana's useful keyboard-OSC work, including the **Add Keys** flow for depositing keyboard keys, mouse controls, joysticks/D-pads, and imported custom key combinations into the movable on-screen layer. Artemis Plus keeps that code and extends the same layer with **Add Actions** rather than replacing it.
 
 ## Not ported yet
 
-The first pass intentionally does **not** include everything from Diana:
+The current pass intentionally does **not** include everything from Diana or every planned Artemis Plus UI refinement:
 
 - Automatic per-game OSC profile selection/UI
 - Artemis Action entries in custom-key import/export files
+- Icon-based Artemis Action buttons and aspect-ratio-locked action-button resizing
 - Final localization/icons/polish for the new menus
 - Diana's foldable cover-screen trigger controller and analog trigger emulation
 - Diana's full profile-overlay/cover-screen UX
@@ -156,7 +171,15 @@ You do **not** need Android Studio just to get a test APK:
 
 ### Local build
 
-If you want to build locally instead:
+For the simplest Windows workflow after the SDK/JDK are configured, run from the repository root:
+
+```powershell
+.\build-apk.ps1
+```
+
+That builds the non-root debug variant, selects the ARM64 APK, and copies it to the repository root as `Artemis-Plus-debug-arm64.apk`. Use `-OpenFolder` if you want Explorer to open with the result selected.
+
+For a manual Gradle build instead:
 
 1. Install Android Studio / the Android SDK and the Android NDK required by the project.
 2. Clone the repository with its submodules, or run:
@@ -187,6 +210,7 @@ GitHub Actions uses the non-root debug variant as the main verification target:
 - Java compilation is a hard gate.
 - Artemis Plus OSC/profile/action regression tests are hard gates.
 - The complete inherited Artemis/Marssvoodoo Robolectric suite is also run and its reports are uploaded for diagnostics.
+- The debug APK workflow performs a full installable APK assembly in addition to Java compilation.
 
 The inherited test baseline currently contains five known Robolectric failures across `LayoutInflationTest`, `SimpleStartupTest`, `StartupTest`, and `ProfilesNavigationTest`. The second audit reproduced the same five failures from the **pre-OSC base commit** (`f5587a81d73bf2501b68f1e5a48ca736aa5520a2`), proving they were not introduced by the Artemis Plus OSC changes. They remain visible in CI reports instead of being hidden, but do not make unrelated OSC commits fail their gate.
 

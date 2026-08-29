@@ -21,6 +21,9 @@ gen/
 local.properties
 key/
 
+# Artemis Plus persistent signing material. Never commit the private key or passwords.
+.artemis-signing/
+
 # Windows thumbnail db
 Thumbs.db
 

@@ -21,6 +21,20 @@ public class LayoutSnappingHelperTest {
     }
 
     @Test
+    public void scaledMoveSnapGapRemainsGrouped() {
+        assertTrue(LayoutSnappingHelper.areGrouped(
+                100, 100, 80, 80,
+                200, 100, 80, 80));
+    }
+
+    @Test
+    public void doesNotGroupBeyondSpacingAdjustmentRange() {
+        assertFalse(LayoutSnappingHelper.areGrouped(
+                100, 100, 40, 40,
+                171, 100, 40, 40));
+    }
+
+    @Test
     public void doesNotGroupDistantAlignedControls() {
         assertFalse(LayoutSnappingHelper.areGrouped(
                 100, 100, 40, 40,

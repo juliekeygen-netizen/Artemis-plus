@@ -1,5 +1,6 @@
 package com.limelight.binding.input.virtual_controller.keyboard;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -8,6 +9,7 @@ import android.content.Context;
 import androidx.test.core.app.ApplicationProvider;
 
 import com.limelight.ArtemisAction;
+import com.limelight.R;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -35,5 +37,21 @@ public class ArtemisActionButtonFactoryTest {
                 context);
 
         assertFalse(button.isSlideActivationEnabled());
+        assertTrue(button instanceof ArtemisActionButton);
+    }
+
+    @Test
+    public void customButtonsToggleUsesStateAwareEyeIcons() {
+        Context context = ApplicationProvider.getApplicationContext();
+        ArtemisActionButton button = (ArtemisActionButton) ArtemisActionButtonFactory.createButton(
+                ArtemisAction.TOGGLE_KEYBOARD_CONTROLLER,
+                null,
+                context);
+
+        assertEquals(R.drawable.ic_artemis_action_eye_closed, button.getDisplayedIconResForTest());
+        button.setAlternateIcon(true);
+        assertEquals(R.drawable.ic_artemis_action_eye, button.getDisplayedIconResForTest());
+        button.setAlternateIcon(false);
+        assertEquals(R.drawable.ic_artemis_action_eye_closed, button.getDisplayedIconResForTest());
     }
 }

@@ -14,6 +14,7 @@ import androidx.preference.PreferenceManager;
 
 import com.limelight.ArtemisAction;
 import com.limelight.Game;
+import com.limelight.R;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -101,13 +102,14 @@ public final class ArtemisActionButtonFactory {
     public static KeyBoardDigitalButton createButton(ArtemisAction action,
                                                      KeyBoardController controller,
                                                      Context context) {
-        KeyBoardDigitalButton button = new KeyBoardDigitalButton(
+        ArtemisActionButton button = new ArtemisActionButton(
                 controller,
                 elementId(action),
-                1,
-                context);
-        button.setText(shortLabel(action));
-        button.setIcon(-1);
+                context,
+                primaryIcon(action),
+                alternateIcon(action));
+        button.setContentDescription(action.getLabel());
+
         // Normal keyboard buttons support sliding a held finger across neighbouring keys. Local
         // Artemis actions can rotate the screen, open menus, or hide overlays, so they must only
         // run from an intentional direct press rather than a slide gesture.
@@ -115,7 +117,9 @@ public final class ArtemisActionButtonFactory {
         button.addDigitalButtonListener(new KeyBoardDigitalButton.DigitalButtonListener() {
             @Override
             public void onClick() {
-                controller.vibrate(KeyEvent.ACTION_DOWN);
+                if (controller != null) {
+                    controller.vibrate(KeyEvent.ACTION_DOWN);
+                }
                 if (action == ArtemisAction.TOGGLE_KEYBOARD_CONTROLLER) {
                     toggleCustomButtonsKeepingToggle(controller, button);
                 } else {
@@ -130,7 +134,9 @@ public final class ArtemisActionButtonFactory {
 
             @Override
             public void onRelease() {
-                controller.vibrate(KeyEvent.ACTION_UP);
+                if (controller != null) {
+                    controller.vibrate(KeyEvent.ACTION_UP);
+                }
             }
         });
         return button;
@@ -138,9 +144,14 @@ public final class ArtemisActionButtonFactory {
 
     private static void toggleCustomButtonsKeepingToggle(KeyBoardController controller,
                                                           keyBoardVirtualControllerElement toggle) {
+        if (controller == null) {
+            return;
+        }
+
         boolean collapsed = Boolean.TRUE.equals(COLLAPSED_CONTROLLERS.get(controller));
         if (collapsed) {
             COLLAPSED_CONTROLLERS.put(controller, false);
+            setToggleCollapsedVisual(toggle, false);
             controller.showEnabledElements();
             if (!toggle.hidden && toggle.enabled) {
                 toggle.setVisibility(View.VISIBLE);
@@ -149,26 +160,41 @@ public final class ArtemisActionButtonFactory {
         }
 
         COLLAPSED_CONTROLLERS.put(controller, true);
+        setToggleCollapsedVisual(toggle, true);
         for (keyBoardVirtualControllerElement element : controller.getElements()) {
             element.setVisibility(element == toggle ? View.VISIBLE : View.GONE);
         }
     }
 
     private static void applyCollapsedState(KeyBoardController controller) {
-        if (!Boolean.TRUE.equals(COLLAPSED_CONTROLLERS.get(controller))) {
-            return;
-        }
-
         keyBoardVirtualControllerElement toggle = findElement(
                 controller,
                 ArtemisAction.TOGGLE_KEYBOARD_CONTROLLER);
-        if (toggle == null || toggle.hidden || !toggle.enabled) {
-            COLLAPSED_CONTROLLERS.remove(controller);
+
+        boolean collapsed = Boolean.TRUE.equals(COLLAPSED_CONTROLLERS.get(controller));
+        if (!collapsed) {
+            setToggleCollapsedVisual(toggle, false);
             return;
         }
 
+        if (toggle == null || toggle.hidden || !toggle.enabled) {
+            COLLAPSED_CONTROLLERS.remove(controller);
+            setToggleCollapsedVisual(toggle, false);
+            return;
+        }
+
+        setToggleCollapsedVisual(toggle, true);
         for (keyBoardVirtualControllerElement element : controller.getElements()) {
             element.setVisibility(element == toggle ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    private static void setToggleCollapsedVisual(keyBoardVirtualControllerElement toggle,
+                                                 boolean collapsed) {
+        if (toggle instanceof ArtemisActionButton) {
+            // Expanded layer: closed-eye icon means "hide these controls".
+            // Collapsed layer: open-eye icon means "show the controls again".
+            ((ArtemisActionButton) toggle).setAlternateIcon(collapsed);
         }
     }
 
@@ -211,6 +237,10 @@ public final class ArtemisActionButtonFactory {
 
     private static keyBoardVirtualControllerElement findElement(KeyBoardController controller,
                                                                  ArtemisAction action) {
+        if (controller == null) {
+            return null;
+        }
+
         String id = elementId(action);
         for (keyBoardVirtualControllerElement element : controller.getElements()) {
             if (id.equals(element.elementId)) {
@@ -221,15 +251,9 @@ public final class ArtemisActionButtonFactory {
     }
 
     private static int calculateButtonSize(Context context) {
-        DisplayMetrics screen = context.getResources().getDisplayMetrics();
-        int buttonUnits = 10;
-        int size = KeyBoardControllerConfigurationLoader.screenScale(buttonUnits, screen.heightPixels);
-        int max = screen.widthPixels / 18;
-        if (size > max) {
-            buttonUnits = KeyBoardControllerConfigurationLoader.screenScaleSwitch(max, screen.heightPixels);
-            size = KeyBoardControllerConfigurationLoader.screenScale(buttonUnits, screen.heightPixels);
-        }
-        return Math.max(size, 44);
+        // Match the native floating Menu and Zoom/Pan buttons exactly at their default 36dp size.
+        return Math.max(1, Math.round(
+                ArtemisActionButton.DEFAULT_SIZE_DP * context.getResources().getDisplayMetrics().density));
     }
 
     private static int[] findFreePosition(KeyBoardController controller, Context context, int size) {
@@ -312,38 +336,44 @@ public final class ArtemisActionButtonFactory {
         return "artemis_action_" + action.getId();
     }
 
-    private static String shortLabel(ArtemisAction action) {
+    private static int primaryIcon(ArtemisAction action) {
         switch (action) {
             case SOFT_KEYBOARD:
-                return "Soft KB";
+                return R.drawable.ic_artemis_action_keyboard_soft;
             case FULL_KEYBOARD:
-                return "Full KB";
+                return R.drawable.ic_artemis_action_keyboard_full;
             case ROTATE_SCREEN:
-                return "Rotate";
+                return R.drawable.ic_artemis_action_rotate;
             case QUICK_MENU:
-                return "Menu";
+                return R.drawable.ic_artemis_action_menu;
             case TOGGLE_HUD:
-                return "Perf HUD";
+                return R.drawable.ic_artemis_action_gauge;
             case TOGGLE_STATS_OVERLAY:
-                return "Stats";
+                return R.drawable.ic_artemis_action_chart;
             case TOGGLE_FLOATING_MENU:
-                return "Menu Btn";
+                return R.drawable.ic_artemis_action_menu_floating;
             case TOUCH_SENSITIVITY:
-                return "Touch Sens";
+                return R.drawable.ic_artemis_action_touch;
             case SEND_CLIPBOARD:
-                return "Clip > PC";
+                return R.drawable.ic_artemis_action_clipboard_out;
             case FETCH_CLIPBOARD:
-                return "PC > Clip";
+                return R.drawable.ic_artemis_action_clipboard_in;
             case MOUSE_MODE:
-                return "Mouse";
+                return R.drawable.ic_artemis_action_mouse;
             case TOGGLE_ZOOM:
-                return "Zoom";
+                return R.drawable.ic_artemis_action_zoom_pan;
             case TOGGLE_VIRTUAL_CONTROLLER:
-                return "Gamepad";
+                return R.drawable.ic_artemis_action_gamepad;
             case TOGGLE_KEYBOARD_CONTROLLER:
-                return "Buttons";
+                return R.drawable.ic_artemis_action_eye_closed;
             default:
-                return action.getLabel();
+                throw new IllegalArgumentException("No icon for action: " + action);
         }
+    }
+
+    private static int alternateIcon(ArtemisAction action) {
+        return action == ArtemisAction.TOGGLE_KEYBOARD_CONTROLLER
+                ? R.drawable.ic_artemis_action_eye
+                : -1;
     }
 }

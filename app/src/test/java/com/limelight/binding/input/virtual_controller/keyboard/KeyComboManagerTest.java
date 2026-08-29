@@ -7,7 +7,12 @@ import android.view.KeyEvent;
 
 import org.json.JSONObject;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
 
+@Config(sdk = {33})
+@RunWith(RobolectricTestRunner.class)
 public class KeyComboManagerTest {
     @Test
     public void singleKeyWithoutModifiersRoundTrips() throws Exception {

@@ -3,22 +3,31 @@ package com.limelight.binding.input.virtual_controller.keyboard;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.Color;
 import android.graphics.Point;
-import android.text.Editable;
+import android.graphics.drawable.GradientDrawable;
 import android.text.InputType;
-import android.text.TextWatcher;
+import android.view.ContextThemeWrapper;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
-import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.Filter;
+import android.widget.Filterable;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.preference.PreferenceManager;
+import androidx.recyclerview.widget.ItemTouchHelper;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import com.limelight.R;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -27,7 +36,9 @@ import org.json.JSONObject;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 /** Creation, editing and per-profile persistence for user-defined key/chord buttons. */
@@ -104,17 +115,95 @@ final class KeyComboManager {
             this.code = code;
         }
 
-        @Override
-        public String toString() {
-            return name;
+        String selectionLabel() {
+            switch (code) {
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                    return "←   Left Arrow";
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    return "→   Right Arrow";
+                case KeyEvent.KEYCODE_DPAD_UP:
+                    return "↑   Up Arrow";
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                    return "↓   Down Arrow";
+                case KeyEvent.KEYCODE_DEL:
+                    return "⌫   Backspace";
+                default:
+                    return name;
+            }
+        }
+
+        boolean matches(CharSequence query) {
+            return keySearchMatches(name, code, query == null ? "" : query.toString());
         }
     }
 
-    private static final class KeyRowModel {
-        KeyOption selected;
+    /** Pure semantic matching helper kept package-visible for regression tests. */
+    static boolean keySearchMatches(String displayName, int keyCode, String query) {
+        String normalizedQuery = normalizeSearch(query);
+        if (normalizedQuery.isEmpty()) {
+            return true;
+        }
 
-        KeyRowModel(KeyOption selected) {
-            this.selected = selected;
+        StringBuilder haystack = new StringBuilder();
+        haystack.append(normalizeSearch(displayName)).append(' ')
+                .append(normalizeSearch(KeyEvent.keyCodeToString(keyCode))).append(' ')
+                .append(searchAliasesForKey(keyCode));
+
+        for (String token : normalizedQuery.split("\\s+")) {
+            if (!token.isEmpty() && haystack.indexOf(token) < 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static String normalizeSearch(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.toLowerCase(Locale.ROOT)
+                .replace('_', ' ')
+                .replace('-', ' ')
+                .trim()
+                .replaceAll("\\s+", " ");
+    }
+
+    private static String searchAliasesForKey(int code) {
+        switch (code) {
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+                return "left left arrow arrow left ← cursor left";
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+                return "right right arrow arrow right → cursor right";
+            case KeyEvent.KEYCODE_DPAD_UP:
+                return "up up arrow arrow up ↑ cursor up";
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                return "down down arrow arrow down ↓ cursor down";
+            case KeyEvent.KEYCODE_DEL:
+                return "backspace back space bksp erase delete backward ⌫";
+            case KeyEvent.KEYCODE_FORWARD_DEL:
+                return "delete del forward delete";
+            case KeyEvent.KEYCODE_ENTER:
+                return "enter return newline";
+            case KeyEvent.KEYCODE_ESCAPE:
+                return "escape esc";
+            case KeyEvent.KEYCODE_SPACE:
+                return "space spacebar space bar";
+            case KeyEvent.KEYCODE_TAB:
+                return "tab tabulator";
+            case KeyEvent.KEYCODE_PAGE_UP:
+                return "page up pageup pgup";
+            case KeyEvent.KEYCODE_PAGE_DOWN:
+                return "page down pagedown pgdn pgdown";
+            case KeyEvent.KEYCODE_MOVE_HOME:
+                return "home beginning start";
+            case KeyEvent.KEYCODE_MOVE_END:
+                return "end ending";
+            case KeyEvent.KEYCODE_INSERT:
+                return "insert ins";
+            case KeyEvent.KEYCODE_CAPS_LOCK:
+                return "caps capslock caps lock";
+            default:
+                return "";
         }
     }
 
@@ -143,10 +232,12 @@ final class KeyComboManager {
             }
 
             int size = controller.getDefaultKeyButtonSize();
-            Point position = controller.findGroupedSpawnPosition(size, size);
+            int width = KeyBoardDigitalButton.minimumWidthForText(context, definition.name, size);
+            Point position = controller.findGroupedSpawnPosition(width, size);
             KeyComboButton button = new KeyComboButton(controller, context, definition);
-            controller.addElement(button, position.x, position.y, size, size);
+            controller.addElement(button, position.x, position.y, width, size);
             controller.loadSavedElementConfiguration(button);
+            button.post(() -> controller.ensureTextButtonWidth(button, definition.name));
         }
     }
 
@@ -161,276 +252,413 @@ final class KeyComboManager {
             return;
         }
 
-        int padding = Math.max(12,
-                Math.round(16 * context.getResources().getDisplayMetrics().density));
-        LinearLayout content = new LinearLayout(context);
+        Context dialogContext = new ContextThemeWrapper(context, R.style.ArtemisEditorDialogTheme);
+        float density = context.getResources().getDisplayMetrics().density;
+        int padding = Math.max(12, Math.round(16 * density));
+
+        LinearLayout content = new LinearLayout(dialogContext);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(padding, padding / 2, padding, 0);
 
-        TextView nameLabel = new TextView(context);
-        nameLabel.setText("Display name");
+        TextView intro = label(dialogContext,
+                "Add one normal key, or build an ordered chord. Modifiers are held while the keys below are pressed in order.",
+                14f, 0xFFBDBDBD);
+        intro.setPadding(0, 0, 0, Math.round(8 * density));
+        content.addView(intro);
+
+        TextView nameLabel = label(dialogContext, "Button label", 13f, Color.WHITE);
         content.addView(nameLabel);
 
-        EditText nameInput = new EditText(context);
+        EditText nameInput = new EditText(dialogContext);
         nameInput.setSingleLine(true);
         nameInput.setInputType(InputType.TYPE_CLASS_TEXT);
-        nameInput.setHint("Example: Back");
+        nameInput.setHint("What should the bubble show?");
+        nameInput.setTextColor(Color.WHITE);
+        nameInput.setHintTextColor(0xFF8E8E93);
         if (existing != null) {
             nameInput.setText(existing.name);
             nameInput.setSelection(nameInput.length());
         }
         content.addView(nameInput);
 
-        TextView modifiersLabel = new TextView(context);
-        modifiersLabel.setText("Modifiers (optional)");
-        modifiersLabel.setPadding(0, padding / 2, 0, 0);
+        TextView modifiersLabel = label(dialogContext, "Hold modifiers (optional)", 13f, Color.WHITE);
+        modifiersLabel.setPadding(0, Math.round(10 * density), 0, 0);
         content.addView(modifiersLabel);
 
-        LinearLayout modifierRow = new LinearLayout(context);
+        LinearLayout modifierRow = new LinearLayout(dialogContext);
         modifierRow.setOrientation(LinearLayout.HORIZONTAL);
-        CheckBox ctrl = modifierCheckBox(context, "Ctrl", KeyEvent.KEYCODE_CTRL_LEFT, existing);
-        CheckBox alt = modifierCheckBox(context, "Alt", KeyEvent.KEYCODE_ALT_LEFT, existing);
-        CheckBox shift = modifierCheckBox(context, "Shift", KeyEvent.KEYCODE_SHIFT_LEFT, existing);
-        CheckBox meta = modifierCheckBox(context, "Win", KeyEvent.KEYCODE_META_LEFT, existing);
+        CheckBox ctrl = modifierCheckBox(dialogContext, "Ctrl", KeyEvent.KEYCODE_CTRL_LEFT, existing);
+        CheckBox alt = modifierCheckBox(dialogContext, "Alt", KeyEvent.KEYCODE_ALT_LEFT, existing);
+        CheckBox shift = modifierCheckBox(dialogContext, "Shift", KeyEvent.KEYCODE_SHIFT_LEFT, existing);
+        CheckBox meta = modifierCheckBox(dialogContext, "Win", KeyEvent.KEYCODE_META_LEFT, existing);
         modifierRow.addView(ctrl);
         modifierRow.addView(alt);
         modifierRow.addView(shift);
         modifierRow.addView(meta);
         content.addView(modifierRow);
 
-        TextView keysLabel = new TextView(context);
-        keysLabel.setText("Keys (pressed from top to bottom)");
-        keysLabel.setPadding(0, padding / 2, 0, padding / 4);
+        TextView keysLabel = label(dialogContext, "Keys", 13f, Color.WHITE);
+        keysLabel.setPadding(0, Math.round(10 * density), 0, Math.round(4 * density));
         content.addView(keysLabel);
 
-        LinearLayout keysContainer = new LinearLayout(context);
-        keysContainer.setOrientation(LinearLayout.VERTICAL);
-        content.addView(keysContainer);
+        AutoCompleteTextView search = new AutoCompleteTextView(dialogContext);
+        search.setHint("Search and add a key…");
+        search.setSingleLine(true);
+        search.setThreshold(0);
+        search.setTextColor(Color.WHITE);
+        search.setHintTextColor(0xFF8E8E93);
+        search.setDropDownHeight(Math.round(300 * density));
+        KeySearchAdapter searchAdapter = new KeySearchAdapter(dialogContext, availableKeys);
+        search.setAdapter(searchAdapter);
+        search.setOnClickListener(v -> search.showDropDown());
+        search.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                search.showDropDown();
+            }
+        });
+        content.addView(search);
 
-        List<KeyRowModel> keyRows = new ArrayList<>();
-        if (existing != null && existing.keys.length > 0) {
+        List<KeyOption> selectedKeys = new ArrayList<>();
+        if (existing != null) {
             for (int code : existing.keys) {
-                KeyOption selected = findOptionByCode(availableKeys, code);
-                if (selected == null) {
-                    selected = new KeyOption("Key " + code, code);
-                }
-                keyRows.add(new KeyRowModel(selected));
+                KeyOption option = findOptionByCode(availableKeys, code);
+                selectedKeys.add(option != null ? option : new KeyOption("Key " + code, code));
             }
         }
-        if (keyRows.isEmpty()) {
-            keyRows.add(new KeyRowModel(null));
-        }
 
-        Runnable[] rerenderHolder = new Runnable[1];
-        rerenderHolder[0] = () -> renderKeyRows(
-                context,
-                keysContainer,
-                keyRows,
-                availableKeys,
-                nameInput,
-                rerenderHolder[0]);
-        rerenderHolder[0].run();
+        TextView orderHint = label(dialogContext,
+                "Selected keys — hold and drag a row to change press order.",
+                12f, 0xFF9E9E9E);
+        orderHint.setPadding(0, Math.round(7 * density), 0, Math.round(4 * density));
+        content.addView(orderHint);
 
-        Button addKeyRow = new Button(context);
-        addKeyRow.setText("+ Add another key");
-        addKeyRow.setOnClickListener(v -> {
-            keyRows.add(new KeyRowModel(null));
-            rerenderHolder[0].run();
+        RecyclerView selectedList = new RecyclerView(dialogContext);
+        selectedList.setLayoutManager(new LinearLayoutManager(dialogContext));
+        SelectedKeysAdapter selectedAdapter = new SelectedKeysAdapter(dialogContext, selectedKeys);
+        selectedList.setAdapter(selectedAdapter);
+        int selectedListHeight = Math.min(
+                Math.round(210 * density),
+                Math.max(Math.round(110 * density), context.getResources().getDisplayMetrics().heightPixels / 3));
+        content.addView(selectedList, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                selectedListHeight));
+
+        ItemTouchHelper selectedTouchHelper = new ItemTouchHelper(new ItemTouchHelper.SimpleCallback(
+                ItemTouchHelper.UP | ItemTouchHelper.DOWN, 0) {
+            @Override
+            public boolean onMove(RecyclerView recyclerView,
+                                  RecyclerView.ViewHolder viewHolder,
+                                  RecyclerView.ViewHolder target) {
+                int from = viewHolder.getBindingAdapterPosition();
+                int to = target.getBindingAdapterPosition();
+                if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION || from == to) {
+                    return false;
+                }
+                Collections.swap(selectedKeys, from, to);
+                selectedAdapter.notifyItemMoved(from, to);
+                return true;
+            }
+
+            @Override
+            public void onSwiped(RecyclerView.ViewHolder viewHolder, int direction) {
+            }
         });
-        content.addView(addKeyRow);
+        selectedTouchHelper.attachToRecyclerView(selectedList);
 
-        TextView help = new TextView(context);
-        help.setText("Type to filter the list, then tap a suggestion to select it. " +
-                "A single key with no modifiers is valid too.");
-        help.setPadding(0, padding / 3, 0, 0);
-        content.addView(help);
+        TextView summary = label(dialogContext, "", 13f, 0xFFE0E0E0);
+        summary.setPadding(0, Math.round(8 * density), 0, 0);
+        content.addView(summary);
 
-        AlertDialog dialog = new AlertDialog.Builder(context)
+        Runnable updateSummary = () -> summary.setText(buildSummary(
+                ctrl.isChecked(), alt.isChecked(), shift.isChecked(), meta.isChecked(), selectedKeys));
+        selectedAdapter.setOnChanged(updateSummary);
+        ctrl.setOnCheckedChangeListener((buttonView, isChecked) -> updateSummary.run());
+        alt.setOnCheckedChangeListener((buttonView, isChecked) -> updateSummary.run());
+        shift.setOnCheckedChangeListener((buttonView, isChecked) -> updateSummary.run());
+        meta.setOnCheckedChangeListener((buttonView, isChecked) -> updateSummary.run());
+        updateSummary.run();
+
+        search.setOnItemClickListener((parent, view, position, id) -> {
+            KeyOption option = (KeyOption) parent.getItemAtPosition(position);
+            selectedKeys.add(option);
+            selectedAdapter.notifyItemInserted(selectedKeys.size() - 1);
+            selectedList.scrollToPosition(selectedKeys.size() - 1);
+            if (nameInput.getText().toString().trim().isEmpty() && selectedKeys.size() == 1) {
+                nameInput.setText(option.name);
+                nameInput.setSelection(nameInput.length());
+            }
+            search.setText("", false);
+            updateSummary.run();
+        });
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(dialogContext)
                 .setTitle(existing == null ? "Add Keys" : "Edit Key")
                 .setView(content)
                 .setPositiveButton(existing == null ? "Add" : "Save", null)
-                .setNegativeButton(android.R.string.cancel, null)
-                .create();
+                .setNegativeButton(android.R.string.cancel, null);
+        if (existing != null) {
+            builder.setNeutralButton("Delete", null);
+        }
+        AlertDialog dialog = builder.create();
 
-        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-                .setOnClickListener(v -> {
-                    String name = nameInput.getText().toString().trim();
-                    if (name.isEmpty()) {
-                        nameInput.setError("Enter a display name");
-                        return;
-                    }
+        dialog.setOnShowListener(ignored -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String name = nameInput.getText().toString().trim();
+                if (name.isEmpty()) {
+                    nameInput.setError("Enter a button label");
+                    return;
+                }
+                if (selectedKeys.isEmpty()) {
+                    Toast.makeText(dialogContext, "Add at least one key", Toast.LENGTH_SHORT).show();
+                    search.requestFocus();
+                    search.showDropDown();
+                    return;
+                }
 
-                    List<Integer> selectedRegularKeys = new ArrayList<>();
-                    for (int i = 0; i < keyRows.size(); i++) {
-                        KeyOption selected = keyRows.get(i).selected;
-                        if (selected == null) {
-                            Toast.makeText(context,
-                                    "Select a key from the dropdown in row " + (i + 1),
-                                    Toast.LENGTH_SHORT).show();
-                            return;
-                        }
-                        selectedRegularKeys.add(selected.code);
-                    }
+                List<Integer> modifiers = new ArrayList<>(4);
+                if (ctrl.isChecked()) modifiers.add(KeyEvent.KEYCODE_CTRL_LEFT);
+                if (alt.isChecked()) modifiers.add(KeyEvent.KEYCODE_ALT_LEFT);
+                if (shift.isChecked()) modifiers.add(KeyEvent.KEYCODE_SHIFT_LEFT);
+                if (meta.isChecked()) modifiers.add(KeyEvent.KEYCODE_META_LEFT);
 
-                    List<Integer> modifiers = new ArrayList<>(4);
-                    if (ctrl.isChecked()) modifiers.add(KeyEvent.KEYCODE_CTRL_LEFT);
-                    if (alt.isChecked()) modifiers.add(KeyEvent.KEYCODE_ALT_LEFT);
-                    if (shift.isChecked()) modifiers.add(KeyEvent.KEYCODE_SHIFT_LEFT);
-                    if (meta.isChecked()) modifiers.add(KeyEvent.KEYCODE_META_LEFT);
+                List<Integer> regular = new ArrayList<>(selectedKeys.size());
+                for (KeyOption option : selectedKeys) {
+                    regular.add(option.code);
+                }
 
-                    Definition updated = new Definition(
-                            existing == null ? newId() : existing.id,
-                            name,
-                            toIntArray(modifiers),
-                            toIntArray(selectedRegularKeys));
+                Definition updated = new Definition(
+                        existing == null ? newId() : existing.id,
+                        name,
+                        toIntArray(modifiers),
+                        toIntArray(regular));
+                saveOrReplaceDefinition(context, updated);
 
-                    List<Definition> definitions = loadDefinitions(context);
-                    boolean replaced = false;
-                    for (int i = 0; i < definitions.size(); i++) {
-                        if (definitions.get(i).id.equals(updated.id)) {
-                            definitions.set(i, updated);
-                            replaced = true;
-                            break;
-                        }
-                    }
-                    if (!replaced) {
-                        definitions.add(updated);
-                    }
-                    saveDefinitions(context, definitions);
+                KeyComboButton button = findButton(controller, updated.id);
+                if (button == null) {
+                    int size = controller.getDefaultKeyButtonSize();
+                    int width = KeyBoardDigitalButton.minimumWidthForText(context, name, size);
+                    Point position = controller.findGroupedSpawnPosition(width, size);
+                    button = new KeyComboButton(controller, context, updated);
+                    controller.addElement(button, position.x, position.y, width, size);
+                } else {
+                    button.updateDefinition(updated);
+                    button.hidden = false;
+                    button.setVisibility(View.VISIBLE);
+                    controller.ensureTextButtonWidth(button, name);
+                }
 
-                    KeyComboButton button = findButton(controller, updated.id);
-                    if (button == null) {
-                        int size = controller.getDefaultKeyButtonSize();
-                        Point position = controller.findGroupedSpawnPosition(size, size);
-                        button = new KeyComboButton(controller, context, updated);
-                        controller.addElement(button, position.x, position.y, size, size);
-                    } else {
-                        button.updateDefinition(updated);
-                        button.hidden = false;
-                        button.setVisibility(View.VISIBLE);
-                    }
+                KeyBoardControllerConfigurationLoader.saveProfile(controller, context);
+                controller.vibrate(KeyEvent.ACTION_DOWN);
+                dialog.dismiss();
+            });
 
-                    KeyBoardControllerConfigurationLoader.saveProfile(controller, context);
-                    controller.vibrate(KeyEvent.ACTION_DOWN);
-                    dialog.dismiss();
-                }));
+            if (existing != null) {
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setTextColor(0xFFFF6B6B);
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v ->
+                        new AlertDialog.Builder(dialogContext)
+                                .setTitle("Delete Key?")
+                                .setMessage("Delete “" + existing.name + "” from this keyboard profile?")
+                                .setPositiveButton("Delete", (confirm, which) -> {
+                                    deleteDefinition(context, existing.id);
+                                    KeyComboButton button = findButton(controller, existing.id);
+                                    if (button != null) {
+                                        controller.removeElement(button);
+                                    }
+                                    KeyBoardControllerConfigurationLoader.saveProfile(controller, context);
+                                    dialog.dismiss();
+                                })
+                                .setNegativeButton(android.R.string.cancel, null)
+                                .show());
+            }
+        });
         dialog.show();
     }
 
-    private static void renderKeyRows(Context context,
-                                      LinearLayout container,
-                                      List<KeyRowModel> rows,
-                                      List<KeyOption> availableKeys,
-                                      EditText displayName,
-                                      Runnable rerender) {
-        container.removeAllViews();
-        for (int index = 0; index < rows.size(); index++) {
-            final int rowIndex = index;
-            KeyRowModel model = rows.get(index);
+    private static String buildSummary(boolean ctrl,
+                                       boolean alt,
+                                       boolean shift,
+                                       boolean meta,
+                                       List<KeyOption> keys) {
+        StringBuilder result = new StringBuilder("Sends: ");
+        boolean hasModifier = false;
+        if (ctrl) { result.append("Ctrl + "); hasModifier = true; }
+        if (alt) { result.append("Alt + "); hasModifier = true; }
+        if (shift) { result.append("Shift + "); hasModifier = true; }
+        if (meta) { result.append("Win + "); hasModifier = true; }
 
+        if (keys.isEmpty()) {
+            result.append(hasModifier ? "…" : "nothing selected yet");
+            return result.toString();
+        }
+        for (int i = 0; i < keys.size(); i++) {
+            if (i > 0) {
+                result.append("  →  ");
+            }
+            result.append(keys.get(i).selectionLabel().replace("   ", " "));
+        }
+        return result.toString();
+    }
+
+    private static TextView label(Context context, String text, float size, int color) {
+        TextView view = new TextView(context);
+        view.setText(text);
+        view.setTextSize(size);
+        view.setTextColor(color);
+        return view;
+    }
+
+    private static final class SelectedKeysAdapter extends RecyclerView.Adapter<SelectedKeysAdapter.Holder> {
+        private final Context context;
+        private final List<KeyOption> keys;
+        private Runnable onChanged;
+
+        SelectedKeysAdapter(Context context, List<KeyOption> keys) {
+            this.context = context;
+            this.keys = keys;
+        }
+
+        void setOnChanged(Runnable onChanged) {
+            this.onChanged = onChanged;
+        }
+
+        @Override
+        public Holder onCreateViewHolder(ViewGroup parent, int viewType) {
+            float density = context.getResources().getDisplayMetrics().density;
             LinearLayout row = new LinearLayout(context);
             row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(Math.round(8 * density), Math.round(5 * density),
+                    Math.round(4 * density), Math.round(5 * density));
+            GradientDrawable background = new GradientDrawable();
+            background.setColor(0xFF2B2B2F);
+            background.setCornerRadius(10 * density);
+            row.setBackground(background);
 
-            AutoCompleteTextView selector = new AutoCompleteTextView(context);
-            selector.setHint("Search key…");
-            selector.setSingleLine(true);
-            selector.setThreshold(0);
-            selector.setDropDownHeight(Math.round(300 * context.getResources().getDisplayMetrics().density));
-            ArrayAdapter<KeyOption> adapter = new ArrayAdapter<>(
-                    context,
-                    android.R.layout.simple_dropdown_item_1line,
-                    availableKeys);
-            selector.setAdapter(adapter);
+            TextView drag = label(context, "≡", 22f, 0xFF9E9E9E);
+            drag.setGravity(Gravity.CENTER);
+            drag.setContentDescription("Hold and drag to reorder");
+            row.addView(drag, new LinearLayout.LayoutParams(
+                    Math.round(34 * density), LinearLayout.LayoutParams.MATCH_PARENT));
 
-            if (model.selected != null) {
-                selector.setText(model.selected.name, false);
+            TextView name = label(context, "", 16f, Color.WHITE);
+            name.setGravity(Gravity.CENTER_VERTICAL);
+            row.addView(name, new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+            TextView remove = label(context, "×", 24f, 0xFFFF8A80);
+            remove.setGravity(Gravity.CENTER);
+            remove.setContentDescription("Remove key");
+            row.addView(remove, new LinearLayout.LayoutParams(
+                    Math.round(42 * density), Math.round(42 * density)));
+
+            RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            params.setMargins(0, Math.round(3 * density), 0, Math.round(3 * density));
+            row.setLayoutParams(params);
+            return new Holder(row, name, remove);
+        }
+
+        @Override
+        public void onBindViewHolder(Holder holder, int position) {
+            holder.name.setText(keys.get(position).selectionLabel());
+            holder.remove.setOnClickListener(v -> {
+                int adapterPosition = holder.getBindingAdapterPosition();
+                if (adapterPosition == RecyclerView.NO_POSITION) {
+                    return;
+                }
+                keys.remove(adapterPosition);
+                notifyItemRemoved(adapterPosition);
+                if (onChanged != null) {
+                    onChanged.run();
+                }
+            });
+        }
+
+        @Override
+        public int getItemCount() {
+            return keys.size();
+        }
+
+        static final class Holder extends RecyclerView.ViewHolder {
+            final TextView name;
+            final TextView remove;
+
+            Holder(View itemView, TextView name, TextView remove) {
+                super(itemView);
+                this.name = name;
+                this.remove = remove;
             }
-
-            selector.setOnClickListener(v -> selector.showDropDown());
-            selector.setOnFocusChangeListener((v, hasFocus) -> {
-                if (hasFocus) {
-                    selector.showDropDown();
-                }
-            });
-            selector.setOnItemClickListener((parent, view, position, id) -> {
-                KeyOption option = (KeyOption) parent.getItemAtPosition(position);
-                model.selected = option;
-                selector.setText(option.name, false);
-                selector.setSelection(selector.length());
-                if (displayName.getText().toString().trim().isEmpty() && rows.size() == 1) {
-                    displayName.setText(option.name);
-                    displayName.setSelection(displayName.length());
-                }
-            });
-            selector.addTextChangedListener(new TextWatcher() {
-                private boolean internal;
-
-                @Override
-                public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-                }
-
-                @Override
-                public void onTextChanged(CharSequence s, int start, int before, int count) {
-                    if (!internal && model.selected != null && !model.selected.name.contentEquals(s)) {
-                        model.selected = null;
-                    }
-                }
-
-                @Override
-                public void afterTextChanged(Editable s) {
-                }
-            });
-
-            LinearLayout.LayoutParams selectorParams = new LinearLayout.LayoutParams(
-                    0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    1f);
-            row.addView(selector, selectorParams);
-
-            Button up = compactButton(context, "↑");
-            up.setEnabled(index > 0);
-            up.setOnClickListener(v -> {
-                if (rowIndex > 0) {
-                    KeyRowModel item = rows.remove(rowIndex);
-                    rows.add(rowIndex - 1, item);
-                    rerender.run();
-                }
-            });
-            row.addView(up);
-
-            Button down = compactButton(context, "↓");
-            down.setEnabled(index < rows.size() - 1);
-            down.setOnClickListener(v -> {
-                if (rowIndex < rows.size() - 1) {
-                    KeyRowModel item = rows.remove(rowIndex);
-                    rows.add(rowIndex + 1, item);
-                    rerender.run();
-                }
-            });
-            row.addView(down);
-
-            Button remove = compactButton(context, "×");
-            remove.setEnabled(rows.size() > 1);
-            remove.setOnClickListener(v -> {
-                if (rows.size() > 1) {
-                    rows.remove(rowIndex);
-                    rerender.run();
-                }
-            });
-            row.addView(remove);
-
-            container.addView(row);
         }
     }
 
-    private static Button compactButton(Context context, String text) {
-        Button button = new Button(context);
-        button.setText(text);
-        button.setMinWidth(0);
-        button.setMinimumWidth(0);
-        int horizontal = Math.max(2, Math.round(4 * context.getResources().getDisplayMetrics().density));
-        button.setPadding(horizontal, 0, horizontal, 0);
-        return button;
+    private static final class KeySearchAdapter extends ArrayAdapter<KeyOption> implements Filterable {
+        private final List<KeyOption> all;
+        private final List<KeyOption> filtered = new ArrayList<>();
+
+        KeySearchAdapter(Context context, List<KeyOption> options) {
+            super(context, android.R.layout.simple_dropdown_item_1line, new ArrayList<>());
+            all = new ArrayList<>(options);
+            filtered.addAll(options);
+        }
+
+        @Override
+        public int getCount() {
+            return filtered.size();
+        }
+
+        @Override
+        public KeyOption getItem(int position) {
+            return filtered.get(position);
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            TextView text = convertView instanceof TextView ? (TextView) convertView : new TextView(getContext());
+            float density = getContext().getResources().getDisplayMetrics().density;
+            text.setText(getItem(position).selectionLabel());
+            text.setTextColor(Color.WHITE);
+            text.setTextSize(16f);
+            text.setPadding(Math.round(14 * density), Math.round(11 * density),
+                    Math.round(14 * density), Math.round(11 * density));
+            text.setBackgroundColor(0xFF262629);
+            return text;
+        }
+
+        @Override
+        public Filter getFilter() {
+            return new Filter() {
+                @Override
+                protected FilterResults performFiltering(CharSequence constraint) {
+                    ArrayList<KeyOption> matches = new ArrayList<>();
+                    for (KeyOption option : all) {
+                        if (option.matches(constraint)) {
+                            matches.add(option);
+                        }
+                    }
+                    FilterResults results = new FilterResults();
+                    results.values = matches;
+                    results.count = matches.size();
+                    return results;
+                }
+
+                @Override
+                @SuppressWarnings("unchecked")
+                protected void publishResults(CharSequence constraint, FilterResults results) {
+                    filtered.clear();
+                    if (results.values != null) {
+                        filtered.addAll((List<KeyOption>) results.values);
+                    }
+                    notifyDataSetChanged();
+                }
+
+                @Override
+                public CharSequence convertResultToString(Object resultValue) {
+                    return resultValue instanceof KeyOption
+                            ? ((KeyOption) resultValue).selectionLabel()
+                            : super.convertResultToString(resultValue);
+                }
+            };
+        }
     }
 
     private static CheckBox modifierCheckBox(Context context,
@@ -439,6 +667,7 @@ final class KeyComboManager {
                                              Definition existing) {
         CheckBox checkBox = new CheckBox(context);
         checkBox.setText(label);
+        checkBox.setTextColor(Color.WHITE);
         if (existing != null) {
             for (int existingCode : existing.modifiers) {
                 if (existingCode == keyCode) {
@@ -495,6 +724,28 @@ final class KeyComboManager {
             }
         }
         return null;
+    }
+
+    private static void saveOrReplaceDefinition(Context context, Definition updated) {
+        List<Definition> definitions = loadDefinitions(context);
+        boolean replaced = false;
+        for (int i = 0; i < definitions.size(); i++) {
+            if (definitions.get(i).id.equals(updated.id)) {
+                definitions.set(i, updated);
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) {
+            definitions.add(updated);
+        }
+        saveDefinitions(context, definitions);
+    }
+
+    private static void deleteDefinition(Context context, String id) {
+        List<Definition> definitions = loadDefinitions(context);
+        definitions.removeIf(definition -> definition.id.equals(id));
+        saveDefinitions(context, definitions);
     }
 
     private static List<Definition> loadDefinitions(Context context) {

@@ -474,18 +474,21 @@ public abstract class keyBoardVirtualControllerElement extends View {
             case MotionEvent.ACTION_UP: {
                 if (currentMode == Mode.Move) {
                     checkAndApplyResize();
-                } else if (currentMode == Mode.Resize &&
-                        event.getActionMasked() == MotionEvent.ACTION_UP &&
-                        !resizeGestureMoved) {
-                    long now = event.getEventTime();
-                    if (lastResizeTapUpTime != 0 &&
-                            now - lastResizeTapUpTime <= ViewConfiguration.getDoubleTapTimeout()) {
-                        resetSizeToDefault();
+                } else if (currentMode == Mode.Resize) {
+                    if (event.getActionMasked() == MotionEvent.ACTION_CANCEL || resizeGestureMoved) {
+                        // A drag/cancel must never remain as the first half of a later double-tap.
                         lastResizeTapUpTime = 0;
-                        virtualController.vibrate(KeyEvent.ACTION_DOWN);
-                        KeyBoardControllerConfigurationLoader.saveProfile(virtualController, getContext());
                     } else {
-                        lastResizeTapUpTime = now;
+                        long now = event.getEventTime();
+                        if (lastResizeTapUpTime != 0 &&
+                                now - lastResizeTapUpTime <= ViewConfiguration.getDoubleTapTimeout()) {
+                            resetSizeToDefault();
+                            lastResizeTapUpTime = 0;
+                            virtualController.vibrate(KeyEvent.ACTION_DOWN);
+                            KeyBoardControllerConfigurationLoader.saveProfile(virtualController, getContext());
+                        } else {
+                            lastResizeTapUpTime = now;
+                        }
                     }
                 }
                 clearGroupedResize();

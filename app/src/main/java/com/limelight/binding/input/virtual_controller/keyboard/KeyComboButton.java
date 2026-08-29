@@ -124,9 +124,9 @@ final class KeyComboButton extends KeyBoardDigitalButton {
 
     private void sendKey(int keyCode, int action) {
         KeyEvent event = new KeyEvent(action, keyCode);
-        // Any non-mouse source routes through Game.onKey(), which performs the normal Android ->
-        // Moonlight key translation and modifier bookkeeping.
-        event.setSource(3);
+        // Source 2 still routes through Game.onKey(), but KeyBoardController suppresses per-key
+        // vibration for that source. The combo itself provides one haptic on chord-down/up instead.
+        event.setSource(2);
         virtualController.sendKeyEvent(event);
     }
 

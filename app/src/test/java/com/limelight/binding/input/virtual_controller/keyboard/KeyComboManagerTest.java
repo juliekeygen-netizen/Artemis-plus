@@ -2,8 +2,13 @@ package com.limelight.binding.input.virtual_controller.keyboard;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
+import android.content.Context;
 import android.view.KeyEvent;
+
+import androidx.test.core.app.ApplicationProvider;
 
 import org.json.JSONObject;
 import org.junit.Test;
@@ -45,5 +50,45 @@ public class KeyComboManagerTest {
         assertArrayEquals(
                 new int[]{KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_ENTER},
                 restored.keys);
+    }
+
+    @Test
+    public void semanticSearchFindsSymbolOnlyArrowKeys() {
+        assertTrue(KeyComboManager.keySearchMatches("←", KeyEvent.KEYCODE_DPAD_LEFT, "left"));
+        assertTrue(KeyComboManager.keySearchMatches("→", KeyEvent.KEYCODE_DPAD_RIGHT, "right arrow"));
+        assertTrue(KeyComboManager.keySearchMatches("↑", KeyEvent.KEYCODE_DPAD_UP, "up"));
+        assertTrue(KeyComboManager.keySearchMatches("↓", KeyEvent.KEYCODE_DPAD_DOWN, "down arrow"));
+        assertFalse(KeyComboManager.keySearchMatches("←", KeyEvent.KEYCODE_DPAD_LEFT, "right"));
+    }
+
+    @Test
+    public void semanticSearchFindsBackspaceAndCommonAliases() {
+        assertTrue(KeyComboManager.keySearchMatches("⌫", KeyEvent.KEYCODE_DEL, "backspace"));
+        assertTrue(KeyComboManager.keySearchMatches("⌫", KeyEvent.KEYCODE_DEL, "bksp"));
+        assertTrue(KeyComboManager.keySearchMatches("Esc", KeyEvent.KEYCODE_ESCAPE, "escape"));
+        assertTrue(KeyComboManager.keySearchMatches("PgDn", KeyEvent.KEYCODE_PAGE_DOWN, "page down"));
+    }
+
+    @Test
+    public void emptyManagedProfileIsBlankButLegacyProfileIsNot() {
+        assertTrue(KeyBoardControllerConfigurationLoader.shouldTreatManagedProfileAsBlank(
+                "ArtemisKeyboardProfile_abc123", false));
+        assertFalse(KeyBoardControllerConfigurationLoader.shouldTreatManagedProfileAsBlank(
+                "ArtemisKeyboardProfile_abc123", true));
+        assertFalse(KeyBoardControllerConfigurationLoader.shouldTreatManagedProfileAsBlank(
+                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE, false));
+        assertFalse(KeyBoardControllerConfigurationLoader.shouldTreatManagedProfileAsBlank(null, false));
+    }
+
+    @Test
+    public void longLabelsGrowBubbleWithoutShrinkingShortLabelsBelowSquare() {
+        Context context = ApplicationProvider.getApplicationContext();
+        int baseSize = 80;
+
+        assertEquals(baseSize, KeyBoardDigitalButton.minimumWidthForText(context, "A", baseSize));
+        assertTrue(KeyBoardDigitalButton.minimumWidthForText(
+                context,
+                "A deliberately long display label",
+                baseSize) > baseSize);
     }
 }

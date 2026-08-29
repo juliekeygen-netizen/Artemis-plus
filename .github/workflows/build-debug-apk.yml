@@ -8,7 +8,11 @@ on:
       - 'audit/**'
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: build-debug-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -76,10 +80,56 @@ jobs:
           echo 'Produced APKs:'
           ls -lh dist/*.apk
 
-      - name: Upload Artemis Plus APKs
+      - name: Upload Artemis Plus APKs as Actions artifact
         uses: actions/upload-artifact@v4
         with:
           name: Artemis-Plus-debug-APKs
           path: dist/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish rolling debug release
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          TAG='debug-latest'
+          TITLE='Artemis Plus Debug (Latest)'
+          SHORT_SHA="${GITHUB_SHA::7}"
+          BUILT_AT="$(date -u '+%Y-%m-%d %H:%M UTC')"
+
+          cat > release-notes.md <<EOF
+          ## Artemis Plus latest debug build
+
+          Automatically built from the current \`main\` branch.
+
+          - Commit: \`${GITHUB_SHA}\`
+          - Short commit: \`${SHORT_SHA}\`
+          - Built: ${BUILT_AT}
+          - Build type: non-root debug
+
+          **Most modern Android phones/tablets should use the \`arm64-v8a\` APK.**
+
+          These are debug-signed test builds. See \`INSTALL.txt\` for the CPU/ABI guide and \`SHA256SUMS.txt\` for checksums.
+          EOF
+
+          # Keep one stable download location instead of creating a release for every commit.
+          # Remove the previous rolling release/tag if they exist, then recreate them at this commit.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes
+          fi
+          git push origin ":refs/tags/$TAG" >/dev/null 2>&1 || true
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG" --force
+
+          gh release create "$TAG" \
+            dist/*.apk \
+            dist/SHA256SUMS.txt \
+            dist/INSTALL.txt \
+            --title "$TITLE" \
+            --notes-file release-notes.md \
+            --prerelease \
+            --verify-tag

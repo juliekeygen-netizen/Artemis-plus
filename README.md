@@ -4,7 +4,7 @@ Artemis Plus is an experimental community derivative of **Artemis Android** focu
 
 It is built on **Marssvoodoo/artemis-android**, which carries forward Artemis with newer reconnect, Wi-Fi telemetry, performance-overlay, and stability work. Artemis Plus selectively ports useful On-Screen Controller (OSC) ideas from **ZDPepos/diana-oscsuite** instead of replacing the newer streaming base with Diana's older branch.
 
-> **Status:** active development. The first OSC/action-button implementation is on `feature/diana-osc-port` while it is compiled and reviewed before merging to `main`.
+> **Status:** active development. The first Diana-inspired OSC/action-button implementation is on `main`; follow-up audit work adds regression tests, state-recovery fixes, and an easy GitHub Actions APK build.
 
 ## Project lineage
 
@@ -61,6 +61,7 @@ The first implementation selectively brings Diana-inspired controller editing id
 - **Smart snapping** — gamepad controls can snap to screen edges, a layout grid, and nearby controls while moving.
 - **Paired sizing** — related groups can resize together, including A/B/X/Y, LT/RT, LB/RB, both sticks, both stick-clicks, and Start/Back.
 - Snapping and paired sizing can each be toggled from the OSC profile dialog.
+- Those two editing preferences persist between controller recreations/app sessions.
 
 ### Multiple OSC profiles
 
@@ -72,6 +73,8 @@ The gamepad OSC now has a basic multi-profile system:
 - Delete profiles (the built-in `Default` profile is protected)
 - Save the current layout
 - Existing Artemis `OSC` layout data remains compatible; Artemis Plus snapshots/restores profiles around the original format rather than replacing it.
+- Invalid/missing profile metadata is repaired back to a valid `Default` state instead of leaving stale profile references behind.
+- Switching profiles while Move/Resize/Enable mode is active preserves that editor mode correctly.
 
 **Usage:** long-press the gamepad OSC settings gear to open **OSC Profiles**. A normal tap on the gear still cycles through enable/disable, move, resize, and active modes as before.
 
@@ -126,7 +129,21 @@ Those can be evaluated independently without pulling Diana's foldable dependenci
 
 Artemis Plus is primarily intended for [Apollo](https://github.com/ClassicOldSong/Apollo), while retaining the compatibility inherited from its Artemis base where possible.
 
-## Building
+## Easy debug APK build
+
+You do **not** need Android Studio just to get a test APK. The repository includes a GitHub Actions workflow that builds debug-signed APKs in the cloud.
+
+1. Open the repository's **Actions** tab.
+2. Choose **Build Debug APK**.
+3. Click **Run workflow** and run it from `main`.
+4. Open the completed workflow run and download the **Artemis-Plus-debug-APKs** artifact.
+5. Extract the ZIP and install the APK matching your device CPU. `arm64-v8a` is the usual choice for modern Android phones/tablets.
+
+The artifact also contains `INSTALL.txt` and SHA-256 checksums. The debug application ID is separate from the normal release application ID, so the debug build can normally coexist with a regular Artemis installation.
+
+### Local build
+
+If you want to build locally instead:
 
 1. Install Android Studio and the Android NDK required by the project.
 2. Clone the repository with its submodules, or run:
@@ -136,9 +153,17 @@ Artemis Plus is primarily intended for [Apollo](https://github.com/ClassicOldSon
    ```
 
 3. Create `local.properties` in the project root if needed and point `ndk.dir` at your installed Android NDK.
-4. Build the APK using Android Studio or Gradle.
+4. Run:
 
-The repository also includes an Android CI compile check for the active OSC port branch/PRs.
+   ```bash
+   ./gradlew :app:assembleNonRoot_gameDebug
+   ```
+
+The generated APKs are placed under `app/build/outputs/apk/`.
+
+## Verification
+
+GitHub Actions now performs both a Java compile check and the `nonRoot_gameDebug` unit-test suite on `main`, audit branches, and pull requests. OSC profile recovery has dedicated regression tests in addition to the existing project tests.
 
 ## Credits
 

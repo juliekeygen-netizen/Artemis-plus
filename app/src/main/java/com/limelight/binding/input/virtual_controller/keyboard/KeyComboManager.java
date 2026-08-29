@@ -4,9 +4,13 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Point;
+import android.text.Editable;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.KeyEvent;
 import android.view.View;
+import android.widget.ArrayAdapter;
+import android.widget.AutoCompleteTextView;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -23,12 +27,10 @@ import org.json.JSONObject;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
-/** Creation, editing and per-OSC-layout persistence for user-defined key-combo buttons. */
+/** Creation, editing and per-profile persistence for user-defined key/chord buttons. */
 final class KeyComboManager {
     private static final String PREFERENCES = "ArtemisPlusKeyCombos";
     private static final String DEFINITIONS_PREFIX = "definitions_";
@@ -87,7 +89,7 @@ final class KeyComboManager {
 
             return new Definition(
                     object.getString("id"),
-                    object.optString("name", "Combo"),
+                    object.optString("name", "Key"),
                     modifiers,
                     keys);
         }
@@ -100,6 +102,19 @@ final class KeyComboManager {
         KeyOption(String name, int code) {
             this.name = name;
             this.code = code;
+        }
+
+        @Override
+        public String toString() {
+            return name;
+        }
+    }
+
+    private static final class KeyRowModel {
+        KeyOption selected;
+
+        KeyRowModel(KeyOption selected) {
+            this.selected = selected;
         }
     }
 
@@ -128,7 +143,7 @@ final class KeyComboManager {
             }
 
             int size = controller.getDefaultKeyButtonSize();
-            Point position = controller.findFreePositionForElement(size);
+            Point position = controller.findGroupedSpawnPosition(size, size);
             KeyComboButton button = new KeyComboButton(controller, context, definition);
             controller.addElement(button, position.x, position.y, size, size);
             controller.loadSavedElementConfiguration(button);
@@ -138,19 +153,12 @@ final class KeyComboManager {
     private static void showDefinitionDialog(KeyBoardController controller,
                                              Context context,
                                              Definition existing) {
-        List<KeyOption> availableKeys;
+        final List<KeyOption> availableKeys;
         try {
             availableKeys = loadAvailableKeys(context);
         } catch (Exception e) {
             Toast.makeText(context, "Unable to load key list: " + e.getMessage(), Toast.LENGTH_LONG).show();
             return;
-        }
-
-        Set<Integer> selectedKeys = new LinkedHashSet<>();
-        if (existing != null) {
-            for (int key : existing.keys) {
-                selectedKeys.add(key);
-            }
         }
 
         int padding = Math.max(12,
@@ -160,7 +168,7 @@ final class KeyComboManager {
         content.setPadding(padding, padding / 2, padding, 0);
 
         TextView nameLabel = new TextView(context);
-        nameLabel.setText("Button text");
+        nameLabel.setText("Display name");
         content.addView(nameLabel);
 
         EditText nameInput = new EditText(context);
@@ -174,35 +182,71 @@ final class KeyComboManager {
         content.addView(nameInput);
 
         TextView modifiersLabel = new TextView(context);
-        modifiersLabel.setText("Hold modifiers");
+        modifiersLabel.setText("Modifiers (optional)");
         modifiersLabel.setPadding(0, padding / 2, 0, 0);
         content.addView(modifiersLabel);
 
+        LinearLayout modifierRow = new LinearLayout(context);
+        modifierRow.setOrientation(LinearLayout.HORIZONTAL);
         CheckBox ctrl = modifierCheckBox(context, "Ctrl", KeyEvent.KEYCODE_CTRL_LEFT, existing);
         CheckBox alt = modifierCheckBox(context, "Alt", KeyEvent.KEYCODE_ALT_LEFT, existing);
         CheckBox shift = modifierCheckBox(context, "Shift", KeyEvent.KEYCODE_SHIFT_LEFT, existing);
-        CheckBox meta = modifierCheckBox(context, "Win / Meta", KeyEvent.KEYCODE_META_LEFT, existing);
-        content.addView(ctrl);
-        content.addView(alt);
-        content.addView(shift);
-        content.addView(meta);
+        CheckBox meta = modifierCheckBox(context, "Win", KeyEvent.KEYCODE_META_LEFT, existing);
+        modifierRow.addView(ctrl);
+        modifierRow.addView(alt);
+        modifierRow.addView(shift);
+        modifierRow.addView(meta);
+        content.addView(modifierRow);
 
-        TextView keyHelp = new TextView(context);
-        keyHelp.setText("Choose one or more non-modifier keys. They are pressed together as one chord.");
-        keyHelp.setPadding(0, padding / 2, 0, padding / 4);
-        content.addView(keyHelp);
+        TextView keysLabel = new TextView(context);
+        keysLabel.setText("Keys (pressed from top to bottom)");
+        keysLabel.setPadding(0, padding / 2, 0, padding / 4);
+        content.addView(keysLabel);
 
-        Button chooseKeys = new Button(context);
-        updateChooseKeysLabel(chooseKeys, selectedKeys.size());
-        chooseKeys.setOnClickListener(v -> showKeyPicker(
+        LinearLayout keysContainer = new LinearLayout(context);
+        keysContainer.setOrientation(LinearLayout.VERTICAL);
+        content.addView(keysContainer);
+
+        List<KeyRowModel> keyRows = new ArrayList<>();
+        if (existing != null && existing.keys.length > 0) {
+            for (int code : existing.keys) {
+                KeyOption selected = findOptionByCode(availableKeys, code);
+                if (selected == null) {
+                    selected = new KeyOption("Key " + code, code);
+                }
+                keyRows.add(new KeyRowModel(selected));
+            }
+        }
+        if (keyRows.isEmpty()) {
+            keyRows.add(new KeyRowModel(null));
+        }
+
+        Runnable[] rerenderHolder = new Runnable[1];
+        rerenderHolder[0] = () -> renderKeyRows(
                 context,
+                keysContainer,
+                keyRows,
                 availableKeys,
-                selectedKeys,
-                () -> updateChooseKeysLabel(chooseKeys, selectedKeys.size())));
-        content.addView(chooseKeys);
+                nameInput,
+                rerenderHolder[0]);
+        rerenderHolder[0].run();
+
+        Button addKeyRow = new Button(context);
+        addKeyRow.setText("+ Add another key");
+        addKeyRow.setOnClickListener(v -> {
+            keyRows.add(new KeyRowModel(null));
+            rerenderHolder[0].run();
+        });
+        content.addView(addKeyRow);
+
+        TextView help = new TextView(context);
+        help.setText("Type to filter the list, then tap a suggestion to select it. " +
+                "A single key with no modifiers is valid too.");
+        help.setPadding(0, padding / 3, 0, 0);
+        content.addView(help);
 
         AlertDialog dialog = new AlertDialog.Builder(context)
-                .setTitle(existing == null ? "Add Key Combo" : "Edit Key Combo")
+                .setTitle(existing == null ? "Add Keys" : "Edit Key")
                 .setView(content)
                 .setPositiveButton(existing == null ? "Add" : "Save", null)
                 .setNegativeButton(android.R.string.cancel, null)
@@ -212,12 +256,20 @@ final class KeyComboManager {
                 .setOnClickListener(v -> {
                     String name = nameInput.getText().toString().trim();
                     if (name.isEmpty()) {
-                        nameInput.setError("Enter button text");
+                        nameInput.setError("Enter a display name");
                         return;
                     }
-                    if (selectedKeys.isEmpty()) {
-                        Toast.makeText(context, "Choose at least one non-modifier key", Toast.LENGTH_SHORT).show();
-                        return;
+
+                    List<Integer> selectedRegularKeys = new ArrayList<>();
+                    for (int i = 0; i < keyRows.size(); i++) {
+                        KeyOption selected = keyRows.get(i).selected;
+                        if (selected == null) {
+                            Toast.makeText(context,
+                                    "Select a key from the dropdown in row " + (i + 1),
+                                    Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        selectedRegularKeys.add(selected.code);
                     }
 
                     List<Integer> modifiers = new ArrayList<>(4);
@@ -230,7 +282,7 @@ final class KeyComboManager {
                             existing == null ? newId() : existing.id,
                             name,
                             toIntArray(modifiers),
-                            toIntArray(selectedKeys));
+                            toIntArray(selectedRegularKeys));
 
                     List<Definition> definitions = loadDefinitions(context);
                     boolean replaced = false;
@@ -249,12 +301,10 @@ final class KeyComboManager {
                     KeyComboButton button = findButton(controller, updated.id);
                     if (button == null) {
                         int size = controller.getDefaultKeyButtonSize();
-                        Point position = controller.findFreePositionForElement(size);
+                        Point position = controller.findGroupedSpawnPosition(size, size);
                         button = new KeyComboButton(controller, context, updated);
                         controller.addElement(button, position.x, position.y, size, size);
                     } else {
-                        // Avoid changing an actively-held chord while it is down. Editor mode never
-                        // sends runtime key presses, so updating here is safe.
                         button.updateDefinition(updated);
                         button.hidden = false;
                         button.setVisibility(View.VISIBLE);
@@ -265,6 +315,122 @@ final class KeyComboManager {
                     dialog.dismiss();
                 }));
         dialog.show();
+    }
+
+    private static void renderKeyRows(Context context,
+                                      LinearLayout container,
+                                      List<KeyRowModel> rows,
+                                      List<KeyOption> availableKeys,
+                                      EditText displayName,
+                                      Runnable rerender) {
+        container.removeAllViews();
+        for (int index = 0; index < rows.size(); index++) {
+            final int rowIndex = index;
+            KeyRowModel model = rows.get(index);
+
+            LinearLayout row = new LinearLayout(context);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+
+            AutoCompleteTextView selector = new AutoCompleteTextView(context);
+            selector.setHint("Search key…");
+            selector.setSingleLine(true);
+            selector.setThreshold(0);
+            selector.setDropDownHeight(Math.round(300 * context.getResources().getDisplayMetrics().density));
+            ArrayAdapter<KeyOption> adapter = new ArrayAdapter<>(
+                    context,
+                    android.R.layout.simple_dropdown_item_1line,
+                    availableKeys);
+            selector.setAdapter(adapter);
+
+            if (model.selected != null) {
+                selector.setText(model.selected.name, false);
+            }
+
+            selector.setOnClickListener(v -> selector.showDropDown());
+            selector.setOnFocusChangeListener((v, hasFocus) -> {
+                if (hasFocus) {
+                    selector.showDropDown();
+                }
+            });
+            selector.setOnItemClickListener((parent, view, position, id) -> {
+                KeyOption option = (KeyOption) parent.getItemAtPosition(position);
+                model.selected = option;
+                selector.setText(option.name, false);
+                selector.setSelection(selector.length());
+                if (displayName.getText().toString().trim().isEmpty() && rows.size() == 1) {
+                    displayName.setText(option.name);
+                    displayName.setSelection(displayName.length());
+                }
+            });
+            selector.addTextChangedListener(new TextWatcher() {
+                private boolean internal;
+
+                @Override
+                public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                }
+
+                @Override
+                public void onTextChanged(CharSequence s, int start, int before, int count) {
+                    if (!internal && model.selected != null && !model.selected.name.contentEquals(s)) {
+                        model.selected = null;
+                    }
+                }
+
+                @Override
+                public void afterTextChanged(Editable s) {
+                }
+            });
+
+            LinearLayout.LayoutParams selectorParams = new LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f);
+            row.addView(selector, selectorParams);
+
+            Button up = compactButton(context, "↑");
+            up.setEnabled(index > 0);
+            up.setOnClickListener(v -> {
+                if (rowIndex > 0) {
+                    KeyRowModel item = rows.remove(rowIndex);
+                    rows.add(rowIndex - 1, item);
+                    rerender.run();
+                }
+            });
+            row.addView(up);
+
+            Button down = compactButton(context, "↓");
+            down.setEnabled(index < rows.size() - 1);
+            down.setOnClickListener(v -> {
+                if (rowIndex < rows.size() - 1) {
+                    KeyRowModel item = rows.remove(rowIndex);
+                    rows.add(rowIndex + 1, item);
+                    rerender.run();
+                }
+            });
+            row.addView(down);
+
+            Button remove = compactButton(context, "×");
+            remove.setEnabled(rows.size() > 1);
+            remove.setOnClickListener(v -> {
+                if (rows.size() > 1) {
+                    rows.remove(rowIndex);
+                    rerender.run();
+                }
+            });
+            row.addView(remove);
+
+            container.addView(row);
+        }
+    }
+
+    private static Button compactButton(Context context, String text) {
+        Button button = new Button(context);
+        button.setText(text);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
+        int horizontal = Math.max(2, Math.round(4 * context.getResources().getDisplayMetrics().density));
+        button.setPadding(horizontal, 0, horizontal, 0);
+        return button;
     }
 
     private static CheckBox modifierCheckBox(Context context,
@@ -284,35 +450,6 @@ final class KeyComboManager {
         return checkBox;
     }
 
-    private static void showKeyPicker(Context context,
-                                      List<KeyOption> options,
-                                      Set<Integer> selectedKeys,
-                                      Runnable onChanged) {
-        String[] labels = new String[options.size()];
-        boolean[] checked = new boolean[options.size()];
-        for (int i = 0; i < options.size(); i++) {
-            KeyOption option = options.get(i);
-            labels[i] = option.name;
-            checked[i] = selectedKeys.contains(option.code);
-        }
-
-        new AlertDialog.Builder(context)
-                .setTitle("Combo keys")
-                .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) ->
-                        checked[which] = isChecked)
-                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
-                    selectedKeys.clear();
-                    for (int i = 0; i < options.size(); i++) {
-                        if (checked[i]) {
-                            selectedKeys.add(options.get(i).code);
-                        }
-                    }
-                    onChanged.run();
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
-    }
-
     private static List<KeyOption> loadAvailableKeys(Context context) throws Exception {
         InputStream input = context.getAssets().open("config/keyboard.json");
         byte[] bytes = new byte[input.available()];
@@ -325,19 +462,29 @@ final class KeyComboManager {
         JSONObject root = new JSONObject(new String(bytes, 0, read, StandardCharsets.UTF_8));
         JSONArray keys = root.getJSONObject("data").getJSONArray("keystroke");
         List<KeyOption> options = new ArrayList<>();
-        Set<Integer> seen = new LinkedHashSet<>();
+        List<Integer> seen = new ArrayList<>();
 
         for (int i = 0; i < keys.length(); i++) {
             JSONObject object = keys.getJSONObject(i);
             int code = object.optInt("code", KeyEvent.KEYCODE_UNKNOWN);
             if (code == KeyEvent.KEYCODE_UNKNOWN ||
                     KeyBoardControllerConfigurationLoader.isModifierKey(code) ||
-                    !seen.add(code)) {
+                    seen.contains(code)) {
                 continue;
             }
+            seen.add(code);
             options.add(new KeyOption(object.optString("name", "Key " + code), code));
         }
         return options;
+    }
+
+    private static KeyOption findOptionByCode(List<KeyOption> options, int code) {
+        for (KeyOption option : options) {
+            if (option.code == code) {
+                return option;
+            }
+        }
+        return null;
     }
 
     private static KeyComboButton findButton(KeyBoardController controller, String id) {
@@ -351,25 +498,36 @@ final class KeyComboManager {
     }
 
     private static List<Definition> loadDefinitions(Context context) {
+        return loadDefinitionsForLayout(context, activeLayout(context));
+    }
+
+    private static List<Definition> loadDefinitionsForLayout(Context context, String layout) {
         String serialized = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-                .getString(definitionsKey(context), "[]");
+                .getString(definitionsKey(layout), "[]");
         List<Definition> definitions = new ArrayList<>();
         try {
             JSONArray array = new JSONArray(serialized);
-            Set<String> seenIds = new LinkedHashSet<>();
+            List<String> seenIds = new ArrayList<>();
             for (int i = 0; i < array.length(); i++) {
                 Definition definition = Definition.fromJson(array.getJSONObject(i));
-                if (!definition.id.isEmpty() && definition.keys.length > 0 && seenIds.add(definition.id)) {
+                if (!definition.id.isEmpty() && definition.keys.length > 0 && !seenIds.contains(definition.id)) {
+                    seenIds.add(definition.id);
                     definitions.add(definition);
                 }
             }
         } catch (JSONException ignored) {
-            // Treat corrupt metadata as no custom combos; geometry preferences remain untouched.
+            // Treat corrupt metadata as no custom keys; geometry preferences remain untouched.
         }
         return definitions;
     }
 
     private static void saveDefinitions(Context context, List<Definition> definitions) {
+        saveDefinitionsForLayout(context, activeLayout(context), definitions);
+    }
+
+    private static void saveDefinitionsForLayout(Context context,
+                                                 String layout,
+                                                 List<Definition> definitions) {
         JSONArray array = new JSONArray();
         for (Definition definition : definitions) {
             try {
@@ -379,23 +537,53 @@ final class KeyComboManager {
         }
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 .edit()
-                .putString(definitionsKey(context), array.toString())
+                .putString(definitionsKey(layout), array.toString())
                 .apply();
     }
 
-    private static String definitionsKey(Context context) {
-        String layout = PreferenceManager.getDefaultSharedPreferences(context).getString(
+    static JSONArray exportDefinitionsForLayout(Context context, String layout) {
+        String serialized = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .getString(definitionsKey(layout), "[]");
+        try {
+            return new JSONArray(serialized);
+        } catch (JSONException ignored) {
+            return new JSONArray();
+        }
+    }
+
+    static void importDefinitionsForLayout(Context context, String layout, JSONArray definitions) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .edit()
+                .putString(definitionsKey(layout), definitions == null ? "[]" : definitions.toString())
+                .apply();
+    }
+
+    static void copyDefinitionsForLayout(Context context, String fromLayout, String toLayout) {
+        SharedPreferences preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+        String value = preferences.getString(definitionsKey(fromLayout), "[]");
+        preferences.edit().putString(definitionsKey(toLayout), value).apply();
+    }
+
+    static void deleteDefinitionsForLayout(Context context, String layout) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .edit()
+                .remove(definitionsKey(layout))
+                .apply();
+    }
+
+    private static String activeLayout(Context context) {
+        KeyboardProfilesManager.ensureInitialized(context);
+        return PreferenceManager.getDefaultSharedPreferences(context).getString(
                 KeyBoardControllerConfigurationLoader.OSC_PREFERENCE,
                 KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);
+    }
+
+    private static String definitionsKey(String layout) {
         return DEFINITIONS_PREFIX + layout;
     }
 
     private static String newId() {
         return UUID.randomUUID().toString().replace("-", "");
-    }
-
-    private static void updateChooseKeysLabel(Button button, int count) {
-        button.setText(count == 0 ? "Choose combo key(s)…" : "Selected keys: " + count);
     }
 
     private static int[] toIntArray(Iterable<Integer> values) {

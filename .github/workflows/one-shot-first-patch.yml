@@ -1,4 +1,4 @@
-name: One-shot first patch
+name: Normalize first patch diff
 
 on:
   push:
@@ -6,39 +6,43 @@ on:
       - feature/first-patch-v4-orientation-settings-search
     paths:
       - '.github/workflows/one-shot-first-patch.yml'
-      - 'tools/one_shot_first_patch.py'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  apply:
+  normalize:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - name: Checkout feature branch
         uses: actions/checkout@v4
         with:
           ref: feature/first-patch-v4-orientation-settings-search
           fetch-depth: 0
-          submodules: recursive
 
-      - name: Apply first patch
-        run: python3 tools/one_shot_first_patch.py
-
-      - name: Commit generated product and tests
+      - name: Restore original CRLF convention on touched legacy files
         run: |
-          # The GitHub Actions token cannot modify workflow files. Keep the product/test changes,
-          # but leave Android CI itself untouched; the full inherited suite already executes the
-          # newly added tests and we will inspect that run explicitly before promotion.
-          git checkout -- .github/workflows/android-ci.yml
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in [
+              'app/src/main/java/com/limelight/preferences/StreamSettings.java',
+              'app/src/main/res/values/arrays.xml',
+          ]:
+              p = Path(name)
+              data = p.read_bytes().replace(b'\r\n', b'\n')
+              p.write_bytes(data.replace(b'\n', b'\r\n'))
+          PY
+
+      - name: Commit normalized files
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add app/src/main/java/com/limelight/preferences/StreamSettings.java app/src/main/res/values/arrays.xml
           if git diff --cached --quiet; then
-            echo "No changes to commit"
+            echo "No normalization changes needed"
             exit 0
           fi
-          git commit -m "feat: harden v4 and add outside orientation and settings search"
+          git commit -m "chore: preserve legacy line endings in first patch"
           git push origin HEAD:feature/first-patch-v4-orientation-settings-search

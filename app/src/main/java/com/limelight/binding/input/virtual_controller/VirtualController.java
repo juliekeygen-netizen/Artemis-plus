@@ -75,6 +75,7 @@ public class VirtualController {
 
     private boolean snappingEnabled;
     private boolean pairedSizingEnabled;
+    private boolean shown;
 
     public VirtualController(final ControllerHandler controllerHandler, FrameLayout layout, final Context context) {
         this.controllerHandler = controllerHandler;
@@ -138,6 +139,7 @@ public class VirtualController {
     }
 
     public void hide() {
+        shown = false;
         for (VirtualControllerElement element : elements) {
             element.setVisibility(View.GONE);
         }
@@ -146,17 +148,18 @@ public class VirtualController {
     }
 
     public void show() {
+        shown = true;
         showEnabledElements();
 
         buttonConfigure.setVisibility(View.VISIBLE);
     }
 
     public boolean isShown() {
-        return buttonConfigure != null && buttonConfigure.getVisibility() == View.VISIBLE;
+        return shown;
     }
 
     public int switchShowHide() {
-        if (buttonConfigure.getVisibility() == View.VISIBLE) {
+        if (shown) {
             hide();
             return 0;
         } else {
@@ -184,6 +187,12 @@ public class VirtualController {
         elements.clear();
 
         frame_layout.removeView(buttonConfigure);
+    }
+
+    public void destroy() {
+        handler.removeCallbacksAndMessages(null);
+        removeElements();
+        shown = false;
     }
 
     public void setOpacity(int opacity) {
@@ -274,6 +283,20 @@ public class VirtualController {
 
         // Apply user preferences onto the default layout
         VirtualControllerConfigurationLoader.loadFromPreferences(this, context);
+
+        // Preserve logical visibility across orientation/profile rebuilds.
+        if (!shown) {
+            for (VirtualControllerElement element : elements) {
+                element.setVisibility(View.GONE);
+            }
+            buttonConfigure.setVisibility(View.GONE);
+        } else if (currentMode == ControllerMode.DisableEnableButtons) {
+            showElements();
+            buttonConfigure.setVisibility(View.VISIBLE);
+        } else {
+            showEnabledElements();
+            buttonConfigure.setVisibility(View.VISIBLE);
+        }
     }
 
     public ControllerMode getControllerMode() {

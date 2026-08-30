@@ -74,13 +74,17 @@ public class EditProfileActivity extends AppCompatActivity {
             inMemoryPrefs = new InMemorySharedPreferences(PreferenceManager.getDefaultSharedPreferences(this).getAll());
         }
 
-        prefsFragment = new ProfilePreferenceFragment(this, inMemoryPrefs);
-
-        // Load preference fragment
-        getSupportFragmentManager()
-            .beginTransaction()
-            .replace(R.id.preferences_container, prefsFragment)
-            .commit();
+        androidx.fragment.app.Fragment restoredFragment =
+                getSupportFragmentManager().findFragmentById(R.id.preferences_container);
+        if (restoredFragment instanceof ProfilePreferenceFragment) {
+            prefsFragment = (ProfilePreferenceFragment) restoredFragment;
+        } else {
+            prefsFragment = new ProfilePreferenceFragment();
+            getSupportFragmentManager()
+                .beginTransaction()
+                .replace(R.id.preferences_container, prefsFragment)
+                .commit();
+        }
 
         UiHelper.notifyNewRootView(this);
     }
@@ -110,7 +114,7 @@ public class EditProfileActivity extends AppCompatActivity {
     }
 
     void reloadSettings() {
-        prefsFragment = new ProfilePreferenceFragment(this, prefsFragment.getPrefs());
+        prefsFragment = new ProfilePreferenceFragment();
         getSupportFragmentManager().beginTransaction().replace(
                 R.id.preferences_container, prefsFragment
         ).commitAllowingStateLoss();
@@ -252,8 +256,8 @@ public class EditProfileActivity extends AppCompatActivity {
             return ((InMemoryPreferenceDataStore)getPreferenceManager().getPreferenceDataStore()).getPrefs();
         }
 
-        public ProfilePreferenceFragment(EditProfileActivity context, SharedPreferences prefs) {
-            super(PreferenceConfiguration.readPreferences(context, prefs));
+        public ProfilePreferenceFragment() {
+            super();
         }
 
         @NonNull

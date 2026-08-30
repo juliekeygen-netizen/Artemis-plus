@@ -82,15 +82,16 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
     // HACK for Android 9
     static DisplayCutout displayCutoutP;
 
-    void reloadSettings() {
+    private void rememberCurrentDisplayPixelCount() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             Display.Mode mode = getActiveDisplay(StreamSettings.this, previousPrefs).getMode();
             previousDisplayPixelCount = mode.getPhysicalWidth() * mode.getPhysicalHeight();
         }
-        prefsFragment = new SettingsFragment(PreferenceConfiguration.readPreferences(
-                this,
-                PreferenceManager.getDefaultSharedPreferences(this)
-        ));
+    }
+
+    void reloadSettings() {
+        rememberCurrentDisplayPixelCount();
+        prefsFragment = new SettingsFragment();
         getSupportFragmentManager().beginTransaction().replace(
                 R.id.stream_settings, prefsFragment
         ).commitAllowingStateLoss();
@@ -125,7 +126,14 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
             }
         }
 
-        reloadSettings();
+        androidx.fragment.app.Fragment restoredFragment =
+                getSupportFragmentManager().findFragmentById(R.id.stream_settings);
+        if (restoredFragment instanceof SettingsFragment) {
+            prefsFragment = (SettingsFragment) restoredFragment;
+            rememberCurrentDisplayPixelCount();
+        } else {
+            reloadSettings();
+        }
     }
 
     @Override
@@ -183,8 +191,7 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
 
         private PreferenceConfiguration prevPrefConfig;
 
-        public SettingsFragment(PreferenceConfiguration prefCfg) {
-            prevPrefConfig = prefCfg;
+        public SettingsFragment() {
         }
 
         protected SharedPreferences getPrefs() {
@@ -349,8 +356,21 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
         }
 
         public void initializePreferences() {
+            // Use the fragment's active preference source. ProfilePreferenceFragment overrides
+            // getPrefs(), so both global settings and profile editing remain correctly scoped.
+            prevPrefConfig = PreferenceConfiguration.readPreferences(requireContext(), getPrefs());
             addPreferencesFromResource(R.xml.preferences);
             PreferenceScreen screen = getPreferenceScreen();
+
+            ListPreference outsideOrientation = findPreference(OutsideStreamOrientationPolicy.PREF_KEY);
+            if (outsideOrientation != null) {
+                outsideOrientation.setOnPreferenceChangeListener((preference, newValue) -> {
+                    String requestedMode = String.valueOf(newValue);
+                    requireActivity().getWindow().getDecorView().post(() ->
+                            OutsideStreamOrientationPolicy.apply(requireActivity(), requestedMode));
+                    return true;
+                });
+            }
 
             AppCompatActivity activity = (AppCompatActivity) requireActivity();
             PackageManager pm = activity.getPackageManager();

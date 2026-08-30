@@ -230,6 +230,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private boolean isHidingOverlays;
     private boolean floatingButtonShown;
     private boolean overlayToggleZoomButtonShown;
+    private final PipOverlayTransitionState pipOverlayState = new PipOverlayTransitionState();
     private TextView notificationOverlayView;
     private int requestedNotificationOverlayVisibility = View.GONE;
     private View performanceOverlayView;
@@ -323,6 +324,17 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private boolean isZoomButtonMoving = false;
     private float zoomButtonStartX, zoomButtonStartY;
 
+    // Bottom-edge Start gesture interception buffers the initial touch until it is either
+    // recognized as the requested Start shortcut or proven to be an ordinary touch.
+    private BottomEdgeStartGestureDetector bottomEdgeStartGestureDetector;
+    private final ArrayList<MotionEvent> bottomEdgeGestureBuffer = new ArrayList<>();
+    private boolean bottomEdgeGesturePending;
+    private View bottomEdgeGestureView;
+    private float bottomEdgeDownX;
+    private float bottomEdgeDownY;
+    private long bottomEdgeDownTime;
+    private final Runnable bottomEdgeReplayTimeout = this::replayBottomEdgeGesture;
+
     // Queue for batching commitText payloads
     private static final int UTF8_CHUNK_SIZE = 512;
     private final Queue<String> commitTextQueue = new ArrayDeque<>();
@@ -366,6 +378,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         // Read the stream preferences
         prefConfig = PreferenceConfiguration.readPreferences(this);
+        bottomEdgeStartGestureDetector = new BottomEdgeStartGestureDetector(
+                getResources().getDisplayMetrics().density);
 
         // This Activity is the stream-session owner in the current architecture. Reset persistent
         // floating positions exactly once here, before any stream controls are restored.
@@ -917,10 +931,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             SurfaceView streamSurfaceView = findFirstSurfaceViewFrom(root);
 
             if (streamSurfaceView != null) {
-                // Avoid resizes/glitches that break the compositor
-                int vw = (prefConfig != null && prefConfig.width > 0) ? prefConfig.width : displayWidth;
-                int vh = (prefConfig != null && prefConfig.height > 0) ? prefConfig.height : displayHeight;
-                try { streamSurfaceView.getHolder().setFixedSize(vw, vh); } catch (Throwable ignored) {}
+                // Keep the SurfaceView layout-owned so Android can resize it correctly for PiP.
+                // Frame pacing below does not require pinning the buffer size to the stream resolution.
                 try { streamSurfaceView.setZOrderOnTop(false); } catch (Throwable ignored) {}
                 try { streamSurfaceView.setZOrderMediaOverlay(false); } catch (Throwable ignored) {}
 
@@ -1227,90 +1239,65 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             keyBoardLayoutController.refreshLayout();
         }
 
-        // Hide on-screen overlays in PiP mode
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (isInPictureInPictureMode()) {
-                isHidingOverlays = true;
+            updatePipOverlayState(isInPictureInPictureMode());
+        }
+    }
 
-                floatingButtonShown = floatingMenuButton.isShown();
-
-                if (floatingButtonShown) {
-                    floatingMenuButton.setVisibility(View.GONE);
-                }
-
-                overlayToggleZoomButtonShown = overlayToggleButton != null && overlayToggleButton.isShown();
-
-                if (overlayToggleZoomButtonShown) {
-                    overlayToggleButton.setVisibility(View.GONE);
-                }
-
-                if (virtualController != null) {
-                    virtualController.hide();
-                }
-
-                if (keyBoardController != null && keyBoardController.shown) {
-                    keyBoardController.hide(true);
-                }
-
-                if (keyBoardLayoutController!=null && keyBoardLayoutController.shown) {
-                    keyBoardLayoutController.hide(true);
-                }
-
-                hideGameMenu();
-
-                performanceOverlayView.setVisibility(View.GONE);
-                notificationOverlayView.setVisibility(View.GONE);
-                if (statsOverlay != null) {
-                    statsOverlay.setVisibility(View.GONE);
-                }
-
-                // Disable sensors while in PiP mode
-                controllerHandler.disableSensors();
-
-                // Update GameManager state to indicate we're in PiP (still gaming, but interruptible)
-                UiHelper.notifyStreamEnteringPiP(this);
+    @TargetApi(Build.VERSION_CODES.O)
+    private void updatePipOverlayState(boolean inPip) {
+        if (inPip) {
+            boolean entered = pipOverlayState.enter(
+                    floatingMenuButton != null && floatingMenuButton.isShown(),
+                    overlayToggleButton != null && overlayToggleButton.isShown(),
+                    virtualController != null && virtualController.isShown(),
+                    keyBoardController != null && keyBoardController.shown,
+                    keyBoardLayoutController != null && keyBoardLayoutController.shown,
+                    performanceOverlayView != null && performanceOverlayView.getVisibility() == View.VISIBLE,
+                    notificationOverlayView != null ? notificationOverlayView.getVisibility() : View.GONE,
+                    statsOverlay != null && statsOverlay.getVisibility() == View.VISIBLE);
+            if (!entered) {
+                return;
             }
-            else {
-                isHidingOverlays = false;
 
-                if (floatingButtonShown) {
-                    floatingMenuButton.setVisibility(View.VISIBLE);
-                }
-
-                if (overlayToggleZoomButtonShown) {
-                    overlayToggleButton.setVisibility(View.VISIBLE);
-                }
-
-                // Restore overlays to previous state when leaving PiP
-
-                if (virtualController != null) {
-                    virtualController.show();
-                }
-
-                if (keyBoardController != null && keyBoardController.shown) {
-                    keyBoardController.show();
-                }
-
-                if(keyBoardLayoutController!=null && keyBoardLayoutController.shown){
-                    keyBoardLayoutController.show();
-                }
-
-                if (prefConfig.enablePerfOverlay) {
-                    performanceOverlayView.setVisibility(View.VISIBLE);
-                }
-
-                notificationOverlayView.setVisibility(requestedNotificationOverlayVisibility);
-
-                if (statsOverlay != null) {
-                    statsOverlay.setVisibility(View.VISIBLE);
-                }
-
-                // Enable sensors again after exiting PiP
-                controllerHandler.enableSensors();
-
-                // Update GameManager state to indicate we're out of PiP (gaming, non-interruptible)
-                UiHelper.notifyStreamExitingPiP(this);
+            isHidingOverlays = true;
+            if (pipOverlayState.floatingButtonShown) floatingMenuButton.setVisibility(View.GONE);
+            if (pipOverlayState.zoomButtonShown) overlayToggleButton.setVisibility(View.GONE);
+            if (virtualController != null) virtualController.hide();
+            if (keyBoardController != null && pipOverlayState.keyboardControllerShown) keyBoardController.hide(true);
+            if (keyBoardLayoutController != null && pipOverlayState.keyboardLayoutShown) keyBoardLayoutController.hide(true);
+            hideGameMenu();
+            if (performanceOverlayView != null) performanceOverlayView.setVisibility(View.GONE);
+            if (notificationOverlayView != null) notificationOverlayView.setVisibility(View.GONE);
+            if (statsOverlay != null) statsOverlay.setVisibility(View.GONE);
+            if (controllerHandler != null) controllerHandler.disableSensors();
+            UiHelper.notifyStreamEnteringPiP(this);
+        } else {
+            if (!pipOverlayState.exit()) {
+                return;
             }
+
+            isHidingOverlays = false;
+            if (pipOverlayState.floatingButtonShown && floatingMenuButton != null) floatingMenuButton.setVisibility(View.VISIBLE);
+            if (pipOverlayState.zoomButtonShown && overlayToggleButton != null) overlayToggleButton.setVisibility(View.VISIBLE);
+            if (pipOverlayState.virtualControllerShown && virtualController != null) virtualController.show();
+            if (pipOverlayState.keyboardControllerShown && keyBoardController != null) keyBoardController.show();
+            if (pipOverlayState.keyboardLayoutShown && keyBoardLayoutController != null) keyBoardLayoutController.show();
+            if (pipOverlayState.performanceOverlayShown && performanceOverlayView != null) performanceOverlayView.setVisibility(View.VISIBLE);
+            if (notificationOverlayView != null) notificationOverlayView.setVisibility(pipOverlayState.notificationVisibility);
+            if (pipOverlayState.statsOverlayShown && statsOverlay != null) statsOverlay.setVisibility(View.VISIBLE);
+            if (controllerHandler != null) controllerHandler.enableSensors();
+            UiHelper.notifyStreamExitingPiP(this);
+        }
+    }
+
+    @Override
+    @TargetApi(Build.VERSION_CODES.O)
+    public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+        updatePipOverlayState(isInPictureInPictureMode);
+        if (!isInPictureInPictureMode) {
+            updatePipAutoEnter();
         }
     }
 
@@ -1324,16 +1311,20 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             view = (View)rootView;
         }
 
-        int[] viewLocation = new int[2];
+        // Android recommends using the actually visible video bounds as the PiP transition
+        // hint. This also avoids animating from content that is clipped by the current window.
+        hint = new Rect();
+        if (!view.getGlobalVisibleRect(hint) || hint.isEmpty()) {
+            int[] viewLocation = new int[2];
+            view.getLocationOnScreen(viewLocation);
+            int width = Math.max(1, view.getWidth());
+            int height = Math.max(1, view.getHeight());
+            hint.set(viewLocation[0], viewLocation[1],
+                    viewLocation[0] + width, viewLocation[1] + height);
+        }
 
-        view.getLocationOnScreen(viewLocation);
-
-        int left = viewLocation[0];
-        int top = viewLocation[1];
-        int width = view.getWidth();
-        int height = view.getHeight();
-        Rational aspectRatio = new Rational(width, height);
-        hint = new Rect(left, top, left + width, top + height);
+        int[] pipRatio = PipAspectRatioHelper.clamp(hint.width(), hint.height());
+        Rational aspectRatio = new Rational(pipRatio[0], pipRatio[1]);
 
         PictureInPictureParams.Builder builder =
                 new PictureInPictureParams.Builder()
@@ -1733,6 +1724,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         super.onDestroy();
 
         instance = null;
+        discardBottomEdgeGesture();
+        if (bottomEdgeStartGestureDetector != null) {
+            bottomEdgeStartGestureDetector.resetRecognizedGestureConsumption();
+        }
         timerHandler.removeCallbacksAndMessages(null);
 
         if (prefConfig.enableFullExDisplay) handleDisplayRemoved();
@@ -3450,9 +3445,117 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         return handleMotionEvent(view, event);
     }
 
+    private boolean shouldInterceptBottomEdgeGesture(MotionEvent event) {
+        if (prefConfig == null || bottomEdgeStartGestureDetector == null ||
+                BottomEdgeStartGestureDetector.MODE_NATIVE.equals(prefConfig.bottomEdgeStartGestureMode)) {
+            return false;
+        }
+        return event.getPointerCount() > 0 &&
+                event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER &&
+                (event.getSource() & InputDevice.SOURCE_TOUCHSCREEN) == InputDevice.SOURCE_TOUCHSCREEN;
+    }
+
+    private boolean interceptBottomEdgeGesture(View view, MotionEvent event) {
+        if (!shouldInterceptBottomEdgeGesture(event)) {
+            return false;
+        }
+
+        int action = event.getActionMasked();
+        boolean terminalEvent = action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL;
+        if (bottomEdgeStartGestureDetector.shouldConsumeRecognizedGestureEvent(terminalEvent)) {
+            return true;
+        }
+        if (!bottomEdgeGesturePending) {
+            if (action != MotionEvent.ACTION_DOWN ||
+                    !bottomEdgeStartGestureDetector.startsInBottomEdge(event.getY(0), view.getHeight())) {
+                return false;
+            }
+            bottomEdgeGesturePending = true;
+            bottomEdgeGestureView = view;
+            bottomEdgeDownX = event.getX(0);
+            bottomEdgeDownY = event.getY(0);
+            bottomEdgeDownTime = event.getEventTime();
+            bottomEdgeGestureBuffer.add(MotionEvent.obtain(event));
+            timerHandler.postDelayed(bottomEdgeReplayTimeout,
+                    bottomEdgeStartGestureDetector.getDecisionTimeoutMs());
+            return true;
+        }
+
+        if (view != bottomEdgeGestureView) {
+            replayBottomEdgeGesture();
+            return false;
+        }
+
+        bottomEdgeGestureBuffer.add(MotionEvent.obtain(event));
+        float deltaX = event.getX(0) - bottomEdgeDownX;
+        float upwardDeltaY = bottomEdgeDownY - event.getY(0);
+        BottomEdgeStartGestureDetector.Decision decision = bottomEdgeStartGestureDetector.decide(
+                deltaX, upwardDeltaY, event.getEventTime() - bottomEdgeDownTime,
+                event.getPointerCount(), action == MotionEvent.ACTION_UP,
+                action == MotionEvent.ACTION_CANCEL);
+
+        if (decision == BottomEdgeStartGestureDetector.Decision.PENDING) {
+            return true;
+        }
+        if (decision == BottomEdgeStartGestureDetector.Decision.TRIGGER) {
+            discardBottomEdgeGesture();
+            // The trigger normally happens on ACTION_MOVE. Consume every remaining event through
+            // ACTION_UP/CANCEL so Windows never receives an orphaned terminal event without DOWN.
+            bottomEdgeStartGestureDetector.consumeRecognizedGestureUntilTerminal();
+            if (BottomEdgeStartGestureDetector.MODE_WINDOWS_KEY.equals(prefConfig.bottomEdgeStartGestureMode)) {
+                sendKeys(new short[]{KeyboardTranslator.VK_LWIN});
+            }
+            return true;
+        }
+        if (decision == BottomEdgeStartGestureDetector.Decision.CANCEL) {
+            // Android took ownership of the system-edge gesture. Do not forward a CANCEL without
+            // the buffered DOWN; discarding both prevents a half-gesture from reaching Windows.
+            discardBottomEdgeGesture();
+            return true;
+        }
+
+        replayBottomEdgeGesture();
+        return true;
+    }
+
+    private void replayBottomEdgeGesture() {
+        if (!bottomEdgeGesturePending) {
+            return;
+        }
+        View target = bottomEdgeGestureView;
+        ArrayList<MotionEvent> buffered = new ArrayList<>(bottomEdgeGestureBuffer);
+        clearBottomEdgeGestureState(false);
+        if (target != null) {
+            for (MotionEvent bufferedEvent : buffered) {
+                handleMotionEvent(target, bufferedEvent);
+                bufferedEvent.recycle();
+            }
+        } else {
+            for (MotionEvent bufferedEvent : buffered) bufferedEvent.recycle();
+        }
+    }
+
+    private void discardBottomEdgeGesture() {
+        clearBottomEdgeGestureState(true);
+    }
+
+    private void clearBottomEdgeGestureState(boolean recycle) {
+        if (timerHandler != null) timerHandler.removeCallbacks(bottomEdgeReplayTimeout);
+        if (recycle) {
+            for (MotionEvent bufferedEvent : bottomEdgeGestureBuffer) bufferedEvent.recycle();
+        }
+        bottomEdgeGestureBuffer.clear();
+        bottomEdgeGesturePending = false;
+        bottomEdgeGestureView = null;
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     @Override
     public boolean onTouch(View view, MotionEvent event) {
+        if (interceptBottomEdgeGesture(view, event)) {
+            return true;
+        }
+
         if (event.getAction() == MotionEvent.ACTION_DOWN) {
             // Tell the OS not to buffer input events for us
             //

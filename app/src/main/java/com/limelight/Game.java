@@ -1311,16 +1311,20 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             view = (View)rootView;
         }
 
-        int[] viewLocation = new int[2];
+        // Android recommends using the actually visible video bounds as the PiP transition
+        // hint. This also avoids animating from content that is clipped by the current window.
+        hint = new Rect();
+        if (!view.getGlobalVisibleRect(hint) || hint.isEmpty()) {
+            int[] viewLocation = new int[2];
+            view.getLocationOnScreen(viewLocation);
+            int width = Math.max(1, view.getWidth());
+            int height = Math.max(1, view.getHeight());
+            hint.set(viewLocation[0], viewLocation[1],
+                    viewLocation[0] + width, viewLocation[1] + height);
+        }
 
-        view.getLocationOnScreen(viewLocation);
-
-        int left = viewLocation[0];
-        int top = viewLocation[1];
-        int width = Math.max(1, view.getWidth());
-        int height = Math.max(1, view.getHeight());
-        Rational aspectRatio = new Rational(width, height);
-        hint = new Rect(left, top, left + width, top + height);
+        int[] pipRatio = PipAspectRatioHelper.clamp(hint.width(), hint.height());
+        Rational aspectRatio = new Rational(pipRatio[0], pipRatio[1]);
 
         PictureInPictureParams.Builder builder =
                 new PictureInPictureParams.Builder()

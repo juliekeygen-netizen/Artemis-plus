@@ -1,0 +1,37 @@
+name: One-shot key profile input polish v4
+
+on:
+  push:
+    branches:
+      - feature/key-profile-input-polish-v4
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'chore: add one-shot key/profile polish workflow'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply patch
+        run: python tools/one_shot_key_profile_input_polish_v4.py
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyComboManager.java \
+                  app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyboardProfilesDialog.java \
+                  app/src/main/java/com/limelight/Game.java \
+                  app/src/main/java/com/limelight/ArtemisAction.java \
+                  app/src/main/java/com/limelight/ArtemisActionStateReader.java \
+                  app/src/test/java/com/limelight/binding/input/virtual_controller/keyboard/KeyComboManagerTest.java \
+                  README.md
+          git diff --cached --check
+          git commit -m "feat: polish key/profile UX and touch sensitivity"
+          git push origin HEAD:feature/key-profile-input-polish-v4

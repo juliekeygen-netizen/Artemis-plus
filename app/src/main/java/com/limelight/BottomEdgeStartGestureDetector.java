@@ -17,6 +17,7 @@ public final class BottomEdgeStartGestureDetector {
     private final float triggerDistancePx;
     private final float maxHorizontalDriftPx;
     private final long decisionTimeoutMs;
+    private boolean consumeUntilTerminal;
 
     public BottomEdgeStartGestureDetector(float density) {
         float safeDensity = Math.max(0.5f, density);
@@ -32,6 +33,24 @@ public final class BottomEdgeStartGestureDetector {
 
     public long getDecisionTimeoutMs() {
         return decisionTimeoutMs;
+    }
+
+    public void consumeRecognizedGestureUntilTerminal() {
+        consumeUntilTerminal = true;
+    }
+
+    public boolean shouldConsumeRecognizedGestureEvent(boolean terminalEvent) {
+        if (!consumeUntilTerminal) {
+            return false;
+        }
+        if (terminalEvent) {
+            consumeUntilTerminal = false;
+        }
+        return true;
+    }
+
+    public void resetRecognizedGestureConsumption() {
+        consumeUntilTerminal = false;
     }
 
     public Decision decide(float deltaX, float upwardDeltaY, long elapsedMs,

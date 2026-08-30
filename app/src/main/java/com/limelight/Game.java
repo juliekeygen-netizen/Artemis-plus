@@ -1721,6 +1721,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         instance = null;
         discardBottomEdgeGesture();
+        if (bottomEdgeStartGestureDetector != null) {
+            bottomEdgeStartGestureDetector.resetRecognizedGestureConsumption();
+        }
         timerHandler.removeCallbacksAndMessages(null);
 
         if (prefConfig.enableFullExDisplay) handleDisplayRemoved();
@@ -3454,6 +3457,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
 
         int action = event.getActionMasked();
+        boolean terminalEvent = action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL;
+        if (bottomEdgeStartGestureDetector.shouldConsumeRecognizedGestureEvent(terminalEvent)) {
+            return true;
+        }
         if (!bottomEdgeGesturePending) {
             if (action != MotionEvent.ACTION_DOWN ||
                     !bottomEdgeStartGestureDetector.startsInBottomEdge(event.getY(0), view.getHeight())) {
@@ -3488,6 +3495,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
         if (decision == BottomEdgeStartGestureDetector.Decision.TRIGGER) {
             discardBottomEdgeGesture();
+            // The trigger normally happens on ACTION_MOVE. Consume every remaining event through
+            // ACTION_UP/CANCEL so Windows never receives an orphaned terminal event without DOWN.
+            bottomEdgeStartGestureDetector.consumeRecognizedGestureUntilTerminal();
             if (BottomEdgeStartGestureDetector.MODE_WINDOWS_KEY.equals(prefConfig.bottomEdgeStartGestureMode)) {
                 sendKeys(new short[]{KeyboardTranslator.VK_LWIN});
             }

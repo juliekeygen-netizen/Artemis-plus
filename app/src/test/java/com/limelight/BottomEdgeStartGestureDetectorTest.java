@@ -26,6 +26,14 @@ public class BottomEdgeStartGestureDetectorTest {
     }
 
     @Test
+    public void recognizedGestureConsumesEventsThroughTerminalOnly() {
+        detector.consumeRecognizedGestureUntilTerminal();
+        assertTrue(detector.shouldConsumeRecognizedGestureEvent(false));
+        assertTrue(detector.shouldConsumeRecognizedGestureEvent(true));
+        assertFalse(detector.shouldConsumeRecognizedGestureEvent(false));
+    }
+
+    @Test
     public void ordinaryTapFallsBackAndAndroidCancelIsDiscarded() {
         assertEquals(BottomEdgeStartGestureDetector.Decision.FALLBACK,
                 detector.decide(0f, 2f, 90, 1, true, false));

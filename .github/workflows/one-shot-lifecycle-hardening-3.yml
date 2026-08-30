@@ -1,0 +1,167 @@
+name: One-shot lifecycle hardening 3
+
+on:
+  push:
+    branches:
+      - audit/lifecycle-hardening-3
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-verify-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout audit branch
+        uses: actions/checkout@v4
+        with:
+          ref: audit/lifecycle-hardening-3
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Apply lifecycle audit fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def read(path):
+              p = Path(path)
+              data = p.read_bytes()
+              nl = '\r\n' if b'\r\n' in data else '\n'
+              return data.decode('utf-8').replace('\r\n', '\n'), nl
+
+          def write(path, text, nl='\n'):
+              Path(path).write_bytes(text.replace('\n', nl).encode('utf-8'))
+
+          def replace_once(path, old, new):
+              text, nl = read(path)
+              if new in text:
+                  return
+              if old not in text:
+                  raise SystemExit(f'anchor missing: {path}: {old[:160]!r}')
+              if text.count(old) != 1:
+                  raise SystemExit(f'anchor not unique: {path}: count={text.count(old)}')
+              write(path, text.replace(old, new, 1), nl)
+
+          game = 'app/src/main/java/com/limelight/Game.java'
+          replace_once(game,
+              '''            if (!entered) {\n                return;\n            }\n\n            isHidingOverlays = true;\n            if (pipOverlayState.floatingButtonShown) floatingMenuButton.setVisibility(View.GONE);\n            if (pipOverlayState.zoomButtonShown) overlayToggleButton.setVisibility(View.GONE);\n            if (virtualController != null) virtualController.hide();\n            if (keyBoardController != null && pipOverlayState.keyboardControllerShown) keyBoardController.hide(true);\n            if (keyBoardLayoutController != null && pipOverlayState.keyboardLayoutShown) keyBoardLayoutController.hide(true);\n            hideGameMenu();\n            if (performanceOverlayView != null) performanceOverlayView.setVisibility(View.GONE);\n            if (notificationOverlayView != null) notificationOverlayView.setVisibility(View.GONE);\n            if (statsOverlay != null) statsOverlay.setVisibility(View.GONE);\n            if (controllerHandler != null) controllerHandler.disableSensors();\n            UiHelper.notifyStreamEnteringPiP(this);''',
+              '''            // Snapshot only once, but enforce PiP visibility on every callback. Layout refreshes\n            // can recreate overlay child Views while PiP is already active. Returning early here would\n            // allow those freshly rebuilt controls to become visible inside the PiP window.\n            isHidingOverlays = true;\n            if (floatingMenuButton != null) floatingMenuButton.setVisibility(View.GONE);\n            if (overlayToggleButton != null) overlayToggleButton.setVisibility(View.GONE);\n            if (virtualController != null) virtualController.hide();\n            if (keyBoardController != null) keyBoardController.hide(true);\n            if (keyBoardLayoutController != null) keyBoardLayoutController.hide(true);\n            hideGameMenu();\n            if (performanceOverlayView != null) performanceOverlayView.setVisibility(View.GONE);\n            if (notificationOverlayView != null) notificationOverlayView.setVisibility(View.GONE);\n            if (statsOverlay != null) statsOverlay.setVisibility(View.GONE);\n            if (entered) {\n                if (controllerHandler != null) controllerHandler.disableSensors();\n                UiHelper.notifyStreamEnteringPiP(this);\n            }''')
+
+          replace_once(game,
+              '''        int action = event.getActionMasked();\n        boolean terminalEvent = action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL;\n        if (bottomEdgeStartGestureDetector.shouldConsumeRecognizedGestureEvent(terminalEvent)) {''',
+              '''        int action = event.getActionMasked();\n        // OxygenOS/Android may steal a system-edge gesture without delivering its final UP/CANCEL.\n        // A brand-new DOWN cannot belong to the old sequence, so use it to clear stale consumption\n        // rather than swallowing the user's next complete gesture.\n        if (action == MotionEvent.ACTION_DOWN && !bottomEdgeGesturePending) {\n            bottomEdgeStartGestureDetector.resetRecognizedGestureConsumption();\n        }\n        boolean terminalEvent = action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL;\n        if (bottomEdgeStartGestureDetector.shouldConsumeRecognizedGestureEvent(terminalEvent)) {''')
+
+          replace_once(game,
+              '''        if (controllerHandler != null) {\n            controllerHandler.destroy();\n        }''',
+              '''        // Tear down overlay-owned handlers before the stream/input owner. This prevents delayed\n        // editor gestures, retransmits, popups, or modifier timers from retaining a dead Activity.\n        if (virtualController != null) {\n            virtualController.destroy();\n        }\n        if (keyBoardController != null) {\n            keyBoardController.destroy();\n        }\n        if (keyBoardLayoutController != null) {\n            keyBoardLayoutController.destroy();\n        }\n        if (controllerHandler != null) {\n            controllerHandler.destroy();\n        }''')
+
+          kb = 'app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardController.java'
+          replace_once(kb,
+              '''        if (configureGestureCancelCallback != null) {\n            configureGestureCancelCallback.run();\n            configureGestureCancelCallback = null;\n        }''',
+              '''        if (configureGestureCancelCallback != null) {\n            // The configure button and its listener survive refreshLayout(). Keep this hook for every\n            // later refresh/teardown rather than nulling it after the first rebuild.\n            configureGestureCancelCallback.run();\n        }''')
+          replace_once(kb,
+              '''    public void setOpacity(int opacity) {\n        for (keyBoardVirtualControllerElement element : elements) {''',
+              '''    public void destroy() {\n        if (configureGestureCancelCallback != null) {\n            configureGestureCancelCallback.run();\n        }\n        handler.removeCallbacksAndMessages(null);\n        removeElements();\n    }\n\n    public void setOpacity(int opacity) {\n        for (keyBoardVirtualControllerElement element : elements) {''')
+          replace_once(kb,
+              '''        } else {\n            showControlButtons(false);\n        }\n    }\n\n    private void addTopButton''',
+              '''        } else {\n            showControlButtons(false);\n        }\n\n        // Rebuilding a hidden controller must not resurrect newly created native/custom controls.\n        // PiP uses hide(true), which deliberately keeps shown=true; Game re-enforces temporary PiP\n        // hiding immediately after configuration refreshes.\n        if (!shown) {\n            hide(true);\n        }\n    }\n\n    private void addTopButton''')
+
+          vc = 'app/src/main/java/com/limelight/binding/input/virtual_controller/VirtualController.java'
+          replace_once(vc,
+              '''    private boolean snappingEnabled;\n    private boolean pairedSizingEnabled;''',
+              '''    private boolean snappingEnabled;\n    private boolean pairedSizingEnabled;\n    private boolean shown;''')
+          replace_once(vc,
+              '''    public void hide() {\n        for (VirtualControllerElement element : elements) {\n            element.setVisibility(View.GONE);\n        }\n\n        buttonConfigure.setVisibility(View.GONE);\n    }\n\n    public void show() {\n        showEnabledElements();\n\n        buttonConfigure.setVisibility(View.VISIBLE);\n    }\n\n    public boolean isShown() {\n        return buttonConfigure != null && buttonConfigure.getVisibility() == View.VISIBLE;\n    }\n\n    public int switchShowHide() {\n        if (buttonConfigure.getVisibility() == View.VISIBLE) {''',
+              '''    public void hide() {\n        shown = false;\n        for (VirtualControllerElement element : elements) {\n            element.setVisibility(View.GONE);\n        }\n\n        buttonConfigure.setVisibility(View.GONE);\n    }\n\n    public void show() {\n        shown = true;\n        showEnabledElements();\n\n        buttonConfigure.setVisibility(View.VISIBLE);\n    }\n\n    public boolean isShown() {\n        return shown;\n    }\n\n    public int switchShowHide() {\n        if (shown) {''')
+          replace_once(vc,
+              '''    public void setOpacity(int opacity) {\n        for (VirtualControllerElement element : elements) {''',
+              '''    public void destroy() {\n        handler.removeCallbacksAndMessages(null);\n        removeElements();\n        shown = false;\n    }\n\n    public void setOpacity(int opacity) {\n        for (VirtualControllerElement element : elements) {''')
+          replace_once(vc,
+              '''        // Apply user preferences onto the default layout\n        VirtualControllerConfigurationLoader.loadFromPreferences(this, context);\n    }''',
+              '''        // Apply user preferences onto the default layout\n        VirtualControllerConfigurationLoader.loadFromPreferences(this, context);\n\n        // New element Views default to visible. Preserve the controller's logical visibility across\n        // rotation/profile rebuilds so a hidden OSC cannot partially reappear.\n        if (!shown) {\n            for (VirtualControllerElement element : elements) {\n                element.setVisibility(View.GONE);\n            }\n            buttonConfigure.setVisibility(View.GONE);\n        } else if (currentMode == ControllerMode.DisableEnableButtons) {\n            showElements();\n            buttonConfigure.setVisibility(View.VISIBLE);\n        } else {\n            showEnabledElements();\n            buttonConfigure.setVisibility(View.VISIBLE);\n        }\n    }''')
+
+          kbl = 'app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardLayoutController.java'
+          replace_once(kbl,
+              '''    private static final HashMap<Integer, Runnable> longClickRunnables = new HashMap<>();''',
+              '''    // Instance-scoped: these Runnables capture keyboard Views and must never keep an old\n    // Game Activity alive after a new stream/controller is created.\n    private final HashMap<Integer, Runnable> longClickRunnables = new HashMap<>();''')
+          replace_once(kbl,
+              '''    public void toggleVisibility() {\n        if (keyboardView.getVisibility() == View.VISIBLE) {\n            hide();\n        } else {\n            show();\n        }\n    }\n\n    public void refreshLayout() {''',
+              '''    public void toggleVisibility() {\n        if (keyboardView.getVisibility() == View.VISIBLE) {\n            hide();\n        } else {\n            show();\n        }\n    }\n\n    public void destroy() {\n        handler.removeCallbacksAndMessages(null);\n        if (keyPopup != null) {\n            keyPopup.dismiss();\n        }\n        longClickRunnables.clear();\n        modifierKeyStates.clear();\n        if (frame_layout != null) {\n            frame_layout.removeView(keyboardView);\n        }\n    }\n\n    public void refreshLayout() {''')
+
+          settings = 'app/src/main/java/com/limelight/preferences/StreamSettings.java'
+          replace_once(settings,
+              '''    void reloadSettings() {\n        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {\n            Display.Mode mode = getActiveDisplay(StreamSettings.this, previousPrefs).getMode();\n            previousDisplayPixelCount = mode.getPhysicalWidth() * mode.getPhysicalHeight();\n        }\n        prefsFragment = new SettingsFragment(PreferenceConfiguration.readPreferences(\n                this,\n                PreferenceManager.getDefaultSharedPreferences(this)\n        ));''',
+              '''    private void rememberCurrentDisplayPixelCount() {\n        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {\n            Display.Mode mode = getActiveDisplay(StreamSettings.this, previousPrefs).getMode();\n            previousDisplayPixelCount = mode.getPhysicalWidth() * mode.getPhysicalHeight();\n        }\n    }\n\n    void reloadSettings() {\n        rememberCurrentDisplayPixelCount();\n        prefsFragment = new SettingsFragment();''')
+          replace_once(settings,
+              '''        reloadSettings();\n    }\n\n    @Override\n    public void onConfigurationChanged''',
+              '''        androidx.fragment.app.Fragment restoredFragment =\n                getSupportFragmentManager().findFragmentById(R.id.stream_settings);\n        if (restoredFragment instanceof SettingsFragment) {\n            // Let FragmentManager keep its restored search/scroll state. Replacing it here used to\n            // discard that state and also amplified the non-default-constructor restoration bug.\n            prefsFragment = (SettingsFragment) restoredFragment;\n            rememberCurrentDisplayPixelCount();\n        } else {\n            reloadSettings();\n        }\n    }\n\n    @Override\n    public void onConfigurationChanged''')
+          replace_once(settings,
+              '''        private PreferenceConfiguration prevPrefConfig;\n\n        public SettingsFragment(PreferenceConfiguration prefCfg) {\n            prevPrefConfig = prefCfg;\n        }''',
+              '''        private PreferenceConfiguration prevPrefConfig;\n\n        // FragmentManager must be able to recreate this fragment after process/activity restoration.\n        public SettingsFragment() {\n        }''')
+          replace_once(settings,
+              '''        public void initializePreferences() {\n            addPreferencesFromResource(R.xml.preferences);\n            PreferenceScreen screen = getPreferenceScreen();''',
+              '''        public void initializePreferences() {\n            // Re-read dynamic values inside the Fragment rather than passing a non-serializable\n            // configuration object through a custom constructor.\n            prevPrefConfig = PreferenceConfiguration.readPreferences(requireContext());\n            addPreferencesFromResource(R.xml.preferences);\n            PreferenceScreen screen = getPreferenceScreen();\n\n            ListPreference outsideOrientation = findPreference(OutsideStreamOrientationPolicy.PREF_KEY);\n            if (outsideOrientation != null) {\n                outsideOrientation.setOnPreferenceChangeListener((preference, newValue) -> {\n                    String requestedMode = String.valueOf(newValue);\n                    // Post so AndroidX can persist the accepted ListPreference value first.\n                    requireActivity().getWindow().getDecorView().post(() ->\n                            OutsideStreamOrientationPolicy.apply(requireActivity(), requestedMode));\n                    return true;\n                });\n            }''')
+
+          detector_test = 'app/src/test/java/com/limelight/BottomEdgeStartGestureDetectorTest.java'
+          text, nl = read(detector_test)
+          marker = '''    @Test\n    public void cancelDoesNotTrigger() {'''
+          new_test = '''    @Test\n    public void freshGestureCanClearStaleConsumptionAfterSystemStealsTerminalEvent() {\n        BottomEdgeStartGestureDetector detector = new BottomEdgeStartGestureDetector(1f);\n        detector.consumeRecognizedGestureUntilTerminal();\n        assertTrue(detector.shouldConsumeRecognizedGestureEvent(false));\n\n        // Game calls this on a brand-new ACTION_DOWN when Android/OEM never delivered the\n        // previous gesture's terminal event. The new gesture must no longer be swallowed.\n        detector.resetRecognizedGestureConsumption();\n        assertFalse(detector.shouldConsumeRecognizedGestureEvent(false));\n    }\n\n'''
+          if new_test not in text:
+              if marker not in text:
+                  raise SystemExit('BottomEdge test anchor missing')
+              text = text.replace(marker, new_test + marker, 1)
+              write(detector_test, text, nl)
+
+          lifecycle_test = '''package com.limelight.preferences;\n\nimport static org.junit.Assert.assertNotNull;\n\nimport org.junit.Test;\n\n/** Guards Android FragmentManager restoration requirements for the Settings screen. */\npublic class StreamSettingsFragmentLifecycleTest {\n    @Test\n    public void settingsFragmentHasPublicNoArgConstructor() throws Exception {\n        assertNotNull(StreamSettings.SettingsFragment.class.getConstructor());\n    }\n}\n'''
+          p = Path('app/src/test/java/com/limelight/preferences/StreamSettingsFragmentLifecycleTest.java')
+          if not p.exists():
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_text(lifecycle_test, encoding='utf-8')
+          PY
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK and NDK
+        run: sdkmanager "platforms;android-36" "ndk;27.0.12077973"
+
+      - name: Make Gradle executable
+        run: chmod +x gradlew
+
+      - name: Compile non-root debug variant
+        run: ./gradlew :app:compileNonRoot_gameDebugJavaWithJavac --stacktrace
+
+      - name: Run lifecycle regressions
+        run: >-
+          ./gradlew :app:testNonRoot_gameDebugUnitTest
+          --tests "com.limelight.BottomEdgeStartGestureDetectorTest"
+          --tests "com.limelight.PipOverlayTransitionStateTest"
+          --tests "com.limelight.OutsideStreamOrientationPolicyTest"
+          --tests "com.limelight.binding.input.virtual_controller.keyboard.LongPressMoveGestureGuardTest"
+          --tests "com.limelight.ui.FloatingControlPositionStoreTest"
+          --tests "com.limelight.preferences.StreamSettingsFragmentLifecycleTest"
+          --stacktrace
+
+      - name: Commit verified product fixes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main app/src/test
+          if git diff --cached --quiet; then
+            echo "No product changes to commit"
+            exit 0
+          fi
+          git commit -m "fix: harden stream and settings lifecycle state"
+          git push origin audit/lifecycle-hardening-3

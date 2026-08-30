@@ -70,6 +70,7 @@ public class KeyBoardController {
     private Button buttonProfiles;
     private Button buttonAcceptGroupMove;
     private View groupOutline;
+    private Runnable configureGestureCancelCallback;
 
     private static final String SETTINGS_POSITION_ID = "keyboardSettingsButton";
     // Keep the persisted reset target and the layout default literally identical by sharing these
@@ -145,6 +146,12 @@ public class KeyBoardController {
             private void cancelTimers() {
                 handler.removeCallbacks(armMove);
                 handler.removeCallbacks(offerReset);
+            }
+
+            {
+                // removeElements() can run while a long hold is still pending. Keep a dedicated
+                // cancellation hook so a detached settings button can never receive a late drag/reset callback.
+                KeyBoardController.this.configureGestureCancelCallback = this::cancelTimers;
             }
 
             @Override
@@ -351,6 +358,10 @@ public class KeyBoardController {
     }
 
     public void removeElements() {
+        if (configureGestureCancelCallback != null) {
+            configureGestureCancelCallback.run();
+            configureGestureCancelCallback = null;
+        }
         activeMoveGroup.clear();
         outlinedGroup.clear();
         for (keyBoardVirtualControllerElement element : new ArrayList<>(elements)) {

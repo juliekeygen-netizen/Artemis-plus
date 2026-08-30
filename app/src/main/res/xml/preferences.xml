@@ -484,6 +484,14 @@
             android:summary="@string/summary_enable_commit_text"
             android:title="@string/title_enable_commit_text"
             app:iconSpaceReserved="false" />
+        <ListPreference
+            android:defaultValue="native"
+            android:entries="@array/bottom_edge_start_gesture_names"
+            android:entryValues="@array/bottom_edge_start_gesture_values"
+            android:key="list_bottom_edge_start_gesture"
+            android:title="Bottom-edge Start gesture"
+            android:summary="Choose how an upward swipe from the bottom edge is handled during a stream. Windows key avoids forwarding the native touch gesture that can become stuck."
+            app:iconSpaceReserved="false" />
     </PreferenceCategory>
 
     <PreferenceCategory

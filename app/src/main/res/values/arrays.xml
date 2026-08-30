@@ -9,6 +9,17 @@
         <item>portrait</item>
     </string-array>
 
+    <string-array name="bottom_edge_start_gesture_names">
+        <item>Native Windows touch</item>
+        <item>Windows key</item>
+        <item>Disabled</item>
+    </string-array>
+    <string-array name="bottom_edge_start_gesture_values" translatable="false">
+        <item>native</item>
+        <item>windows_key</item>
+        <item>disabled</item>
+    </string-array>
+
     <string-array name="resolution_names">
         <item>@string/resolution_360p</item>
         <item>@string/resolution_480p</item>

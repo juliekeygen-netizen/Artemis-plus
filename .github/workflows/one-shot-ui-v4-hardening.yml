@@ -21,7 +21,7 @@ jobs:
           ref: feature/ui-editor-system-v4
           fetch-depth: 0
 
-      - name: Apply source-only lifecycle hardening
+      - name: Apply source and test hardening
         run: python3 tools/one_shot_ui_v4_hardening.py
 
       - name: Commit generated product and test changes

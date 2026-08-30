@@ -190,9 +190,5 @@ patch(path,
           --tests "com.limelight.ui.FloatingControlPositionStoreTest"
           --stacktrace''')
 
-# Self-clean one-shot machinery.
-Path('tools/one_shot_ui_v4_hardening.py').unlink()
-wf = Path('.github/workflows/one-shot-ui-v4-hardening.yml')
-if wf.exists():
-    wf.unlink()
+# Cleanup is performed through the GitHub connector after the generated product/test changes land.
 print('UI v4 lifecycle hardening applied')

@@ -220,7 +220,7 @@ public final class KeyboardProfilesDialog {
             more.setTextSize(24f);
             more.setGravity(Gravity.CENTER);
             more.setContentDescription("Profile options");
-            more.setBackground(roundedBackground(0x332FFFFFFF, 10 * density, 0, 0));
+            more.setBackground(roundedBackground(0x33FFFFFF, 10 * density, 0, 0));
             row.addView(more, new LinearLayout.LayoutParams(
                     Math.round(40 * density), Math.round(40 * density)));
 

@@ -69,17 +69,37 @@ function Get-CertificateSha256 {
         [string]$KeyAlias
     )
 
-    $pemLines = & $KeyTool -exportcert -rfc `
-        -keystore $Store `
-        -storepass $StorePassword `
-        -alias $KeyAlias 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        throw "Unable to read the signing certificate from $Store"
+    # Windows PowerShell 5 can convert text written by a native executable to stderr into a
+    # terminating NativeCommandError when $ErrorActionPreference is Stop, even when the native
+    # command itself succeeds. keytool may emit harmless JKS-format warnings this way. Use the
+    # process API so stdout/stderr and the real process exit code remain separate.
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $KeyTool
+    $startInfo.Arguments = "-exportcert -rfc -keystore `"$Store`" -storepass `"$StorePassword`" -alias `"$KeyAlias`""
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    if (-not $process.Start()) {
+        throw "Unable to start keytool while reading the Artemis Plus signing certificate."
     }
 
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+    if ($process.ExitCode -ne 0) {
+        throw "Unable to read the signing certificate from $Store. keytool exit code $($process.ExitCode): $stderr"
+    }
+
+    $pemLines = $stdout -split "`r?`n"
     $certificateBase64 = ($pemLines |
-        Where-Object { $_ -notmatch '^-----' } |
+        Where-Object { $_ -and $_ -notmatch '^-----' } |
         ForEach-Object { $_.Trim() }) -join ''
+    if ([string]::IsNullOrWhiteSpace($certificateBase64)) {
+        throw "keytool returned no signing certificate data for alias '$KeyAlias'."
+    }
+
     $certificateBytes = [Convert]::FromBase64String($certificateBase64)
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try {
@@ -88,6 +108,28 @@ function Get-CertificateSha256 {
         $sha.Dispose()
     }
     return (([BitConverter]::ToString($digest)).Replace("-", "").ToLowerInvariant())
+}
+
+function Test-GitHubCliAuth {
+    param([string]$GhPath)
+
+    # gh can also write status information to stderr. Keep it out of PowerShell's error stream and
+    # decide success exclusively from the native exit code.
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $GhPath
+    $startInfo.Arguments = "auth status"
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    if (-not $process.Start()) {
+        return $false
+    }
+    $null = $process.StandardOutput.ReadToEnd()
+    $null = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+    return ($process.ExitCode -eq 0)
 }
 
 function Set-GitHubSecretFromStdin {
@@ -210,8 +252,7 @@ if (-not $SkipGitHub) {
         throw "The local signing key is ready, but GitHub CLI is not installed. Install it with 'winget install --id GitHub.cli', reopen PowerShell, run 'gh auth login', then run this script again."
     }
 
-    & gh auth status 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    if (-not (Test-GitHubCliAuth -GhPath $gh.Source)) {
         throw "The local signing key is ready, but GitHub CLI is not authenticated. Run 'gh auth login', then run this script again."
     }
 

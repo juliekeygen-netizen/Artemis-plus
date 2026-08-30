@@ -1,0 +1,194 @@
+name: One-shot audit phase 2 and PiP repair
+
+on:
+  push:
+    branches:
+      - feature/phase2-5-audit-next
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/phase2-5-audit-next
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Apply audited fixes and phase 2/3A
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def read(path):
+              p = Path(path)
+              data = p.read_bytes()
+              newline = '\r\n' if b'\r\n' in data else '\n'
+              return data.decode('utf-8').replace('\r\n', '\n'), newline
+
+          def write(path, text, newline='\n'):
+              p = Path(path)
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_bytes(text.replace('\n', newline).encode('utf-8'))
+
+          def replace_once(path, old, new):
+              text, newline = read(path)
+              if new in text:
+                  return
+              if old not in text:
+                  raise SystemExit(f'anchor missing: {path}: {old[:120]!r}')
+              if text.count(old) != 1:
+                  raise SystemExit(f'anchor not unique: {path}: {old[:120]!r}')
+              write(path, text.replace(old, new, 1), newline)
+
+          # --- V4 audit: cancel the settings-button hold callbacks if the controller is destroyed. ---
+          kc = 'app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardController.java'
+          replace_once(kc,
+              '    private View groupOutline;\n\n    private static final String SETTINGS_POSITION_ID',
+              '    private View groupOutline;\n    private Runnable configureGestureCancelCallback;\n\n    private static final String SETTINGS_POSITION_ID')
+          replace_once(kc,
+              '            private void cancelTimers() {\n                handler.removeCallbacks(armMove);\n                handler.removeCallbacks(offerReset);\n            }\n\n            @Override',
+              '            private void cancelTimers() {\n                handler.removeCallbacks(armMove);\n                handler.removeCallbacks(offerReset);\n            }\n\n            {\n                // removeElements() can run while a long hold is still pending. Keep a dedicated\n                // cancellation hook so a detached settings button can never receive a late drag/reset callback.\n                KeyBoardController.this.configureGestureCancelCallback = this::cancelTimers;\n            }\n\n            @Override')
+          replace_once(kc,
+              '    public void removeElements() {\n        activeMoveGroup.clear();',
+              '    public void removeElements() {\n        if (configureGestureCancelCallback != null) {\n            configureGestureCancelCallback.run();\n            configureGestureCancelCallback = null;\n        }\n        activeMoveGroup.clear();')
+
+          # VirtualController needs a truthful visibility query so PiP restores the pre-PiP state.
+          vc = 'app/src/main/java/com/limelight/binding/input/virtual_controller/VirtualController.java'
+          replace_once(vc,
+              '    public void show() {\n        showEnabledElements();\n\n        buttonConfigure.setVisibility(View.VISIBLE);\n    }\n\n    public int switchShowHide()',
+              '    public void show() {\n        showEnabledElements();\n\n        buttonConfigure.setVisibility(View.VISIBLE);\n    }\n\n    public boolean isShown() {\n        return buttonConfigure != null && buttonConfigure.getVisibility() == View.VISIBLE;\n    }\n\n    public int switchShowHide()')
+
+          # --- Phase 2B: bottom-edge Start gesture preference. ---
+          arrays = 'app/src/main/res/values/arrays.xml'
+          replace_once(arrays,
+              '    <string-array name="outside_stream_orientation_values" translatable="false">\n        <item>follow_system</item>\n        <item>portrait</item>\n    </string-array>\n',
+              '    <string-array name="outside_stream_orientation_values" translatable="false">\n        <item>follow_system</item>\n        <item>portrait</item>\n    </string-array>\n\n    <string-array name="bottom_edge_start_gesture_names">\n        <item>Native Windows touch</item>\n        <item>Windows key</item>\n        <item>Disabled</item>\n    </string-array>\n    <string-array name="bottom_edge_start_gesture_values" translatable="false">\n        <item>native</item>\n        <item>windows_key</item>\n        <item>disabled</item>\n    </string-array>\n')
+
+          prefs = 'app/src/main/res/xml/preferences.xml'
+          replace_once(prefs,
+              '        <CheckBoxPreference\n            android:defaultValue="false"\n            android:key="checkbox_enable_commit_text"\n            android:summary="@string/summary_enable_commit_text"\n            android:title="@string/title_enable_commit_text"\n            app:iconSpaceReserved="false" />\n',
+              '        <CheckBoxPreference\n            android:defaultValue="false"\n            android:key="checkbox_enable_commit_text"\n            android:summary="@string/summary_enable_commit_text"\n            android:title="@string/title_enable_commit_text"\n            app:iconSpaceReserved="false" />\n        <ListPreference\n            android:defaultValue="native"\n            android:entries="@array/bottom_edge_start_gesture_names"\n            android:entryValues="@array/bottom_edge_start_gesture_values"\n            android:key="list_bottom_edge_start_gesture"\n            android:title="Bottom-edge Start gesture"\n            android:summary="Choose how an upward swipe from the bottom edge is handled during a stream. Windows key avoids forwarding the native touch gesture that can become stuck."\n            app:iconSpaceReserved="false" />\n')
+
+          pc = 'app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java'
+          replace_once(pc,
+              '    private static final String CHECKBOX_ENABLE_COMMIT_TEXT = "checkbox_enable_commit_text";\n',
+              '    private static final String CHECKBOX_ENABLE_COMMIT_TEXT = "checkbox_enable_commit_text";\n    private static final String BOTTOM_EDGE_START_GESTURE_PREF_STRING = "list_bottom_edge_start_gesture";\n')
+          replace_once(pc,
+              '    private static final boolean DEFAULT_ENABLE_COMMIT_TEXT = false;\n',
+              '    private static final boolean DEFAULT_ENABLE_COMMIT_TEXT = false;\n    private static final String DEFAULT_BOTTOM_EDGE_START_GESTURE = "native";\n')
+          replace_once(pc,
+              '    public boolean enablePip;\n',
+              '    public boolean enablePip;\n    public String bottomEdgeStartGestureMode;\n')
+          replace_once(pc,
+              '        config.trackpadSwapAxis = prefs.getBoolean(CHECKBOX_TRACKPAD_SWAP_AXIS, DEFAULT_TRACKPAD_SWAP_AXIS);\n\n        config.absoluteMouseMode',
+              '        config.trackpadSwapAxis = prefs.getBoolean(CHECKBOX_TRACKPAD_SWAP_AXIS, DEFAULT_TRACKPAD_SWAP_AXIS);\n        config.bottomEdgeStartGestureMode = prefs.getString(\n                BOTTOM_EDGE_START_GESTURE_PREF_STRING, DEFAULT_BOTTOM_EDGE_START_GESTURE);\n\n        config.absoluteMouseMode')
+
+          detector = '''package com.limelight;\n\n/** Pure gesture decision logic used before forwarding bottom-edge touch events to Windows. */\npublic final class BottomEdgeStartGestureDetector {\n    public static final String MODE_NATIVE = "native";\n    public static final String MODE_WINDOWS_KEY = "windows_key";\n    public static final String MODE_DISABLED = "disabled";\n\n    public enum Decision {\n        PENDING,\n        TRIGGER,\n        FALLBACK,\n        CANCEL\n    }\n\n    private final float edgeHeightPx;\n    private final float triggerDistancePx;\n    private final float maxHorizontalDriftPx;\n    private final long decisionTimeoutMs;\n\n    public BottomEdgeStartGestureDetector(float density) {\n        float safeDensity = Math.max(0.5f, density);\n        edgeHeightPx = 32f * safeDensity;\n        triggerDistancePx = 48f * safeDensity;\n        maxHorizontalDriftPx = 40f * safeDensity;\n        decisionTimeoutMs = 220L;\n    }\n\n    public boolean startsInBottomEdge(float y, float viewHeight) {\n        return viewHeight > 0 && y >= Math.max(0f, viewHeight - edgeHeightPx);\n    }\n\n    public long getDecisionTimeoutMs() {\n        return decisionTimeoutMs;\n    }\n\n    public Decision decide(float deltaX, float upwardDeltaY, long elapsedMs,\n                           int pointerCount, boolean isUp, boolean isCancel) {\n        if (isCancel) {\n            return Decision.CANCEL;\n        }\n        if (pointerCount != 1) {\n            return Decision.FALLBACK;\n        }\n        if (upwardDeltaY >= triggerDistancePx && Math.abs(deltaX) <= maxHorizontalDriftPx) {\n            return Decision.TRIGGER;\n        }\n        if (Math.abs(deltaX) > maxHorizontalDriftPx || upwardDeltaY < -(triggerDistancePx * 0.5f)) {\n            return Decision.FALLBACK;\n        }\n        if (isUp || elapsedMs >= decisionTimeoutMs) {\n            return Decision.FALLBACK;\n        }\n        return Decision.PENDING;\n    }\n}\n'''
+          write('app/src/main/java/com/limelight/BottomEdgeStartGestureDetector.java', detector)
+
+          pipstate = '''package com.limelight;\n\n/** Stores one PiP transition snapshot so repeated configuration callbacks cannot overwrite it. */\nfinal class PipOverlayTransitionState {\n    boolean inPip;\n    boolean floatingButtonShown;\n    boolean zoomButtonShown;\n    boolean virtualControllerShown;\n    boolean keyboardControllerShown;\n    boolean keyboardLayoutShown;\n    boolean performanceOverlayShown;\n    boolean statsOverlayShown;\n    int notificationVisibility;\n\n    boolean enter(boolean floatingButtonShown,\n                  boolean zoomButtonShown,\n                  boolean virtualControllerShown,\n                  boolean keyboardControllerShown,\n                  boolean keyboardLayoutShown,\n                  boolean performanceOverlayShown,\n                  int notificationVisibility,\n                  boolean statsOverlayShown) {\n        if (inPip) {\n            return false;\n        }\n        this.floatingButtonShown = floatingButtonShown;\n        this.zoomButtonShown = zoomButtonShown;\n        this.virtualControllerShown = virtualControllerShown;\n        this.keyboardControllerShown = keyboardControllerShown;\n        this.keyboardLayoutShown = keyboardLayoutShown;\n        this.performanceOverlayShown = performanceOverlayShown;\n        this.notificationVisibility = notificationVisibility;\n        this.statsOverlayShown = statsOverlayShown;\n        inPip = true;\n        return true;\n    }\n\n    boolean exit() {\n        if (!inPip) {\n            return false;\n        }\n        inPip = false;\n        return true;\n    }\n}\n'''
+          write('app/src/main/java/com/limelight/PipOverlayTransitionState.java', pipstate)
+
+          # --- Game integration for phase 2B and audited PiP state transitions. ---
+          game = 'app/src/main/java/com/limelight/Game.java'
+          replace_once(game,
+              '    private boolean overlayToggleZoomButtonShown;\n    private TextView notificationOverlayView;',
+              '    private boolean overlayToggleZoomButtonShown;\n    private final PipOverlayTransitionState pipOverlayState = new PipOverlayTransitionState();\n    private TextView notificationOverlayView;')
+          replace_once(game,
+              '    private float zoomButtonStartX, zoomButtonStartY;\n\n    // Queue for batching commitText payloads',
+              '    private float zoomButtonStartX, zoomButtonStartY;\n\n    // Bottom-edge Start gesture interception buffers the initial touch until it is either\n    // recognized as the requested Start shortcut or proven to be an ordinary touch.\n    private BottomEdgeStartGestureDetector bottomEdgeStartGestureDetector;\n    private final ArrayList<MotionEvent> bottomEdgeGestureBuffer = new ArrayList<>();\n    private boolean bottomEdgeGesturePending;\n    private View bottomEdgeGestureView;\n    private float bottomEdgeDownX;\n    private float bottomEdgeDownY;\n    private long bottomEdgeDownTime;\n    private final Runnable bottomEdgeReplayTimeout = this::replayBottomEdgeGesture;\n\n    // Queue for batching commitText payloads')
+          replace_once(game,
+              '        prefConfig = PreferenceConfiguration.readPreferences(this);\n\n        // This Activity is the stream-session owner',
+              '        prefConfig = PreferenceConfiguration.readPreferences(this);\n        bottomEdgeStartGestureDetector = new BottomEdgeStartGestureDetector(\n                getResources().getDisplayMetrics().density);\n\n        // This Activity is the stream-session owner')
+
+          # Remove the contradictory fixed-size call. SurfaceView must be free to follow PiP bounds.
+          replace_once(game,
+              '                // Avoid resizes/glitches that break the compositor\n                int vw = (prefConfig != null && prefConfig.width > 0) ? prefConfig.width : displayWidth;\n                int vh = (prefConfig != null && prefConfig.height > 0) ? prefConfig.height : displayHeight;\n                try { streamSurfaceView.getHolder().setFixedSize(vw, vh); } catch (Throwable ignored) {}\n                try { streamSurfaceView.setZOrderOnTop(false); } catch (Throwable ignored) {}',
+              '                // Keep the SurfaceView layout-owned so Android can resize it correctly for PiP.\n                // Frame pacing below does not require pinning the buffer size to the stream resolution.\n                try { streamSurfaceView.setZOrderOnTop(false); } catch (Throwable ignored) {}')
+
+          old_pip = '''        // Hide on-screen overlays in PiP mode\n        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {\n            if (isInPictureInPictureMode()) {\n                isHidingOverlays = true;\n\n                floatingButtonShown = floatingMenuButton.isShown();\n\n                if (floatingButtonShown) {\n                    floatingMenuButton.setVisibility(View.GONE);\n                }\n\n                overlayToggleZoomButtonShown = overlayToggleButton != null && overlayToggleButton.isShown();\n\n                if (overlayToggleZoomButtonShown) {\n                    overlayToggleButton.setVisibility(View.GONE);\n                }\n\n                if (virtualController != null) {\n                    virtualController.hide();\n                }\n\n                if (keyBoardController != null && keyBoardController.shown) {\n                    keyBoardController.hide(true);\n                }\n\n                if (keyBoardLayoutController!=null && keyBoardLayoutController.shown) {\n                    keyBoardLayoutController.hide(true);\n                }\n\n                hideGameMenu();\n\n                performanceOverlayView.setVisibility(View.GONE);\n                notificationOverlayView.setVisibility(View.GONE);\n                if (statsOverlay != null) {\n                    statsOverlay.setVisibility(View.GONE);\n                }\n\n                // Disable sensors while in PiP mode\n                controllerHandler.disableSensors();\n\n                // Update GameManager state to indicate we're in PiP (still gaming, but interruptible)\n                UiHelper.notifyStreamEnteringPiP(this);\n            }\n            else {\n                isHidingOverlays = false;\n\n                if (floatingButtonShown) {\n                    floatingMenuButton.setVisibility(View.VISIBLE);\n                }\n\n                if (overlayToggleZoomButtonShown) {\n                    overlayToggleButton.setVisibility(View.VISIBLE);\n                }\n\n                // Restore overlays to previous state when leaving PiP\n\n                if (virtualController != null) {\n                    virtualController.show();\n                }\n\n                if (keyBoardController != null && keyBoardController.shown) {\n                    keyBoardController.show();\n                }\n\n                if(keyBoardLayoutController!=null && keyBoardLayoutController.shown){\n                    keyBoardLayoutController.show();\n                }\n\n                if (prefConfig.enablePerfOverlay) {\n                    performanceOverlayView.setVisibility(View.VISIBLE);\n                }\n\n                notificationOverlayView.setVisibility(requestedNotificationOverlayVisibility);\n\n                if (statsOverlay != null) {\n                    statsOverlay.setVisibility(View.VISIBLE);\n                }\n\n                // Enable sensors again after exiting PiP\n                controllerHandler.enableSensors();\n\n                // Update GameManager state to indicate we're out of PiP (gaming, non-interruptible)\n                UiHelper.notifyStreamExitingPiP(this);\n            }\n        }\n'''
+          new_pip = '''        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {\n            updatePipOverlayState(isInPictureInPictureMode());\n        }\n'''
+          replace_once(game, old_pip, new_pip)
+
+          marker = '    @TargetApi(Build.VERSION_CODES.O)\n    private PictureInPictureParams getPictureInPictureParams(boolean autoEnter) {'
+          helper = '''    @TargetApi(Build.VERSION_CODES.O)\n    private void updatePipOverlayState(boolean inPip) {\n        if (inPip) {\n            boolean entered = pipOverlayState.enter(\n                    floatingMenuButton != null && floatingMenuButton.isShown(),\n                    overlayToggleButton != null && overlayToggleButton.isShown(),\n                    virtualController != null && virtualController.isShown(),\n                    keyBoardController != null && keyBoardController.shown,\n                    keyBoardLayoutController != null && keyBoardLayoutController.shown,\n                    performanceOverlayView != null && performanceOverlayView.getVisibility() == View.VISIBLE,\n                    notificationOverlayView != null ? notificationOverlayView.getVisibility() : View.GONE,\n                    statsOverlay != null && statsOverlay.getVisibility() == View.VISIBLE);\n            if (!entered) {\n                return;\n            }\n\n            isHidingOverlays = true;\n            if (pipOverlayState.floatingButtonShown) floatingMenuButton.setVisibility(View.GONE);\n            if (pipOverlayState.zoomButtonShown) overlayToggleButton.setVisibility(View.GONE);\n            if (virtualController != null) virtualController.hide();\n            if (keyBoardController != null && pipOverlayState.keyboardControllerShown) keyBoardController.hide(true);\n            if (keyBoardLayoutController != null && pipOverlayState.keyboardLayoutShown) keyBoardLayoutController.hide(true);\n            hideGameMenu();\n            if (performanceOverlayView != null) performanceOverlayView.setVisibility(View.GONE);\n            if (notificationOverlayView != null) notificationOverlayView.setVisibility(View.GONE);\n            if (statsOverlay != null) statsOverlay.setVisibility(View.GONE);\n            if (controllerHandler != null) controllerHandler.disableSensors();\n            UiHelper.notifyStreamEnteringPiP(this);\n        } else {\n            if (!pipOverlayState.exit()) {\n                return;\n            }\n\n            isHidingOverlays = false;\n            if (pipOverlayState.floatingButtonShown && floatingMenuButton != null) floatingMenuButton.setVisibility(View.VISIBLE);\n            if (pipOverlayState.zoomButtonShown && overlayToggleButton != null) overlayToggleButton.setVisibility(View.VISIBLE);\n            if (pipOverlayState.virtualControllerShown && virtualController != null) virtualController.show();\n            if (pipOverlayState.keyboardControllerShown && keyBoardController != null) keyBoardController.show();\n            if (pipOverlayState.keyboardLayoutShown && keyBoardLayoutController != null) keyBoardLayoutController.show();\n            if (pipOverlayState.performanceOverlayShown && performanceOverlayView != null) performanceOverlayView.setVisibility(View.VISIBLE);\n            if (notificationOverlayView != null) notificationOverlayView.setVisibility(pipOverlayState.notificationVisibility);\n            if (pipOverlayState.statsOverlayShown && statsOverlay != null) statsOverlay.setVisibility(View.VISIBLE);\n            if (controllerHandler != null) controllerHandler.enableSensors();\n            UiHelper.notifyStreamExitingPiP(this);\n        }\n    }\n\n    @Override\n    @TargetApi(Build.VERSION_CODES.O)\n    public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {\n        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);\n        updatePipOverlayState(isInPictureInPictureMode);\n        if (!isInPictureInPictureMode) {\n            updatePipAutoEnter();\n        }\n    }\n\n''' + marker
+          replace_once(game, marker, helper)
+
+          replace_once(game,
+              '        int width = view.getWidth();\n        int height = view.getHeight();\n        Rational aspectRatio = new Rational(width, height);',
+              '        int width = Math.max(1, view.getWidth());\n        int height = Math.max(1, view.getHeight());\n        Rational aspectRatio = new Rational(width, height);')
+
+          # Bottom-edge buffering methods are deliberately before onTouch; replay calls handleMotionEvent directly.
+          touch_marker = '    @SuppressLint("ClickableViewAccessibility")\n    @Override\n    public boolean onTouch(View view, MotionEvent event) {'
+          touch_helpers = '''    private boolean shouldInterceptBottomEdgeGesture(MotionEvent event) {\n        if (prefConfig == null || bottomEdgeStartGestureDetector == null ||\n                BottomEdgeStartGestureDetector.MODE_NATIVE.equals(prefConfig.bottomEdgeStartGestureMode)) {\n            return false;\n        }\n        return event.getPointerCount() > 0 &&\n                event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER &&\n                (event.getSource() & InputDevice.SOURCE_TOUCHSCREEN) == InputDevice.SOURCE_TOUCHSCREEN;\n    }\n\n    private boolean interceptBottomEdgeGesture(View view, MotionEvent event) {\n        if (!shouldInterceptBottomEdgeGesture(event)) {\n            return false;\n        }\n\n        int action = event.getActionMasked();\n        if (!bottomEdgeGesturePending) {\n            if (action != MotionEvent.ACTION_DOWN ||\n                    !bottomEdgeStartGestureDetector.startsInBottomEdge(event.getY(0), view.getHeight())) {\n                return false;\n            }\n            bottomEdgeGesturePending = true;\n            bottomEdgeGestureView = view;\n            bottomEdgeDownX = event.getX(0);\n            bottomEdgeDownY = event.getY(0);\n            bottomEdgeDownTime = event.getEventTime();\n            bottomEdgeGestureBuffer.add(MotionEvent.obtain(event));\n            timerHandler.postDelayed(bottomEdgeReplayTimeout,\n                    bottomEdgeStartGestureDetector.getDecisionTimeoutMs());\n            return true;\n        }\n\n        if (view != bottomEdgeGestureView) {\n            replayBottomEdgeGesture();\n            return false;\n        }\n\n        bottomEdgeGestureBuffer.add(MotionEvent.obtain(event));\n        float deltaX = event.getX(0) - bottomEdgeDownX;\n        float upwardDeltaY = bottomEdgeDownY - event.getY(0);\n        BottomEdgeStartGestureDetector.Decision decision = bottomEdgeStartGestureDetector.decide(\n                deltaX, upwardDeltaY, event.getEventTime() - bottomEdgeDownTime,\n                event.getPointerCount(), action == MotionEvent.ACTION_UP,\n                action == MotionEvent.ACTION_CANCEL);\n\n        if (decision == BottomEdgeStartGestureDetector.Decision.PENDING) {\n            return true;\n        }\n        if (decision == BottomEdgeStartGestureDetector.Decision.TRIGGER) {\n            discardBottomEdgeGesture();\n            if (BottomEdgeStartGestureDetector.MODE_WINDOWS_KEY.equals(prefConfig.bottomEdgeStartGestureMode)) {\n                sendKeys(new short[]{KeyboardTranslator.VK_LWIN});\n            }\n            return true;\n        }\n        if (decision == BottomEdgeStartGestureDetector.Decision.CANCEL) {\n            // Android took ownership of the system-edge gesture. Do not forward a CANCEL without\n            // the buffered DOWN; discarding both prevents a half-gesture from reaching Windows.\n            discardBottomEdgeGesture();\n            return true;\n        }\n\n        replayBottomEdgeGesture();\n        return true;\n    }\n\n    private void replayBottomEdgeGesture() {\n        if (!bottomEdgeGesturePending) {\n            return;\n        }\n        View target = bottomEdgeGestureView;\n        ArrayList<MotionEvent> buffered = new ArrayList<>(bottomEdgeGestureBuffer);\n        clearBottomEdgeGestureState(false);\n        if (target != null) {\n            for (MotionEvent bufferedEvent : buffered) {\n                handleMotionEvent(target, bufferedEvent);\n                bufferedEvent.recycle();\n            }\n        } else {\n            for (MotionEvent bufferedEvent : buffered) bufferedEvent.recycle();\n        }\n    }\n\n    private void discardBottomEdgeGesture() {\n        clearBottomEdgeGestureState(true);\n    }\n\n    private void clearBottomEdgeGestureState(boolean recycle) {\n        if (timerHandler != null) timerHandler.removeCallbacks(bottomEdgeReplayTimeout);\n        if (recycle) {\n            for (MotionEvent bufferedEvent : bottomEdgeGestureBuffer) bufferedEvent.recycle();\n        }\n        bottomEdgeGestureBuffer.clear();\n        bottomEdgeGesturePending = false;\n        bottomEdgeGestureView = null;\n    }\n\n''' + touch_marker
+          replace_once(game, touch_marker, touch_helpers)
+          replace_once(game,
+              '        if (event.getAction() == MotionEvent.ACTION_DOWN) {\n            // Tell the OS not to buffer input events for us',
+              '        if (interceptBottomEdgeGesture(view, event)) {\n            return true;\n        }\n\n        if (event.getAction() == MotionEvent.ACTION_DOWN) {\n            // Tell the OS not to buffer input events for us')
+          replace_once(game,
+              '        instance = null;\n        timerHandler.removeCallbacksAndMessages(null);',
+              '        instance = null;\n        discardBottomEdgeGesture();\n        timerHandler.removeCallbacksAndMessages(null);')
+
+          # --- Regression tests. ---
+          detector_test = '''package com.limelight;\n\nimport static org.junit.Assert.assertEquals;\nimport static org.junit.Assert.assertFalse;\nimport static org.junit.Assert.assertTrue;\n\nimport org.junit.Test;\n\npublic class BottomEdgeStartGestureDetectorTest {\n    private final BottomEdgeStartGestureDetector detector = new BottomEdgeStartGestureDetector(1f);\n\n    @Test\n    public void onlyStartsInsideBottomBand() {\n        assertTrue(detector.startsInBottomEdge(980f, 1000f));\n        assertFalse(detector.startsInBottomEdge(900f, 1000f));\n    }\n\n    @Test\n    public void upwardSwipeTriggersButHorizontalOrMultitouchFallsBack() {\n        assertEquals(BottomEdgeStartGestureDetector.Decision.TRIGGER,\n                detector.decide(10f, 60f, 80, 1, false, false));\n        assertEquals(BottomEdgeStartGestureDetector.Decision.FALLBACK,\n                detector.decide(60f, 60f, 80, 1, false, false));\n        assertEquals(BottomEdgeStartGestureDetector.Decision.FALLBACK,\n                detector.decide(0f, 20f, 50, 2, false, false));\n    }\n\n    @Test\n    public void ordinaryTapFallsBackAndAndroidCancelIsDiscarded() {\n        assertEquals(BottomEdgeStartGestureDetector.Decision.FALLBACK,\n                detector.decide(0f, 2f, 90, 1, true, false));\n        assertEquals(BottomEdgeStartGestureDetector.Decision.CANCEL,\n                detector.decide(0f, 4f, 40, 1, false, true));\n        assertEquals(BottomEdgeStartGestureDetector.Decision.FALLBACK,\n                detector.decide(0f, 10f, detector.getDecisionTimeoutMs(), 1, false, false));\n    }\n}\n'''
+          write('app/src/test/java/com/limelight/BottomEdgeStartGestureDetectorTest.java', detector_test)
+
+          pip_test = '''package com.limelight;\n\nimport static org.junit.Assert.assertFalse;\nimport static org.junit.Assert.assertTrue;\n\nimport org.junit.Test;\n\npublic class PipOverlayTransitionStateTest {\n    @Test\n    public void repeatedEnterCannotOverwriteOriginalSnapshot() {\n        PipOverlayTransitionState state = new PipOverlayTransitionState();\n        assertTrue(state.enter(true, true, true, false, true, true, 0, true));\n        assertFalse(state.enter(false, false, false, false, false, false, 8, false));\n        assertTrue(state.floatingButtonShown);\n        assertTrue(state.zoomButtonShown);\n        assertTrue(state.virtualControllerShown);\n        assertTrue(state.keyboardLayoutShown);\n        assertTrue(state.performanceOverlayShown);\n        assertTrue(state.statsOverlayShown);\n    }\n\n    @Test\n    public void exitOnlyRunsForARealTransition() {\n        PipOverlayTransitionState state = new PipOverlayTransitionState();\n        assertFalse(state.exit());\n        assertTrue(state.enter(false, false, false, false, false, false, 8, false));\n        assertTrue(state.exit());\n        assertFalse(state.exit());\n    }\n}\n'''
+          write('app/src/test/java/com/limelight/PipOverlayTransitionStateTest.java', pip_test)
+
+          ci = '.github/workflows/android-ci.yml'
+          replace_once(ci,
+              '          --tests "com.limelight.OutsideStreamOrientationPolicyTest"\n',
+              '          --tests "com.limelight.OutsideStreamOrientationPolicyTest"\n          --tests "com.limelight.BottomEdgeStartGestureDetectorTest"\n          --tests "com.limelight.PipOverlayTransitionStateTest"\n')
+          PY
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK and NDK
+        run: sdkmanager "platforms;android-36" "ndk;27.0.12077973"
+
+      - name: Make Gradle executable
+        run: chmod +x gradlew
+
+      - name: Compile non-root debug variant
+        run: ./gradlew :app:compileNonRoot_gameDebugJavaWithJavac --stacktrace
+
+      - name: Run audited targeted regressions
+        run: >-
+          ./gradlew :app:testNonRoot_gameDebugUnitTest
+          --tests "com.limelight.BottomEdgeStartGestureDetectorTest"
+          --tests "com.limelight.PipOverlayTransitionStateTest"
+          --tests "com.limelight.OutsideStreamOrientationPolicyTest"
+          --tests "com.limelight.binding.input.virtual_controller.keyboard.LongPressMoveGestureGuardTest"
+          --tests "com.limelight.binding.input.virtual_controller.keyboard.LayoutSnappingHelperTest"
+          --tests "com.limelight.ui.FloatingControlPositionStoreTest"
+          --stacktrace
+
+      - name: Commit verified product changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app .github/workflows/android-ci.yml
+          if git diff --cached --quiet; then
+            echo "No product changes to commit"
+            exit 0
+          fi
+          git commit -m "feat: harden PiP and add bottom-edge Start modes"
+          git push origin HEAD:feature/phase2-5-audit-next

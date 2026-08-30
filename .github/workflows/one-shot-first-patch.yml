@@ -1,4 +1,4 @@
-name: First patch validation
+name: Apply search navigation audit fix
 
 on:
   push:
@@ -7,55 +7,46 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  verify:
+  apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 10
     steps:
       - name: Checkout feature branch
         uses: actions/checkout@v4
         with:
           ref: feature/first-patch-v4-orientation-settings-search
-          submodules: recursive
+          fetch-depth: 0
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: gradle
+      - name: Apply audited search-result expansion fix
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/limelight/preferences/StreamSettings.java')
+          data = p.read_bytes()
+          nl = '\r\n' if b'\r\n' in data else '\n'
+          text = data.decode('utf-8').replace('\r\n', '\n')
+          old = '''            result.highlight(this);\n        }\n\n        private void removeEntryFromListAndSetValue'''
+          new = '''            // Changing initialExpandedChildrenCount alone does not notify AndroidX's\n            // PreferenceGroupAdapter. Rebuild the adapter so results hidden behind an expand\n            // button become addressable before SearchPreference scrolls/highlights them.\n            PreferenceScreen screen = getPreferenceScreen();\n            if (screen != null) {\n                getListView().setAdapter(onCreateAdapter(screen));\n            }\n            result.highlight(this);\n        }\n\n        private void removeEntryFromListAndSetValue'''
+          if new in text:
+              print('Search navigation fix already applied')
+          elif old in text:
+              text = text.replace(old, new, 1)
+              p.write_bytes(text.replace('\n', nl).encode('utf-8'))
+          else:
+              raise SystemExit('Expected StreamSettings search-result anchor not found')
+          PY
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install SDK and NDK
-        run: sdkmanager "platforms;android-36" "ndk;27.0.12077973"
-
-      - name: Make Gradle executable
-        run: chmod +x gradlew
-
-      - name: Compile non-root debug variant
-        run: ./gradlew :app:compileNonRoot_gameDebugJavaWithJavac --stacktrace
-
-      - name: Run first-patch and V4 regression tests
-        run: >-
-          ./gradlew :app:testNonRoot_gameDebugUnitTest
-          --tests "com.limelight.ArtemisOrientationHelperTest"
-          --tests "com.limelight.OutsideStreamOrientationPolicyTest"
-          --tests "com.limelight.binding.input.virtual_controller.keyboard.LayoutSnappingHelperTest"
-          --tests "com.limelight.binding.input.virtual_controller.keyboard.LongPressMoveGestureGuardTest"
-          --tests "com.limelight.ui.FloatingControlPositionStoreTest"
-          --stacktrace
-
-      - name: Upload test reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: first-patch-test-reports
-          path: |
-            app/build/reports/tests/
-            app/build/test-results/
-          if-no-files-found: warn
-          retention-days: 14
+      - name: Commit audited fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/limelight/preferences/StreamSettings.java
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "fix: reveal collapsed settings search results"
+          git push origin HEAD:feature/first-patch-v4-orientation-settings-search

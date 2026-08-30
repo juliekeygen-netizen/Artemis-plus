@@ -6,7 +6,9 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Point;
 import android.graphics.drawable.GradientDrawable;
+import android.text.Editable;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.ContextThemeWrapper;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -14,11 +16,13 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
+import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.Filter;
 import android.widget.Filterable;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -37,6 +41,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -139,22 +144,52 @@ final class KeyComboManager {
 
     /** Pure semantic matching helper kept package-visible for regression tests. */
     static boolean keySearchMatches(String displayName, int keyCode, String query) {
+        return keySearchScore(displayName, keyCode, query) != Integer.MAX_VALUE;
+    }
+
+    /** Lower scores are shown first in the autocomplete list. */
+    static int keySearchScore(String displayName, int keyCode, String query) {
         String normalizedQuery = normalizeSearch(query);
         if (normalizedQuery.isEmpty()) {
-            return true;
+            return 0;
         }
 
-        StringBuilder haystack = new StringBuilder();
-        haystack.append(normalizeSearch(displayName)).append(' ')
-                .append(normalizeSearch(KeyEvent.keyCodeToString(keyCode))).append(' ')
-                .append(searchAliasesForKey(keyCode));
+        String display = normalizeSearch(displayName);
+        String keyName = normalizeSearch(KeyEvent.keyCodeToString(keyCode));
+        String aliases = normalizeSearch(searchAliasesForKey(keyCode));
+        String haystack = display + " " + keyName + " " + aliases;
 
         for (String token : normalizedQuery.split("\\s+")) {
-            if (!token.isEmpty() && haystack.indexOf(token) < 0) {
-                return false;
+            if (!token.isEmpty() && !haystack.contains(token)) {
+                return Integer.MAX_VALUE;
             }
         }
-        return true;
+
+        if (display.equals(normalizedQuery)) {
+            return 0;
+        }
+        if (display.startsWith(normalizedQuery) || aliases.startsWith(normalizedQuery)) {
+            return 1;
+        }
+        if (startsWithWord(display, normalizedQuery) || startsWithWord(aliases, normalizedQuery)) {
+            return 2;
+        }
+        if (keyName.startsWith(normalizedQuery)) {
+            return 3;
+        }
+        return 4;
+    }
+
+    private static boolean startsWithWord(String haystack, String query) {
+        if (haystack == null || haystack.isEmpty()) {
+            return false;
+        }
+        for (String word : haystack.split("\\s+")) {
+            if (word.startsWith(query)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String normalizeSearch(String value) {
@@ -256,23 +291,30 @@ final class KeyComboManager {
         float density = context.getResources().getDisplayMetrics().density;
         int padding = Math.max(12, Math.round(16 * density));
 
+        ScrollView scrollView = new ScrollView(dialogContext);
+        scrollView.setFillViewport(false);
+        scrollView.setClipToPadding(false);
+
         LinearLayout content = new LinearLayout(dialogContext);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(padding, padding / 2, padding, 0);
+        content.setPadding(padding, padding / 2, padding, padding / 2);
+        scrollView.addView(content, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT));
 
         TextView intro = label(dialogContext,
-                "Add one normal key, or build an ordered chord. Modifiers are held while the keys below are pressed in order.",
+                "Add one normal key, or build an ordered chord. Modifiers are held while the key rows are pressed from top to bottom.",
                 14f, 0xFFBDBDBD);
         intro.setPadding(0, 0, 0, Math.round(8 * density));
         content.addView(intro);
 
-        TextView nameLabel = label(dialogContext, "Button label", 13f, Color.WHITE);
+        TextView nameLabel = label(dialogContext, "Display name", 13f, Color.WHITE);
         content.addView(nameLabel);
 
         EditText nameInput = new EditText(dialogContext);
         nameInput.setSingleLine(true);
         nameInput.setInputType(InputType.TYPE_CLASS_TEXT);
-        nameInput.setHint("What should the bubble show?");
+        nameInput.setHint("Example: Back");
         nameInput.setTextColor(Color.WHITE);
         nameInput.setHintTextColor(0xFF8E8E93);
         if (existing != null) {
@@ -297,103 +339,74 @@ final class KeyComboManager {
         modifierRow.addView(meta);
         content.addView(modifierRow);
 
-        TextView keysLabel = label(dialogContext, "Keys", 13f, Color.WHITE);
+        TextView keysLabel = label(dialogContext, "Keys (pressed top to bottom)", 13f, Color.WHITE);
         keysLabel.setPadding(0, Math.round(10 * density), 0, Math.round(4 * density));
         content.addView(keysLabel);
 
-        AutoCompleteTextView search = new AutoCompleteTextView(dialogContext);
-        search.setHint("Search and add a key…");
-        search.setSingleLine(true);
-        search.setThreshold(0);
-        search.setTextColor(Color.WHITE);
-        search.setHintTextColor(0xFF8E8E93);
-        search.setDropDownHeight(Math.round(300 * density));
-        KeySearchAdapter searchAdapter = new KeySearchAdapter(dialogContext, availableKeys);
-        search.setAdapter(searchAdapter);
-        search.setOnClickListener(v -> search.showDropDown());
-        search.setOnFocusChangeListener((v, hasFocus) -> {
-            if (hasFocus) {
-                search.showDropDown();
-            }
-        });
-        content.addView(search);
-
-        List<KeyOption> selectedKeys = new ArrayList<>();
-        if (existing != null) {
+        List<KeyRowModel> keyRows = new ArrayList<>();
+        if (existing != null && existing.keys.length > 0) {
             for (int code : existing.keys) {
                 KeyOption option = findOptionByCode(availableKeys, code);
-                selectedKeys.add(option != null ? option : new KeyOption("Key " + code, code));
+                keyRows.add(new KeyRowModel(option != null ? option : new KeyOption("Key " + code, code)));
             }
         }
+        if (keyRows.isEmpty()) {
+            keyRows.add(new KeyRowModel(null));
+        }
 
-        TextView orderHint = label(dialogContext,
-                "Selected keys — hold and drag a row to change press order.",
-                12f, 0xFF9E9E9E);
-        orderHint.setPadding(0, Math.round(7 * density), 0, Math.round(4 * density));
-        content.addView(orderHint);
-
-        RecyclerView selectedList = new RecyclerView(dialogContext);
-        selectedList.setLayoutManager(new LinearLayoutManager(dialogContext));
-        SelectedKeysAdapter selectedAdapter = new SelectedKeysAdapter(dialogContext, selectedKeys);
-        selectedList.setAdapter(selectedAdapter);
-        int selectedListHeight = Math.min(
-                Math.round(210 * density),
-                Math.max(Math.round(110 * density), context.getResources().getDisplayMetrics().heightPixels / 3));
-        content.addView(selectedList, new LinearLayout.LayoutParams(
+        LinearLayout keyRowsContainer = new LinearLayout(dialogContext);
+        keyRowsContainer.setOrientation(LinearLayout.VERTICAL);
+        content.addView(keyRowsContainer, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                selectedListHeight));
+                LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        ItemTouchHelper selectedTouchHelper = new ItemTouchHelper(new ItemTouchHelper.SimpleCallback(
-                ItemTouchHelper.UP | ItemTouchHelper.DOWN, 0) {
-            @Override
-            public boolean onMove(RecyclerView recyclerView,
-                                  RecyclerView.ViewHolder viewHolder,
-                                  RecyclerView.ViewHolder target) {
-                int from = viewHolder.getBindingAdapterPosition();
-                int to = target.getBindingAdapterPosition();
-                if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION || from == to) {
-                    return false;
-                }
-                Collections.swap(selectedKeys, from, to);
-                selectedAdapter.notifyItemMoved(from, to);
-                return true;
-            }
-
-            @Override
-            public void onSwiped(RecyclerView.ViewHolder viewHolder, int direction) {
-            }
-        });
-        selectedTouchHelper.attachToRecyclerView(selectedList);
+        Button addRow = new Button(dialogContext);
+        addRow.setText("+  Add row");
+        addRow.setAllCaps(false);
+        addRow.setTextColor(Color.WHITE);
+        GradientDrawable addRowBackground = new GradientDrawable();
+        addRowBackground.setColor(0xFF303036);
+        addRowBackground.setCornerRadius(10 * density);
+        addRow.setBackground(addRowBackground);
+        LinearLayout.LayoutParams addRowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                Math.round(46 * density));
+        addRowParams.setMargins(0, Math.round(5 * density), 0, Math.round(3 * density));
+        content.addView(addRow, addRowParams);
 
         TextView summary = label(dialogContext, "", 13f, 0xFFE0E0E0);
         summary.setPadding(0, Math.round(8 * density), 0, 0);
         content.addView(summary);
 
         Runnable updateSummary = () -> summary.setText(buildSummary(
-                ctrl.isChecked(), alt.isChecked(), shift.isChecked(), meta.isChecked(), selectedKeys));
-        selectedAdapter.setOnChanged(updateSummary);
+                ctrl.isChecked(), alt.isChecked(), shift.isChecked(), meta.isChecked(), selectedOptions(keyRows)));
+
+        Runnable[] rerenderRows = new Runnable[1];
+        rerenderRows[0] = () -> renderKeyRows(
+                dialogContext,
+                keyRowsContainer,
+                keyRows,
+                availableKeys,
+                nameInput,
+                updateSummary,
+                rerenderRows[0]);
+        rerenderRows[0].run();
+
+        addRow.setOnClickListener(v -> {
+            keyRows.add(new KeyRowModel(null));
+            rerenderRows[0].run();
+            scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
+        });
+
         ctrl.setOnCheckedChangeListener((buttonView, isChecked) -> updateSummary.run());
         alt.setOnCheckedChangeListener((buttonView, isChecked) -> updateSummary.run());
         shift.setOnCheckedChangeListener((buttonView, isChecked) -> updateSummary.run());
         meta.setOnCheckedChangeListener((buttonView, isChecked) -> updateSummary.run());
         updateSummary.run();
 
-        search.setOnItemClickListener((parent, view, position, id) -> {
-            KeyOption option = (KeyOption) parent.getItemAtPosition(position);
-            selectedKeys.add(option);
-            selectedAdapter.notifyItemInserted(selectedKeys.size() - 1);
-            selectedList.scrollToPosition(selectedKeys.size() - 1);
-            if (nameInput.getText().toString().trim().isEmpty() && selectedKeys.size() == 1) {
-                nameInput.setText(option.name);
-                nameInput.setSelection(nameInput.length());
-            }
-            search.setText("", false);
-            updateSummary.run();
-        });
-
         AlertDialog.Builder builder = new AlertDialog.Builder(dialogContext)
                 .setTitle(existing == null ? "Add Keys" : "Edit Key")
-                .setView(content)
+                .setView(scrollView)
                 .setPositiveButton(existing == null ? "Add" : "Save", null)
                 .setNegativeButton(android.R.string.cancel, null);
         if (existing != null) {
@@ -402,17 +415,33 @@ final class KeyComboManager {
         AlertDialog dialog = builder.create();
 
         dialog.setOnShowListener(ignored -> {
+            if (dialog.getWindow() != null) {
+                int maxWidth = Math.round(760 * density);
+                int maxHeight = Math.round(650 * density);
+                int width = Math.min(maxWidth,
+                        Math.round(context.getResources().getDisplayMetrics().widthPixels * 0.90f));
+                int height = Math.min(maxHeight,
+                        Math.round(context.getResources().getDisplayMetrics().heightPixels * 0.84f));
+                dialog.getWindow().setLayout(Math.max(Math.round(340 * density), width),
+                        Math.max(Math.round(300 * density), height));
+            }
+
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
                 String name = nameInput.getText().toString().trim();
                 if (name.isEmpty()) {
-                    nameInput.setError("Enter a button label");
+                    nameInput.setError("Enter a display name");
                     return;
                 }
-                if (selectedKeys.isEmpty()) {
-                    Toast.makeText(dialogContext, "Add at least one key", Toast.LENGTH_SHORT).show();
-                    search.requestFocus();
-                    search.showDropDown();
-                    return;
+
+                for (KeyRowModel row : keyRows) {
+                    if (row.selected == null) {
+                        if (row.field != null) {
+                            row.field.setError("Choose a key from the list");
+                            row.field.requestFocus();
+                            row.field.showDropDown();
+                        }
+                        return;
+                    }
                 }
 
                 List<Integer> modifiers = new ArrayList<>(4);
@@ -421,9 +450,9 @@ final class KeyComboManager {
                 if (shift.isChecked()) modifiers.add(KeyEvent.KEYCODE_SHIFT_LEFT);
                 if (meta.isChecked()) modifiers.add(KeyEvent.KEYCODE_META_LEFT);
 
-                List<Integer> regular = new ArrayList<>(selectedKeys.size());
-                for (KeyOption option : selectedKeys) {
-                    regular.add(option.code);
+                List<Integer> regular = new ArrayList<>(keyRows.size());
+                for (KeyRowModel row : keyRows) {
+                    regular.add(row.selected.code);
                 }
 
                 Definition updated = new Definition(
@@ -507,86 +536,136 @@ final class KeyComboManager {
         return view;
     }
 
-    private static final class SelectedKeysAdapter extends RecyclerView.Adapter<SelectedKeysAdapter.Holder> {
-        private final Context context;
-        private final List<KeyOption> keys;
-        private Runnable onChanged;
+    private static final class KeyRowModel {
+        KeyOption selected;
+        AutoCompleteTextView field;
 
-        SelectedKeysAdapter(Context context, List<KeyOption> keys) {
-            this.context = context;
-            this.keys = keys;
+        KeyRowModel(KeyOption selected) {
+            this.selected = selected;
         }
+    }
 
-        void setOnChanged(Runnable onChanged) {
-            this.onChanged = onChanged;
+    private static List<KeyOption> selectedOptions(List<KeyRowModel> rows) {
+        List<KeyOption> selected = new ArrayList<>();
+        for (KeyRowModel row : rows) {
+            if (row.selected != null) {
+                selected.add(row.selected);
+            }
         }
+        return selected;
+    }
 
-        @Override
-        public Holder onCreateViewHolder(ViewGroup parent, int viewType) {
-            float density = context.getResources().getDisplayMetrics().density;
+    private static void renderKeyRows(Context context,
+                                      LinearLayout container,
+                                      List<KeyRowModel> rows,
+                                      List<KeyOption> availableKeys,
+                                      EditText nameInput,
+                                      Runnable onChanged,
+                                      Runnable rerender) {
+        container.removeAllViews();
+        float density = context.getResources().getDisplayMetrics().density;
+
+        for (int i = 0; i < rows.size(); i++) {
+            final int rowIndex = i;
+            KeyRowModel model = rows.get(i);
+
             LinearLayout row = new LinearLayout(context);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(Math.round(8 * density), Math.round(5 * density),
-                    Math.round(4 * density), Math.round(5 * density));
-            GradientDrawable background = new GradientDrawable();
-            background.setColor(0xFF2B2B2F);
-            background.setCornerRadius(10 * density);
-            row.setBackground(background);
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    Math.round(50 * density));
+            rowParams.setMargins(0, Math.round(3 * density), 0, Math.round(3 * density));
+            container.addView(row, rowParams);
 
-            TextView drag = label(context, "≡", 22f, 0xFF9E9E9E);
-            drag.setGravity(Gravity.CENTER);
-            drag.setContentDescription("Hold and drag to reorder");
-            row.addView(drag, new LinearLayout.LayoutParams(
-                    Math.round(34 * density), LinearLayout.LayoutParams.MATCH_PARENT));
+            AutoCompleteTextView field = new AutoCompleteTextView(context);
+            model.field = field;
+            field.setHint(rowIndex == 0 ? "Choose a key…" : "Choose another key…");
+            field.setSingleLine(true);
+            field.setThreshold(0);
+            field.setTextColor(Color.WHITE);
+            field.setHintTextColor(0xFF8E8E93);
+            field.setDropDownHeight(Math.round(300 * density));
+            field.setPadding(Math.round(14 * density), 0, Math.round(12 * density), 0);
 
-            TextView name = label(context, "", 16f, Color.WHITE);
-            name.setGravity(Gravity.CENTER_VERTICAL);
-            row.addView(name, new LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            GradientDrawable fieldBackground = new GradientDrawable();
+            fieldBackground.setColor(0xFF2B2B2F);
+            fieldBackground.setCornerRadius(10 * density);
+            fieldBackground.setStroke(Math.max(1, Math.round(density)), 0xFF505057);
+            field.setBackground(fieldBackground);
+            field.setAdapter(new KeySearchAdapter(context, availableKeys));
 
-            TextView remove = label(context, "×", 24f, 0xFFFF8A80);
-            remove.setGravity(Gravity.CENTER);
-            remove.setContentDescription("Remove key");
-            row.addView(remove, new LinearLayout.LayoutParams(
-                    Math.round(42 * density), Math.round(42 * density)));
+            if (model.selected != null) {
+                field.setText(model.selected.selectionLabel(), false);
+            }
 
-            RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            params.setMargins(0, Math.round(3 * density), 0, Math.round(3 * density));
-            row.setLayoutParams(params);
-            return new Holder(row, name, remove);
-        }
-
-        @Override
-        public void onBindViewHolder(Holder holder, int position) {
-            holder.name.setText(keys.get(position).selectionLabel());
-            holder.remove.setOnClickListener(v -> {
-                int adapterPosition = holder.getBindingAdapterPosition();
-                if (adapterPosition == RecyclerView.NO_POSITION) {
-                    return;
+            field.addTextChangedListener(new TextWatcher() {
+                @Override
+                public void beforeTextChanged(CharSequence s, int start, int count, int after) {
                 }
-                keys.remove(adapterPosition);
-                notifyItemRemoved(adapterPosition);
+
+                @Override
+                public void onTextChanged(CharSequence s, int start, int before, int count) {
+                }
+
+                @Override
+                public void afterTextChanged(Editable editable) {
+                    if (model.selected == null) {
+                        return;
+                    }
+                    String value = editable == null ? "" : editable.toString().trim();
+                    if (!value.equals(model.selected.selectionLabel()) &&
+                            !value.equals(model.selected.name)) {
+                        model.selected = null;
+                        if (onChanged != null) {
+                            onChanged.run();
+                        }
+                    }
+                }
+            });
+
+            field.setOnClickListener(v -> field.showDropDown());
+            field.setOnFocusChangeListener((v, hasFocus) -> {
+                if (hasFocus) {
+                    field.showDropDown();
+                }
+            });
+            field.setOnItemClickListener((parent, view, position, id) -> {
+                KeyOption option = (KeyOption) parent.getItemAtPosition(position);
+                model.selected = option;
+                field.setText(option.selectionLabel(), false);
+                field.setSelection(field.length());
+                field.setError(null);
+                if (rowIndex == 0 && nameInput.getText().toString().trim().isEmpty()) {
+                    nameInput.setText(option.name);
+                    nameInput.setSelection(nameInput.length());
+                }
                 if (onChanged != null) {
                     onChanged.run();
                 }
             });
-        }
 
-        @Override
-        public int getItemCount() {
-            return keys.size();
-        }
+            row.addView(field, new LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    1f));
 
-        static final class Holder extends RecyclerView.ViewHolder {
-            final TextView name;
-            final TextView remove;
-
-            Holder(View itemView, TextView name, TextView remove) {
-                super(itemView);
-                this.name = name;
-                this.remove = remove;
+            if (rowIndex > 0) {
+                TextView remove = label(context, "×", 25f, 0xFFFF8A80);
+                remove.setGravity(Gravity.CENTER);
+                remove.setContentDescription("Remove key row");
+                LinearLayout.LayoutParams removeParams = new LinearLayout.LayoutParams(
+                        Math.round(44 * density),
+                        Math.round(44 * density));
+                removeParams.setMarginStart(Math.round(5 * density));
+                row.addView(remove, removeParams);
+                remove.setOnClickListener(v -> {
+                    rows.remove(rowIndex);
+                    rerender.run();
+                    if (onChanged != null) {
+                        onChanged.run();
+                    }
+                });
             }
         }
     }
@@ -635,6 +714,9 @@ final class KeyComboManager {
                             matches.add(option);
                         }
                     }
+                    matches.sort(Comparator.comparingInt(option ->
+                            keySearchScore(option.name, option.code,
+                                    constraint == null ? "" : constraint.toString())));
                     FilterResults results = new FilterResults();
                     results.values = matches;
                     results.count = matches.size();

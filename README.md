@@ -245,3 +245,13 @@ Please preserve upstream copyright and attribution notices when redistributing m
 ## License
 
 This project inherits the **GNU General Public License v3.0** licensing of the upstream Moonlight/Artemis codebase. See [LICENSE.txt](LICENSE.txt) for the full license text.
+
+## Artemis Plus troubleshooting
+
+### Stream works but touch / mouse / keyboard / controller input does nothing
+
+Apollo permissions are per paired client. A newly paired client can have permission to view a
+stream while its input permissions remain disabled. In Apollo's **PIN / paired clients** page,
+grant the Artemis client **Mouse Input**, **Keyboard Input**, **Touch Input**, and **Controller
+Input** (plus **Launch Apps** when needed). This is especially easy to hit after uninstalling the
+Android app because the reinstall pairs as a new client.

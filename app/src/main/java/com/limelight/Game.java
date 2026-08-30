@@ -105,6 +105,9 @@ import android.view.ViewParent;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.widget.CheckBox;
+import android.widget.LinearLayout;
+import android.widget.SeekBar;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -4411,6 +4414,112 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     //切换触控灵敏度开关
     public void switchTouchSensitivity(){
         prefConfig.enableTouchSensitivity = !prefConfig.enableTouchSensitivity;
+    }
+
+    /**
+     * In-stream editor for the same touch-sensitivity settings exposed in Settings.
+     * The Artemis action opens this dialog instead of acting like a mystery toggle.
+     */
+    public void showTouchSensitivityDialog() {
+        android.view.ContextThemeWrapper themedContext =
+                new android.view.ContextThemeWrapper(this, R.style.ArtemisEditorDialogTheme);
+        float density = getResources().getDisplayMetrics().density;
+        int padding = Math.round(16 * density);
+
+        LinearLayout root = new LinearLayout(themedContext);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(padding, Math.round(6 * density), padding, 0);
+
+        CheckBox enabled = new CheckBox(themedContext);
+        enabled.setText("Enable touch sensitivity");
+        enabled.setChecked(prefConfig.enableTouchSensitivity);
+        root.addView(enabled);
+
+        TextView horizontalLabel = new TextView(themedContext);
+        horizontalLabel.setTextColor(android.graphics.Color.WHITE);
+        horizontalLabel.setPadding(0, Math.round(8 * density), 0, 0);
+        root.addView(horizontalLabel);
+        SeekBar horizontal = new SeekBar(themedContext);
+        horizontal.setMax(29); // 10% .. 300% in 10% steps
+        horizontal.setProgress(Math.max(0, Math.min(29, prefConfig.touchSensitivityX / 10 - 1)));
+        root.addView(horizontal);
+
+        TextView verticalLabel = new TextView(themedContext);
+        verticalLabel.setTextColor(android.graphics.Color.WHITE);
+        verticalLabel.setPadding(0, Math.round(6 * density), 0, 0);
+        root.addView(verticalLabel);
+        SeekBar vertical = new SeekBar(themedContext);
+        vertical.setMax(29); // 10% .. 300% in 10% steps
+        vertical.setProgress(Math.max(0, Math.min(29, prefConfig.touchSensitivityY / 10 - 1)));
+        root.addView(vertical);
+
+        CheckBox global = new CheckBox(themedContext);
+        global.setText("Apply sensitivity globally");
+        global.setChecked(prefConfig.touchSensitivityGlobal);
+        root.addView(global);
+
+        CheckBox rotate = new CheckBox(themedContext);
+        rotate.setText("Rotate sensitivity axes automatically");
+        rotate.setChecked(prefConfig.touchSensitivityRotationAuto);
+        root.addView(rotate);
+
+        Runnable refreshLabels = () -> {
+            horizontalLabel.setText("Horizontal sensitivity: " + ((horizontal.getProgress() + 1) * 10) + "%");
+            verticalLabel.setText("Vertical sensitivity: " + ((vertical.getProgress() + 1) * 10) + "%");
+        };
+        SeekBar.OnSeekBarChangeListener listener = new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                refreshLabels.run();
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
+        };
+        horizontal.setOnSeekBarChangeListener(listener);
+        vertical.setOnSeekBarChangeListener(listener);
+        refreshLabels.run();
+
+        Runnable refreshEnabledState = () -> {
+            boolean on = enabled.isChecked();
+            horizontal.setEnabled(on);
+            vertical.setEnabled(on);
+            global.setEnabled(on);
+            rotate.setEnabled(on);
+            horizontalLabel.setAlpha(on ? 1f : 0.5f);
+            verticalLabel.setAlpha(on ? 1f : 0.5f);
+        };
+        enabled.setOnCheckedChangeListener((buttonView, isChecked) -> refreshEnabledState.run());
+        refreshEnabledState.run();
+
+        new AlertDialog.Builder(themedContext)
+                .setTitle("Touch Sensitivity")
+                .setView(root)
+                .setPositiveButton("Apply", (dialog, which) -> {
+                    int sensitivityX = (horizontal.getProgress() + 1) * 10;
+                    int sensitivityY = (vertical.getProgress() + 1) * 10;
+                    prefConfig.enableTouchSensitivity = enabled.isChecked();
+                    prefConfig.touchSensitivityX = sensitivityX;
+                    prefConfig.touchSensitivityY = sensitivityY;
+                    prefConfig.touchSensitivityGlobal = global.isChecked();
+                    prefConfig.touchSensitivityRotationAuto = rotate.isChecked();
+
+                    PreferenceManager.getDefaultSharedPreferences(this)
+                            .edit()
+                            .putBoolean("checkbox_enable_touch_sensitivity", enabled.isChecked())
+                            .putInt("seekbar_touch_sensitivity_opacity_x", sensitivityX)
+                            .putInt("seekbar_touch_sensitivity_opacity_y", sensitivityY)
+                            .putBoolean("checkbox_enable_global_touch_sensitivity", global.isChecked())
+                            .putBoolean("checkbox_enable_touch_sensitivity_rotation_auto", rotate.isChecked())
+                            .apply();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     public void disconnect() {

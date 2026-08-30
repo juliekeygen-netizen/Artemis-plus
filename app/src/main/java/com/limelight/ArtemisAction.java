@@ -88,8 +88,7 @@ public enum ArtemisAction {
                 return true;
 
             case TOUCH_SENSITIVITY:
-                game.switchTouchSensitivity();
-                Toast.makeText(game, "Touch sensitivity toggled", Toast.LENGTH_SHORT).show();
+                game.showTouchSensitivityDialog();
                 return true;
 
             case SEND_CLIPBOARD:

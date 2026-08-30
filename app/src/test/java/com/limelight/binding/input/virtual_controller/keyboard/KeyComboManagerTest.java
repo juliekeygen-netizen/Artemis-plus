@@ -70,6 +70,16 @@ public class KeyComboManagerTest {
     }
 
     @Test
+    public void semanticSearchRanksPrefixAndAliasesAheadOfLooseMatches() {
+        assertTrue(KeyComboManager.keySearchScore("F1", KeyEvent.KEYCODE_F1, "f")
+                < KeyComboManager.keySearchScore("Page Up", KeyEvent.KEYCODE_PAGE_UP, "f"));
+        assertTrue(KeyComboManager.keySearchScore("←", KeyEvent.KEYCODE_DPAD_LEFT, "left")
+                < KeyComboManager.keySearchScore("Bracket", KeyEvent.KEYCODE_LEFT_BRACKET, "left"));
+        assertEquals(Integer.MAX_VALUE,
+                KeyComboManager.keySearchScore("←", KeyEvent.KEYCODE_DPAD_LEFT, "backspace"));
+    }
+
+    @Test
     public void emptyManagedProfileIsBlankButLegacyProfileIsNot() {
         assertTrue(KeyBoardControllerConfigurationLoader.shouldTreatManagedProfileAsBlank(
                 "ArtemisKeyboardProfile_abc123", false));

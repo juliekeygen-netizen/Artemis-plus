@@ -52,9 +52,6 @@ public final class ArtemisActionStateReader {
                     return button == null ? Boolean.FALSE : button.getVisibility() == View.VISIBLE;
                 }
 
-                case TOUCH_SENSITIVITY:
-                    return prefConfig == null ? null : prefConfig.enableTouchSensitivity;
-
                 case TOGGLE_ZOOM:
                     return game.isZoomModeEnabled();
 

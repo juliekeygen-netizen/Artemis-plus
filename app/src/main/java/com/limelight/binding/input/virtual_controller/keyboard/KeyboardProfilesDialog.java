@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.view.ContextThemeWrapper;
 import android.view.Gravity;
@@ -12,9 +13,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.ImageButton;
 import android.widget.LinearLayout;
-import android.widget.PopupMenu;
+import android.widget.PopupWindow;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -41,7 +41,7 @@ public final class KeyboardProfilesDialog {
 
         LinearLayout root = new LinearLayout(dialogContext);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(padding, Math.round(4 * density), padding, 0);
+        root.setPadding(padding, Math.round(4 * density), padding, Math.round(4 * density));
         root.setBackgroundColor(0xFF18181B);
 
         TextView helper = new TextView(dialogContext);
@@ -54,24 +54,14 @@ public final class KeyboardProfilesDialog {
         RecyclerView list = new RecyclerView(dialogContext);
         list.setLayoutManager(new LinearLayoutManager(dialogContext));
         list.setClipToPadding(false);
-        list.setPadding(0, Math.round(2 * density), 0, Math.round(6 * density));
+        list.setPadding(0, Math.round(2 * density), 0, Math.round(8 * density));
         int listHeight = Math.min(
-                Math.round(390 * density),
-                Math.max(Math.round(180 * density), context.getResources().getDisplayMetrics().heightPixels / 2));
+                Math.round(350 * density),
+                Math.max(Math.round(160 * density),
+                        context.getResources().getDisplayMetrics().heightPixels / 2 - Math.round(44 * density)));
         root.addView(list, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 listHeight));
-
-        Button add = new Button(dialogContext);
-        add.setText("+  Add profile");
-        add.setTextColor(Color.WHITE);
-        add.setAllCaps(false);
-        add.setBackground(roundedBackground(0xFF303036, 11 * density, 0, 0));
-        LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                Math.round(48 * density));
-        addParams.setMargins(0, Math.round(5 * density), 0, Math.round(8 * density));
-        root.addView(add, addParams);
 
         ProfileAdapter adapter = new ProfileAdapter(
                 dialogContext,
@@ -108,22 +98,28 @@ public final class KeyboardProfilesDialog {
         AlertDialog dialog = new AlertDialog.Builder(dialogContext)
                 .setTitle("Keyboard Profiles")
                 .setView(root)
+                .setNeutralButton("+ Add profile", null)
                 .setNegativeButton("Close", null)
                 .create();
 
-        add.setOnClickListener(v -> promptForName(
-                dialogContext,
-                "Add Profile",
-                "Profile name",
-                "",
-                name -> {
-                    KeyboardProfilesManager.Profile profile =
-                            KeyboardProfilesManager.createProfile(context, name);
-                    if (profile != null) {
-                        switchProfile(context, controller, profile.id);
-                        adapter.replaceProfiles(KeyboardProfilesManager.getProfiles(context));
-                    }
-                }));
+        dialog.setOnShowListener(ignored -> {
+            Button addButton = dialog.getButton(DialogInterface.BUTTON_NEUTRAL);
+            addButton.setTextColor(0xFF8BE9A8);
+            addButton.setOnClickListener(v -> promptForName(
+                    dialogContext,
+                    "Add Profile",
+                    "Profile name",
+                    "",
+                    name -> {
+                        KeyboardProfilesManager.Profile profile =
+                                KeyboardProfilesManager.createProfile(context, name);
+                        if (profile != null) {
+                            switchProfile(context, controller, profile.id);
+                            adapter.replaceProfiles(KeyboardProfilesManager.getProfiles(context));
+                            list.scrollToPosition(Math.max(0, adapter.getItemCount() - 1));
+                        }
+                    }));
+        });
 
         dialog.show();
     }
@@ -186,7 +182,7 @@ public final class KeyboardProfilesDialog {
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(Math.round(8 * density), Math.round(8 * density),
-                    Math.round(6 * density), Math.round(8 * density));
+                    Math.round(7 * density), Math.round(8 * density));
             card.addView(row, new CardView.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -218,15 +214,15 @@ public final class KeyboardProfilesDialog {
             state.setPadding(0, Math.round(2 * density), 0, 0);
             labels.addView(state);
 
-            ImageButton more = new ImageButton(uiContext);
-            more.setImageResource(android.R.drawable.ic_menu_more);
-            more.setColorFilter(Color.WHITE);
+            TextView more = new TextView(uiContext);
+            more.setText("⋮");
+            more.setTextColor(0xFFE8E8EA);
+            more.setTextSize(24f);
+            more.setGravity(Gravity.CENTER);
             more.setContentDescription("Profile options");
-            more.setPadding(Math.round(10 * density), Math.round(10 * density),
-                    Math.round(10 * density), Math.round(10 * density));
-            more.setBackground(roundedBackground(0x33FFFFFF, 22 * density, 0, 0));
+            more.setBackground(roundedBackground(0x332FFFFFFF, 10 * density, 0, 0));
             row.addView(more, new LinearLayout.LayoutParams(
-                    Math.round(44 * density), Math.round(44 * density)));
+                    Math.round(40 * density), Math.round(40 * density)));
 
             RecyclerView.LayoutParams outer = new RecyclerView.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -272,9 +268,9 @@ public final class KeyboardProfilesDialog {
         static final class Holder extends RecyclerView.ViewHolder {
             final TextView name;
             final TextView state;
-            final ImageButton more;
+            final TextView more;
 
-            Holder(View itemView, TextView name, TextView state, ImageButton more) {
+            Holder(View itemView, TextView name, TextView state, TextView more) {
                 super(itemView);
                 this.name = name;
                 this.state = state;
@@ -290,43 +286,88 @@ public final class KeyboardProfilesDialog {
                                         int profileCount,
                                         View anchor,
                                         Runnable rebuild) {
-        PopupMenu menu = new PopupMenu(uiContext, anchor);
-        menu.getMenu().add("Rename");
-        menu.getMenu().add("Duplicate");
-        menu.getMenu().add("Delete").setEnabled(profileCount > 1);
-        menu.setOnMenuItemClickListener(item -> {
-            String title = item.getTitle().toString();
-            if ("Rename".equals(title)) {
-                promptForName(uiContext, "Rename Profile", "Profile name", profile.name, name -> {
-                    KeyboardProfilesManager.renameProfile(appContext, profile.id, name);
-                    rebuild.run();
-                });
-            } else if ("Duplicate".equals(title)) {
-                KeyboardProfilesManager.Profile duplicate =
-                        KeyboardProfilesManager.duplicateProfile(appContext, profile.id);
-                if (duplicate != null) {
-                    rebuild.run();
-                }
-            } else if ("Delete".equals(title)) {
-                new AlertDialog.Builder(uiContext)
-                        .setTitle("Delete Profile?")
-                        .setMessage("Delete “" + profile.name + "”? This cannot be undone.")
-                        .setPositiveButton("Delete", (dialog, which) -> {
-                            KeyboardProfilesManager.Profile before =
-                                    KeyboardProfilesManager.getActiveProfile(appContext);
-                            if (KeyboardProfilesManager.deleteProfile(appContext, profile.id)) {
-                                if (controller != null && before != null && before.id.equals(profile.id)) {
-                                    controller.reloadCurrentProfile();
-                                }
-                                rebuild.run();
-                            }
-                        })
-                        .setNegativeButton(android.R.string.cancel, null)
-                        .show();
+        float density = uiContext.getResources().getDisplayMetrics().density;
+        int popupWidth = Math.round(168 * density);
+
+        LinearLayout content = new LinearLayout(uiContext);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(0, Math.round(5 * density), 0, Math.round(5 * density));
+        content.setBackground(roundedBackground(0xFF242428, 11 * density,
+                Math.max(1, Math.round(density)), 0xFF3B3B40));
+
+        PopupWindow popup = new PopupWindow(
+                content,
+                popupWidth,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                true);
+        popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        popup.setOutsideTouchable(true);
+        popup.setElevation(12 * density);
+
+        content.addView(profileMenuItem(uiContext, "Rename", Color.WHITE, true, () -> {
+            popup.dismiss();
+            promptForName(uiContext, "Rename Profile", "Profile name", profile.name, name -> {
+                KeyboardProfilesManager.renameProfile(appContext, profile.id, name);
+                rebuild.run();
+            });
+        }));
+        content.addView(profileMenuItem(uiContext, "Duplicate", Color.WHITE, true, () -> {
+            popup.dismiss();
+            KeyboardProfilesManager.Profile duplicate =
+                    KeyboardProfilesManager.duplicateProfile(appContext, profile.id);
+            if (duplicate != null) {
+                rebuild.run();
             }
-            return true;
+        }));
+        content.addView(profileMenuItem(uiContext, "Delete",
+                profileCount > 1 ? 0xFFFF7777 : 0xFF77777D,
+                profileCount > 1,
+                () -> {
+                    popup.dismiss();
+                    new AlertDialog.Builder(uiContext)
+                            .setTitle("Delete Profile?")
+                            .setMessage("Delete “" + profile.name + "”? This cannot be undone.")
+                            .setPositiveButton("Delete", (dialog, which) -> {
+                                KeyboardProfilesManager.Profile before =
+                                        KeyboardProfilesManager.getActiveProfile(appContext);
+                                if (KeyboardProfilesManager.deleteProfile(appContext, profile.id)) {
+                                    if (controller != null && before != null && before.id.equals(profile.id)) {
+                                        controller.reloadCurrentProfile();
+                                    }
+                                    rebuild.run();
+                                }
+                            })
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .show();
+                }));
+
+        int xOffset = -popupWidth + anchor.getWidth();
+        popup.showAsDropDown(anchor, xOffset, -Math.round(4 * density));
+    }
+
+    private static TextView profileMenuItem(Context context,
+                                            String label,
+                                            int color,
+                                            boolean enabled,
+                                            Runnable action) {
+        float density = context.getResources().getDisplayMetrics().density;
+        TextView item = new TextView(context);
+        item.setText(label);
+        item.setTextColor(color);
+        item.setTextSize(16f);
+        item.setGravity(Gravity.CENTER_VERTICAL);
+        item.setPadding(Math.round(16 * density), 0, Math.round(12 * density), 0);
+        item.setEnabled(enabled);
+        item.setAlpha(enabled ? 1f : 0.55f);
+        item.setOnClickListener(v -> {
+            if (enabled) {
+                action.run();
+            }
         });
-        menu.show();
+        item.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                Math.round(46 * density)));
+        return item;
     }
 
     private static void switchProfile(Context context,

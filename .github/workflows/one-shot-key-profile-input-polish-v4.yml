@@ -4,13 +4,14 @@ on:
   push:
     branches:
       - feature/key-profile-input-polish-v4
+    paths:
+      - .github/workflows/one-shot-key-profile-input-polish-v4.yml
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'chore: add one-shot key/profile polish workflow'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

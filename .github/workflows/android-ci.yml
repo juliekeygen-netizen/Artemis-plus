@@ -48,11 +48,13 @@ jobs:
         run: >-
           ./gradlew :app:testNonRoot_gameDebugUnitTest
           --tests "com.limelight.ArtemisOrientationHelperTest"
+          --tests "com.limelight.OutsideStreamOrientationPolicyTest"
           --tests "com.limelight.binding.input.virtual_controller.OscProfilesManagerTest"
           --tests "com.limelight.binding.input.virtual_controller.keyboard.ArtemisActionButtonFactoryTest"
           --tests "com.limelight.binding.input.virtual_controller.keyboard.KeyComboManagerTest"
           --tests "com.limelight.binding.input.virtual_controller.keyboard.KeyboardProfilesManagerTest"
           --tests "com.limelight.binding.input.virtual_controller.keyboard.LayoutSnappingHelperTest"
+          --tests "com.limelight.binding.input.virtual_controller.keyboard.LongPressMoveGestureGuardTest"
           --tests "com.limelight.nvstream.http.PairingManagerRetryTest"
           --tests "com.limelight.ui.FloatingControlPositionStoreTest"
           --stacktrace

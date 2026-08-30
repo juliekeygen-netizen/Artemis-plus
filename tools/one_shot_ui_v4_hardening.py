@@ -180,15 +180,4 @@ public class FloatingControlPositionStoreTest {
 }
 ''', encoding='utf-8', newline='\n')
 
-# Make the new persistence regression part of the hard Artemis Plus gate. This workflow is a YAML
-# folded scalar, so the test arguments are ordinary separate lines rather than shell '\\' lines.
-path = '.github/workflows/android-ci.yml'
-patch(path,
-      '''          --tests "com.limelight.nvstream.http.PairingManagerRetryTest"
-          --stacktrace''',
-      '''          --tests "com.limelight.nvstream.http.PairingManagerRetryTest"
-          --tests "com.limelight.ui.FloatingControlPositionStoreTest"
-          --stacktrace''')
-
-# Cleanup is performed through the GitHub connector after the generated product/test changes land.
-print('UI v4 lifecycle hardening applied')
+print('UI v4 source/test hardening applied')

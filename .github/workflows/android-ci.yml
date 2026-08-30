@@ -54,6 +54,7 @@ jobs:
           --tests "com.limelight.binding.input.virtual_controller.keyboard.KeyboardProfilesManagerTest"
           --tests "com.limelight.binding.input.virtual_controller.keyboard.LayoutSnappingHelperTest"
           --tests "com.limelight.nvstream.http.PairingManagerRetryTest"
+          --tests "com.limelight.ui.FloatingControlPositionStoreTest"
           --stacktrace
 
       - name: Run full inherited unit suite (diagnostic)

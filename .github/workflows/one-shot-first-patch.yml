@@ -1,48 +1,61 @@
-name: Normalize first patch diff
+name: First patch validation
 
 on:
   push:
     branches:
       - feature/first-patch-v4-orientation-settings-search
-    paths:
-      - '.github/workflows/one-shot-first-patch.yml'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  normalize:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 40
     steps:
       - name: Checkout feature branch
         uses: actions/checkout@v4
         with:
           ref: feature/first-patch-v4-orientation-settings-search
-          fetch-depth: 0
+          submodules: recursive
 
-      - name: Restore original CRLF convention on touched legacy files
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          for name in [
-              'app/src/main/java/com/limelight/preferences/StreamSettings.java',
-              'app/src/main/res/values/arrays.xml',
-          ]:
-              p = Path(name)
-              data = p.read_bytes().replace(b'\r\n', b'\n')
-              p.write_bytes(data.replace(b'\n', b'\r\n'))
-          PY
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
 
-      - name: Commit normalized files
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/src/main/java/com/limelight/preferences/StreamSettings.java app/src/main/res/values/arrays.xml
-          if git diff --cached --quiet; then
-            echo "No normalization changes needed"
-            exit 0
-          fi
-          git commit -m "chore: preserve legacy line endings in first patch"
-          git push origin HEAD:feature/first-patch-v4-orientation-settings-search
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK and NDK
+        run: sdkmanager "platforms;android-36" "ndk;27.0.12077973"
+
+      - name: Make Gradle executable
+        run: chmod +x gradlew
+
+      - name: Compile non-root debug variant
+        run: ./gradlew :app:compileNonRoot_gameDebugJavaWithJavac --stacktrace
+
+      - name: Run first-patch and V4 regression tests
+        run: >-
+          ./gradlew :app:testNonRoot_gameDebugUnitTest
+          --tests "com.limelight.ArtemisOrientationHelperTest"
+          --tests "com.limelight.OutsideStreamOrientationPolicyTest"
+          --tests "com.limelight.binding.input.virtual_controller.keyboard.LayoutSnappingHelperTest"
+          --tests "com.limelight.binding.input.virtual_controller.keyboard.LongPressMoveGestureGuardTest"
+          --tests "com.limelight.ui.FloatingControlPositionStoreTest"
+          --stacktrace
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: first-patch-test-reports
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+          if-no-files-found: warn
+          retention-days: 14

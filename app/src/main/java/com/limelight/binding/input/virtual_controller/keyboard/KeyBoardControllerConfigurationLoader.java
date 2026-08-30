@@ -585,8 +585,6 @@ public class KeyBoardControllerConfigurationLoader {
                     pref.edit().remove(prefKey).apply();
                 }
             }
-                element.setVisibility(View.GONE);
-            }
         }
     }
 }

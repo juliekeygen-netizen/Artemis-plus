@@ -29,6 +29,10 @@ jobs:
 
       - name: Commit generated product and tests
         run: |
+          # The GitHub Actions token cannot modify workflow files. Keep the product/test changes,
+          # but leave Android CI itself untouched; the full inherited suite already executes the
+          # newly added tests and we will inspect that run explicitly before promotion.
+          git checkout -- .github/workflows/android-ci.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A

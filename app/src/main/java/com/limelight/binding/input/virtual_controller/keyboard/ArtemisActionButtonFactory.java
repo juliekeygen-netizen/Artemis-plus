@@ -81,7 +81,7 @@ public final class ArtemisActionButtonFactory {
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();
-        dialog.setOnShowListener(ignored -> ArtemisEditorUi.styleDialog(dialog, context, 520, 600, false));
+        dialog.setOnShowListener(ignored -> ArtemisEditorUi.styleDialog(dialog, context, 520, 600, true));
         dialog.show();
     }
 

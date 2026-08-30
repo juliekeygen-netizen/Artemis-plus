@@ -64,9 +64,9 @@ public class LayoutSnappingHelper {
         int horizontalOverlap = Math.min(aRight, bRight) - Math.max(aLeft, bLeft);
         int minHeight = Math.min(aHeight, bHeight), minWidth = Math.min(aWidth, bWidth);
         int horizontalTolerance = Math.max(
-                SPACING_THRESHOLD, Math.round(minWidth * GROUP_SIZE_TOLERANCE_RATIO));
+                SNAP_THRESHOLD, Math.round(minWidth * GROUP_SIZE_TOLERANCE_RATIO));
         int verticalTolerance = Math.max(
-                SPACING_THRESHOLD, Math.round(minHeight * GROUP_SIZE_TOLERANCE_RATIO));
+                SNAP_THRESHOLD, Math.round(minHeight * GROUP_SIZE_TOLERANCE_RATIO));
         boolean sideBySide = verticalOverlap >= minHeight * GROUP_PARALLEL_OVERLAP &&
                 (Math.abs(aRight - bLeft) <= horizontalTolerance ||
                         Math.abs(bRight - aLeft) <= horizontalTolerance);

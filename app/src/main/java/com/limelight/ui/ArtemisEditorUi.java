@@ -88,13 +88,15 @@ public final class ArtemisEditorUi {
             window.setBackgroundDrawable(new ColorDrawable(SURFACE));
             int screenWidth = context.getResources().getDisplayMetrics().widthPixels;
             int screenHeight = context.getResources().getDisplayMetrics().heightPixels;
-            int width = Math.min(dp(context, maxWidthDp), Math.round(screenWidth * 0.92f));
+            int widthCap = Math.max(1, Math.round(screenWidth * 0.92f));
+            int width = Math.min(dp(context, maxWidthDp), widthCap);
+            int minimumWidth = Math.min(dp(context, 320), widthCap);
             int height = WindowManager.LayoutParams.WRAP_CONTENT;
             if (maxHeightDp > 0) {
                 int capped = Math.min(dp(context, maxHeightDp), Math.round(screenHeight * 0.86f));
                 if (fixedHeight) height = capped;
             }
-            window.setLayout(Math.max(dp(context, 320), width), height);
+            window.setLayout(Math.max(minimumWidth, width), height);
         }
         styleFooterButton(dialog.getButton(AlertDialog.BUTTON_POSITIVE), ACCENT);
         styleFooterButton(dialog.getButton(AlertDialog.BUTTON_NEGATIVE), TEXT_SECONDARY);

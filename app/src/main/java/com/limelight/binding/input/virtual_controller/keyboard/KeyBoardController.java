@@ -28,6 +28,7 @@ import android.widget.Toast;
 import androidx.preference.PreferenceManager;
 
 import com.limelight.Game;
+import com.limelight.ui.ArtemisEditorUi;
 import com.limelight.ui.FloatingControlPositionStore;
 import com.limelight.R;
 import com.limelight.nvstream.NvConnection;
@@ -127,12 +128,14 @@ public class KeyBoardController {
                 if (moved || resetPromptShown) return;
                 resetPromptShown = true;
                 moveArmed = false;
-                new AlertDialog.Builder(context)
-                        .setTitle("Reset position?")
+                AlertDialog resetDialog = ArtemisEditorUi.builder(context, "Reset position?")
                         .setMessage("Reset the on-screen settings button to its default position?")
                         .setPositiveButton("Reset", (dialog, which) -> resetConfigureButtonPosition())
                         .setNegativeButton(android.R.string.cancel, null)
-                        .show();
+                        .create();
+                resetDialog.setOnShowListener(ignored ->
+                        ArtemisEditorUi.styleDialog(resetDialog, context, 420));
+                resetDialog.show();
             };
 
             private void cancelTimers() {
@@ -556,7 +559,7 @@ public class KeyBoardController {
         if (configureSessionPositionPrepared) return;
         configureSessionPositionPrepared = true;
         if (FloatingControlPositionStore.shouldResetBetweenSessions(context)) {
-            FloatingControlPositionStore.clearCurrentOrientation(context, SETTINGS_POSITION_ID);
+            FloatingControlPositionStore.clearAllOrientations(context, SETTINGS_POSITION_ID);
         }
     }
 

@@ -55,6 +55,15 @@ public class LayoutSnappingHelperTest {
     }
 
     @Test
+    public void nearbyButUnsnappedControlsDoNotBecomeAGroup() {
+        // The 30px attraction radius is for pulling a moving control into the 4px snap gap.
+        // Once stationary, a normal-size 20px gap must not silently become grouped.
+        assertFalse(LayoutSnappingHelper.areGrouped(
+                100, 100, 40, 40,
+                160, 100, 40, 40));
+    }
+
+    @Test
     public void doesNotGroupDistantAlignedControls() {
         assertFalse(LayoutSnappingHelper.areGrouped(
                 100, 100, 40, 40,

@@ -14,11 +14,31 @@ patch(path,
       'import com.limelight.ui.FloatingControlPositionStore;\n',
       'import com.limelight.ui.ArtemisEditorUi;\nimport com.limelight.ui.FloatingControlPositionStore;\n')
 patch(path,
-      '''                new AlertDialog.Builder(context)\n                        .setTitle("Reset position?")\n                        .setMessage("Reset the on-screen settings button to its default position?")\n                        .setPositiveButton("Reset", (dialog, which) -> resetConfigureButtonPosition())\n                        .setNegativeButton(android.R.string.cancel, null)\n                        .show();''',
-      '''                AlertDialog resetDialog = ArtemisEditorUi.builder(context, "Reset position?")\n                        .setMessage("Reset the on-screen settings button to its default position?")\n                        .setPositiveButton("Reset", (dialog, which) -> resetConfigureButtonPosition())\n                        .setNegativeButton(android.R.string.cancel, null)\n                        .create();\n                resetDialog.setOnShowListener(ignored ->\n                        ArtemisEditorUi.styleDialog(resetDialog, context, 420));\n                resetDialog.show();''')
+      '''                new AlertDialog.Builder(context)
+                        .setTitle("Reset position?")
+                        .setMessage("Reset the on-screen settings button to its default position?")
+                        .setPositiveButton("Reset", (dialog, which) -> resetConfigureButtonPosition())
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();''',
+      '''                AlertDialog resetDialog = ArtemisEditorUi.builder(context, "Reset position?")
+                        .setMessage("Reset the on-screen settings button to its default position?")
+                        .setPositiveButton("Reset", (dialog, which) -> resetConfigureButtonPosition())
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .create();
+                resetDialog.setOnShowListener(ignored ->
+                        ArtemisEditorUi.styleDialog(resetDialog, context, 420));
+                resetDialog.show();''')
 patch(path,
-      'FloatingControlPositionStore.clearCurrentOrientation(context, SETTINGS_POSITION_ID);\n        }\n    }\n\n    private void resetConfigureButtonPosition()',
-      'FloatingControlPositionStore.clearAllOrientations(context, SETTINGS_POSITION_ID);\n        }\n    }\n\n    private void resetConfigureButtonPosition()')
+      '''FloatingControlPositionStore.clearCurrentOrientation(context, SETTINGS_POSITION_ID);
+        }
+    }
+
+    private void resetConfigureButtonPosition()''',
+      '''FloatingControlPositionStore.clearAllOrientations(context, SETTINGS_POSITION_ID);
+        }
+    }
+
+    private void resetConfigureButtonPosition()''')
 
 # The Actions list is intentionally scrollable: cap the whole dialog instead of allowing a tall
 # wrap-content window to fight the footer on landscape phones.
@@ -26,6 +46,63 @@ path = 'app/src/main/java/com/limelight/binding/input/virtual_controller/keyboar
 patch(path,
       'ArtemisEditorUi.styleDialog(dialog, context, 520, 600, false)',
       'ArtemisEditorUi.styleDialog(dialog, context, 520, 600, true)')
+
+# Group membership must describe an actually snapped cluster, not merely anything still inside the
+# larger 30px attraction radius. The proportional tolerance keeps gaps from scaled groups attached.
+path = 'app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/LayoutSnappingHelper.java'
+patch(path,
+      '''        int horizontalTolerance = Math.max(
+                SPACING_THRESHOLD, Math.round(minWidth * GROUP_SIZE_TOLERANCE_RATIO));
+        int verticalTolerance = Math.max(
+                SPACING_THRESHOLD, Math.round(minHeight * GROUP_SIZE_TOLERANCE_RATIO));''',
+      '''        int horizontalTolerance = Math.max(
+                SNAP_THRESHOLD, Math.round(minWidth * GROUP_SIZE_TOLERANCE_RATIO));
+        int verticalTolerance = Math.max(
+                SNAP_THRESHOLD, Math.round(minHeight * GROUP_SIZE_TOLERANCE_RATIO));''')
+
+path = 'app/src/test/java/com/limelight/binding/input/virtual_controller/keyboard/LayoutSnappingHelperTest.java'
+patch(path,
+      '''    @Test
+    public void doesNotGroupBeyondSpacingAdjustmentRangeAtNormalSize() {
+        assertFalse(LayoutSnappingHelper.areGrouped(
+                100, 100, 40, 40,
+                171, 100, 40, 40));
+    }
+
+    @Test
+    public void doesNotGroupDistantAlignedControls()''',
+      '''    @Test
+    public void doesNotGroupBeyondSpacingAdjustmentRangeAtNormalSize() {
+        assertFalse(LayoutSnappingHelper.areGrouped(
+                100, 100, 40, 40,
+                171, 100, 40, 40));
+    }
+
+    @Test
+    public void nearbyButUnsnappedControlsDoNotBecomeAGroup() {
+        // The 30px attraction radius is for pulling a moving control into the 4px snap gap.
+        // Once stationary, a normal-size 20px gap must not silently become grouped.
+        assertFalse(LayoutSnappingHelper.areGrouped(
+                100, 100, 40, 40,
+                160, 100, 40, 40));
+    }
+
+    @Test
+    public void doesNotGroupDistantAlignedControls()''')
+
+# Keep shared editor dialogs inside narrow windows too. The previous hard 320dp minimum could exceed
+# the actual 92%-of-window cap on compact split-screen/landscape layouts.
+path = 'app/src/main/java/com/limelight/ui/ArtemisEditorUi.java'
+patch(path,
+      '''            int width = Math.min(dp(context, maxWidthDp), Math.round(screenWidth * 0.92f));
+            int height = WindowManager.LayoutParams.WRAP_CONTENT;''',
+      '''            int widthCap = Math.max(1, Math.round(screenWidth * 0.92f));
+            int width = Math.min(dp(context, maxWidthDp), widthCap);
+            int minimumWidth = Math.min(dp(context, 320), widthCap);
+            int height = WindowManager.LayoutParams.WRAP_CONTENT;''')
+patch(path,
+      '            window.setLayout(Math.max(dp(context, 320), width), height);',
+      '            window.setLayout(Math.max(minimumWidth, width), height);')
 
 # Regression coverage for the new cross-session floating-position preference/store.
 Path('app/src/test/java/com/limelight/ui').mkdir(parents=True, exist_ok=True)
@@ -103,11 +180,15 @@ public class FloatingControlPositionStoreTest {
 }
 ''', encoding='utf-8', newline='\n')
 
-# Make the new persistence regression part of the hard Artemis Plus gate.
+# Make the new persistence regression part of the hard Artemis Plus gate. This workflow is a YAML
+# folded scalar, so the test arguments are ordinary separate lines rather than shell '\\' lines.
 path = '.github/workflows/android-ci.yml'
 patch(path,
-      '''            --tests "com.limelight.nvstream.http.PairingManagerRetryTest" \\\n            --stacktrace''',
-      '''            --tests "com.limelight.nvstream.http.PairingManagerRetryTest" \\\n            --tests "com.limelight.ui.FloatingControlPositionStoreTest" \\\n            --stacktrace''')
+      '''          --tests "com.limelight.nvstream.http.PairingManagerRetryTest"
+          --stacktrace''',
+      '''          --tests "com.limelight.nvstream.http.PairingManagerRetryTest"
+          --tests "com.limelight.ui.FloatingControlPositionStoreTest"
+          --stacktrace''')
 
 # Self-clean one-shot machinery.
 Path('tools/one_shot_ui_v4_hardening.py').unlink()

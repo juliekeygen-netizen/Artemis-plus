@@ -51,6 +51,7 @@ jobs:
           --tests "com.limelight.OutsideStreamOrientationPolicyTest"
           --tests "com.limelight.BottomEdgeStartGestureDetectorTest"
           --tests "com.limelight.PipOverlayTransitionStateTest"
+          --tests "com.limelight.PipAspectRatioHelperTest"
           --tests "com.limelight.binding.input.virtual_controller.OscProfilesManagerTest"
           --tests "com.limelight.binding.input.virtual_controller.keyboard.ArtemisActionButtonFactoryTest"
           --tests "com.limelight.binding.input.virtual_controller.keyboard.KeyComboManagerTest"

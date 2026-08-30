@@ -1,6 +1,7 @@
 package com.limelight.ui;
 
 import android.content.Context;
+import android.content.res.Configuration;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
@@ -22,10 +23,18 @@ public class PersistentPositionImageButton extends ImageButton {
         if (!sessionResetApplied) {
             sessionResetApplied = true;
             if (FloatingControlPositionStore.shouldResetBetweenSessions(getContext())) {
-                FloatingControlPositionStore.clearCurrentOrientation(
+                FloatingControlPositionStore.clearAllOrientations(
                         getContext(), FloatingControlPositionStore.identityForView(this));
             }
         }
+        post(() -> FloatingControlPositionStore.restore(this, null));
+    }
+
+    @Override
+    protected void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // The stream Activity can survive an orientation change. Re-apply the separately saved
+        // portrait/landscape position after the parent has been laid out in the new orientation.
         post(() -> FloatingControlPositionStore.restore(this, null));
     }
 

@@ -45,6 +45,7 @@ import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.profiles.ProfilesManager;
 import com.limelight.ui.ExternalControllerView;
 import com.limelight.ui.GameGestures;
+import com.limelight.ui.ArtemisEditorUi;
 import com.limelight.ui.StreamContainer;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.ExternalDisplayControlActivity;
@@ -4421,8 +4422,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
      * The Artemis action opens this dialog instead of acting like a mystery toggle.
      */
     public void showTouchSensitivityDialog() {
-        android.view.ContextThemeWrapper themedContext =
-                new android.view.ContextThemeWrapper(this, R.style.ArtemisEditorDialogTheme);
+        Context themedContext = ArtemisEditorUi.context(this);
         float density = getResources().getDisplayMetrics().density;
         int padding = Math.round(16 * density);
 
@@ -4497,8 +4497,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         enabled.setOnCheckedChangeListener((buttonView, isChecked) -> refreshEnabledState.run());
         refreshEnabledState.run();
 
-        new AlertDialog.Builder(themedContext)
-                .setTitle("Touch Sensitivity")
+        AlertDialog touchDialog = ArtemisEditorUi.builder(themedContext, "Touch Sensitivity")
                 .setView(root)
                 .setPositiveButton("Apply", (dialog, which) -> {
                     int sensitivityX = (horizontal.getProgress() + 1) * 10;
@@ -4519,7 +4518,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                             .apply();
                 })
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .create();
+        touchDialog.setOnShowListener(ignored -> ArtemisEditorUi.styleDialog(touchDialog, this, 520));
+        touchDialog.show();
     }
 
     public void disconnect() {

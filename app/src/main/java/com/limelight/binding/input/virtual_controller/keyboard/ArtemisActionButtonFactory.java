@@ -7,12 +7,16 @@ import android.graphics.Point;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.Toast;
+import android.widget.CheckBox;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
 
 import androidx.preference.PreferenceManager;
 
 import com.limelight.ArtemisAction;
 import com.limelight.Game;
 import com.limelight.R;
+import com.limelight.ui.ArtemisEditorUi;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -37,43 +41,48 @@ public final class ArtemisActionButtonFactory {
 
     public static void showPicker(KeyBoardController controller, Context context) {
         ArtemisAction[] actions = ArtemisAction.values();
-        String[] labels = new String[actions.length];
-        boolean[] checked = new boolean[actions.length];
         Set<String> selected = new HashSet<>(getSelectedActionIds(context));
-
+        Context ui = ArtemisEditorUi.context(context);
+        LinearLayout list = new LinearLayout(ui);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(ArtemisEditorUi.dp(ui, 14), ArtemisEditorUi.dp(ui, 6),
+                ArtemisEditorUi.dp(ui, 14), ArtemisEditorUi.dp(ui, 6));
+        CheckBox[] boxes = new CheckBox[actions.length];
         for (int i = 0; i < actions.length; i++) {
-            labels[i] = actions[i].getLabel();
-            checked[i] = selected.contains(actions[i].getId());
+            CheckBox box = new CheckBox(ui);
+            box.setText(actions[i].getLabel());
+            box.setTextSize(15f);
+            box.setTextColor(ArtemisEditorUi.TEXT_PRIMARY);
+            box.setChecked(selected.contains(actions[i].getId()));
+            box.setMinHeight(ArtemisEditorUi.dp(ui, 44));
+            boxes[i] = box;
+            list.addView(box, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, ArtemisEditorUi.dp(ui, 44)));
         }
-
-        new AlertDialog.Builder(context)
-                .setTitle("Add Artemis Actions")
-                .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) ->
-                        checked[which] = isChecked)
-                .setPositiveButton("Apply", (dialog, which) -> {
+        ScrollView scroll = new ScrollView(ui);
+        scroll.addView(list);
+        AlertDialog dialog = ArtemisEditorUi.builder(ui, "Add Artemis Actions")
+                .setView(scroll)
+                .setPositiveButton("Apply", (d, which) -> {
                     HashSet<String> requested = new HashSet<>();
                     for (int i = 0; i < actions.length; i++) {
-                        if (checked[i]) {
+                        if (boxes[i].isChecked()) {
                             requested.add(actions[i].getId());
                             ensureActionPresent(controller, context, actions[i], true);
-                        } else {
-                            hideExistingAction(controller, actions[i]);
-                        }
+                        } else hideExistingAction(controller, actions[i]);
                     }
-
                     if (!requested.contains(ArtemisAction.TOGGLE_KEYBOARD_CONTROLLER.getId())) {
                         COLLAPSED_CONTROLLERS.remove(controller);
                         controller.showEnabledElements();
-                    } else {
-                        applyCollapsedState(controller);
-                    }
-
+                    } else applyCollapsedState(controller);
                     saveSelectedActionIds(context, requested);
                     KeyBoardControllerConfigurationLoader.saveProfile(controller, context);
                     Toast.makeText(context, "Artemis action buttons updated", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .create();
+        dialog.setOnShowListener(ignored -> ArtemisEditorUi.styleDialog(dialog, context, 520, 600, false));
+        dialog.show();
     }
 
     public static void restoreSelectedActions(KeyBoardController controller, Context context) {

@@ -549,6 +549,12 @@
             android:title="@string/title_floating_button"
             app:iconSpaceReserved="false" />
         <CheckBoxPreference
+            android:defaultValue="false"
+            android:key="checkbox_reset_floating_controls_between_sessions"
+            android:title="Reset floating control positions between sessions"
+            android:summary="Reset the on-screen settings button, native floating menu button, and Zoom/Pan button to their default positions when a new stream starts"
+            app:iconSpaceReserved="false" />
+        <CheckBoxPreference
             android:key="checkbox_full_screen"
             android:title="@string/title_checkbox_full_screen"
             android:summary="@string/summary_checkbox_full_screen"

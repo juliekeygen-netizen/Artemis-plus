@@ -32,6 +32,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.limelight.R;
+import com.limelight.ui.ArtemisEditorUi;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -287,7 +288,7 @@ final class KeyComboManager {
             return;
         }
 
-        Context dialogContext = new ContextThemeWrapper(context, R.style.ArtemisEditorDialogTheme);
+        Context dialogContext = ArtemisEditorUi.context(context);
         float density = context.getResources().getDisplayMetrics().density;
         int padding = Math.max(12, Math.round(16 * density));
 
@@ -303,8 +304,8 @@ final class KeyComboManager {
                 ScrollView.LayoutParams.WRAP_CONTENT));
 
         TextView intro = label(dialogContext,
-                "Add one normal key, or build an ordered chord. Modifiers are held while the key rows are pressed from top to bottom.",
-                14f, 0xFFBDBDBD);
+                "Add one key, or build a chord. Modifiers stay held while every selected key is pressed.",
+                12.5f, ArtemisEditorUi.TEXT_SECONDARY);
         intro.setPadding(0, 0, 0, Math.round(8 * density));
         content.addView(intro);
 
@@ -377,9 +378,18 @@ final class KeyComboManager {
         TextView summary = label(dialogContext, "", 13f, 0xFFE0E0E0);
         summary.setPadding(0, Math.round(8 * density), 0, 0);
         content.addView(summary);
+        TextView pressOrder = label(dialogContext, "", 11.5f, ArtemisEditorUi.TEXT_SECONDARY);
+        pressOrder.setPadding(0, Math.round(2 * density), 0, 0);
+        content.addView(pressOrder);
 
-        Runnable updateSummary = () -> summary.setText(buildSummary(
-                ctrl.isChecked(), alt.isChecked(), shift.isChecked(), meta.isChecked(), selectedOptions(keyRows)));
+        Runnable updateSummary = () -> {
+            List<KeyOption> selected = selectedOptions(keyRows);
+            summary.setText(buildSummary(
+                    ctrl.isChecked(), alt.isChecked(), shift.isChecked(), meta.isChecked(), selected));
+            String order = buildPressOrder(selected);
+            pressOrder.setText(order);
+            pressOrder.setVisibility(order.isEmpty() ? View.GONE : View.VISIBLE);
+        };
 
         Runnable[] rerenderRows = new Runnable[1];
         rerenderRows[0] = () -> renderKeyRows(
@@ -404,8 +414,8 @@ final class KeyComboManager {
         meta.setOnCheckedChangeListener((buttonView, isChecked) -> updateSummary.run());
         updateSummary.run();
 
-        AlertDialog.Builder builder = new AlertDialog.Builder(dialogContext)
-                .setTitle(existing == null ? "Add Keys" : "Edit Key")
+        AlertDialog.Builder builder = ArtemisEditorUi.builder(
+                        dialogContext, existing == null ? "Add Keys" : "Edit Key")
                 .setView(scrollView)
                 .setPositiveButton(existing == null ? "Add" : "Save", null)
                 .setNegativeButton(android.R.string.cancel, null);
@@ -415,16 +425,7 @@ final class KeyComboManager {
         AlertDialog dialog = builder.create();
 
         dialog.setOnShowListener(ignored -> {
-            if (dialog.getWindow() != null) {
-                int maxWidth = Math.round(760 * density);
-                int maxHeight = Math.round(650 * density);
-                int width = Math.min(maxWidth,
-                        Math.round(context.getResources().getDisplayMetrics().widthPixels * 0.90f));
-                int height = Math.min(maxHeight,
-                        Math.round(context.getResources().getDisplayMetrics().heightPixels * 0.84f));
-                dialog.getWindow().setLayout(Math.max(Math.round(340 * density), width),
-                        Math.max(Math.round(300 * density), height));
-            }
+            ArtemisEditorUi.styleDialog(dialog, context, 520, 620, true);
 
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
                 String name = nameInput.getText().toString().trim();
@@ -503,26 +504,31 @@ final class KeyComboManager {
         dialog.show();
     }
 
-    private static String buildSummary(boolean ctrl,
-                                       boolean alt,
-                                       boolean shift,
-                                       boolean meta,
-                                       List<KeyOption> keys) {
+    static String buildSummary(boolean ctrl,
+                               boolean alt,
+                               boolean shift,
+                               boolean meta,
+                               List<KeyOption> keys) {
         StringBuilder result = new StringBuilder("Sends: ");
-        boolean hasModifier = false;
-        if (ctrl) { result.append("Ctrl + "); hasModifier = true; }
-        if (alt) { result.append("Alt + "); hasModifier = true; }
-        if (shift) { result.append("Shift + "); hasModifier = true; }
-        if (meta) { result.append("Win + "); hasModifier = true; }
-
-        if (keys.isEmpty()) {
-            result.append(hasModifier ? "…" : "nothing selected yet");
-            return result.toString();
+        boolean wrote = false;
+        if (ctrl) { result.append("Ctrl"); wrote = true; }
+        if (alt) { if (wrote) result.append(" + "); result.append("Alt"); wrote = true; }
+        if (shift) { if (wrote) result.append(" + "); result.append("Shift"); wrote = true; }
+        if (meta) { if (wrote) result.append(" + "); result.append("Win"); wrote = true; }
+        for (KeyOption key : keys) {
+            if (wrote) result.append(" + ");
+            result.append(key.selectionLabel().replace("   ", " "));
+            wrote = true;
         }
+        if (!wrote) result.append("nothing selected yet");
+        return result.toString();
+    }
+
+    static String buildPressOrder(List<KeyOption> keys) {
+        if (keys.size() <= 1) return "";
+        StringBuilder result = new StringBuilder("Press order: ");
         for (int i = 0; i < keys.size(); i++) {
-            if (i > 0) {
-                result.append("  →  ");
-            }
+            if (i > 0) result.append("  →  ");
             result.append(keys.get(i).selectionLabel().replace("   ", " "));
         }
         return result.toString();
@@ -583,6 +589,8 @@ final class KeyComboManager {
             field.setHint(rowIndex == 0 ? "Choose a key…" : "Choose another key…");
             field.setSingleLine(true);
             field.setThreshold(0);
+            field.setDropDownHeight(Math.round(264 * density));
+            ArtemisEditorUi.suppressTextActionMenu(field);
             field.setTextColor(Color.WHITE);
             field.setHintTextColor(0xFF8E8E93);
             field.setDropDownHeight(Math.round(300 * density));

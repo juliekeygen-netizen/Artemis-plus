@@ -1,5 +1,6 @@
 package com.limelight.binding.input.virtual_controller.keyboard;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -97,6 +98,42 @@ public class LayoutSnappingHelperTest {
 
         assertTrue(result.didAdjustSpacing || result.didSnap);
         assertTrue(result.lockY);
+    }
+
+    @Test
+    public void mixedSizeAdjacentControlsSnapWithoutResizing() {
+        Context context = ApplicationProvider.getApplicationContext();
+        View moving = sizedView(context, 0, 0, 90, 40);
+        View anchor = sizedView(context, 120, 100, 40, 60);
+        LayoutSnappingHelper.SnapResult result = LayoutSnappingHelper.calculateSnappedPosition(
+                moving, new View[]{anchor}, 27, 108);
+        assertTrue(result.lockX);
+        assertFalse(result.didResize);
+        assertEquals(26, result.newX);
+        assertEquals(90, result.newWidth);
+        assertEquals(40, result.newHeight);
+    }
+
+    @Test
+    public void nearestCandidateWinsInsteadOfLaterViewOrder() {
+        Context context = ApplicationProvider.getApplicationContext();
+        View moving = sizedView(context, 0, 0, 40, 40);
+        View near = sizedView(context, 100, 100, 40, 40);
+        View farther = sizedView(context, 107, 100, 40, 40);
+        LayoutSnappingHelper.SnapResult result = LayoutSnappingHelper.calculateSnappedPosition(
+                moving, new View[]{near, farther}, 102, 100);
+        assertEquals(100, result.newX);
+    }
+
+    @Test
+    public void centerAlignmentWorksForDifferentWidths() {
+        Context context = ApplicationProvider.getApplicationContext();
+        View moving = sizedView(context, 0, 0, 40, 40);
+        View anchor = sizedView(context, 100, 100, 80, 40);
+        LayoutSnappingHelper.SnapResult result = LayoutSnappingHelper.calculateSnappedPosition(
+                moving, new View[]{anchor}, 121, 100);
+        assertEquals(120, result.newX);
+        assertTrue(result.lockX);
     }
 
     private static View sizedView(Context context, int left, int top, int width, int height) {

@@ -20,6 +20,7 @@ import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.Toast;
@@ -27,6 +28,7 @@ import android.widget.Toast;
 import androidx.preference.PreferenceManager;
 
 import com.limelight.Game;
+import com.limelight.ui.FloatingControlPositionStore;
 import com.limelight.R;
 import com.limelight.nvstream.NvConnection;
 import com.limelight.preferences.PreferenceConfiguration;
@@ -68,6 +70,9 @@ public class KeyBoardController {
     private Button buttonAcceptGroupMove;
     private View groupOutline;
 
+    private static final String SETTINGS_POSITION_ID = "keyboardSettingsButton";
+    private boolean configureSessionPositionPrepared;
+
     private final Vibrator vibrator;
     private final List<keyBoardVirtualControllerElement> elements = new ArrayList<>();
 
@@ -96,66 +101,92 @@ public class KeyBoardController {
         buttonConfigure.setFocusable(false);
         buttonConfigure.setBackgroundResource(R.drawable.ic_keyboard_setting);
 
-        buttonConfigure.setOnLongClickListener(v -> {
-            Toast.makeText(context,
-                    context.getString(R.string.keyboard_configure_movable),
-                    Toast.LENGTH_SHORT).show();
-            buttonConfigure.setTag("movable");
-            vibrator.vibrate(100);
-            return true;
-        });
-
+        final int configureTouchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        final long configureLongPressMs = ViewConfiguration.getLongPressTimeout();
+        final long configureResetHoldMs = Math.max(1300L, configureLongPressMs + 700L);
+        buttonConfigure.setOnClickListener(v -> cycleEditorMode());
         buttonConfigure.setOnTouchListener(new View.OnTouchListener() {
-            private float dX;
-            private float dY;
-            private float lastTouchX;
-            private float lastTouchY;
-            private boolean isMoving;
+            private float downRawX;
+            private float downRawY;
+            private float startViewX;
+            private float startViewY;
+            private boolean moveArmed;
+            private boolean moved;
+            private boolean resetPromptShown;
+
+            private final Runnable armMove = () -> {
+                if (moved || resetPromptShown) return;
+                moveArmed = true;
+                Toast.makeText(context,
+                        context.getString(R.string.keyboard_configure_movable),
+                        Toast.LENGTH_SHORT).show();
+                vibrate(KeyEvent.ACTION_DOWN);
+            };
+
+            private final Runnable offerReset = () -> {
+                if (moved || resetPromptShown) return;
+                resetPromptShown = true;
+                moveArmed = false;
+                new AlertDialog.Builder(context)
+                        .setTitle("Reset position?")
+                        .setMessage("Reset the on-screen settings button to its default position?")
+                        .setPositiveButton("Reset", (dialog, which) -> resetConfigureButtonPosition())
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+            };
+
+            private void cancelTimers() {
+                handler.removeCallbacks(armMove);
+                handler.removeCallbacks(offerReset);
+            }
 
             @Override
             public boolean onTouch(View view, MotionEvent event) {
-                if (!"movable".equals(view.getTag())) {
-                    return false;
-                }
-                switch (event.getAction()) {
+                switch (event.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
-                        dX = view.getX() - event.getRawX();
-                        dY = view.getY() - event.getRawY();
-                        lastTouchX = event.getRawX();
-                        lastTouchY = event.getRawY();
-                        isMoving = false;
-                        break;
+                        downRawX = event.getRawX();
+                        downRawY = event.getRawY();
+                        startViewX = view.getX();
+                        startViewY = view.getY();
+                        moveArmed = false;
+                        moved = false;
+                        resetPromptShown = false;
+                        handler.postDelayed(armMove, configureLongPressMs);
+                        handler.postDelayed(offerReset, configureResetHoldMs);
+                        return true;
+
                     case MotionEvent.ACTION_MOVE:
-                        if (Math.abs(event.getRawX() - lastTouchX) > 5 ||
-                                Math.abs(event.getRawY() - lastTouchY) > 5) {
-                            isMoving = true;
+                        float dx = event.getRawX() - downRawX;
+                        float dy = event.getRawY() - downRawY;
+                        boolean beyondSlop = Math.hypot(dx, dy) > configureTouchSlop;
+                        if (beyondSlop) {
+                            handler.removeCallbacks(offerReset);
                         }
-                        if (isMoving) {
-                            float newX = event.getRawX() + dX;
-                            float newY = event.getRawY() + dY;
-                            newX = Math.max(0, Math.min(newX,
-                                    frame_layout.getWidth() - view.getWidth()));
-                            newY = Math.max(0, Math.min(newY,
-                                    frame_layout.getHeight() - view.getHeight()));
-                            view.setX(newX);
-                            view.setY(newY);
+                        if (moveArmed && beyondSlop) {
+                            moved = true;
+                            float maxX = Math.max(0, frame_layout.getWidth() - view.getWidth());
+                            float maxY = Math.max(0, frame_layout.getHeight() - view.getHeight());
+                            view.setX(Math.max(0, Math.min(startViewX + dx, maxX)));
+                            view.setY(Math.max(0, Math.min(startViewY + dy, maxY)));
                         }
-                        break;
+                        return true;
+
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_CANCEL:
-                        view.setTag(null);
-                        if (event.getAction() == MotionEvent.ACTION_UP && !isMoving) {
+                        cancelTimers();
+                        if (moved) {
+                            FloatingControlPositionStore.save(view, SETTINGS_POSITION_ID);
+                        } else if (event.getActionMasked() == MotionEvent.ACTION_UP &&
+                                !moveArmed && !resetPromptShown) {
                             view.performClick();
                         }
-                        break;
+                        return true;
+
                     default:
-                        break;
+                        return true;
                 }
-                return true;
             }
         });
-
-        buttonConfigure.setOnClickListener(v -> cycleEditorMode());
 
         buttonClearAll = editorButton(context.getString(R.string.keyboard_clear_all));
         buttonClearAll.setOnClickListener(v -> new AlertDialog.Builder(context)
@@ -426,14 +457,8 @@ public class KeyBoardController {
     }
 
     int getDefaultKeyButtonSize() {
-        DisplayMetrics screen = context.getResources().getDisplayMetrics();
-        int buttonSizeUnits = 10;
-        int size = KeyBoardControllerConfigurationLoader.screenScale(buttonSizeUnits, screen.heightPixels);
-        int maxSize = screen.widthPixels / 18;
-        if (size > maxSize) {
-            size = maxSize;
-        }
-        return Math.max(20, size);
+        return Math.max(1, Math.round(
+                ArtemisActionButton.DEFAULT_SIZE_DP * context.getResources().getDisplayMetrics().density));
     }
 
     /**
@@ -527,6 +552,21 @@ public class KeyBoardController {
         }
     }
 
+    private void prepareConfigureButtonSessionPosition() {
+        if (configureSessionPositionPrepared) return;
+        configureSessionPositionPrepared = true;
+        if (FloatingControlPositionStore.shouldResetBetweenSessions(context)) {
+            FloatingControlPositionStore.clearCurrentOrientation(context, SETTINGS_POSITION_ID);
+        }
+    }
+
+    private void resetConfigureButtonPosition() {
+        FloatingControlPositionStore.clearCurrentOrientation(context, SETTINGS_POSITION_ID);
+        if (buttonConfigure == null) return;
+        buttonConfigure.setX(0f);
+        buttonConfigure.setY(15f);
+    }
+
     public void refreshLayout() {
         KeyboardProfilesManager.ensureInitialized(context);
         removeElements();
@@ -537,9 +577,12 @@ public class KeyBoardController {
 
         FrameLayout.LayoutParams configParams = new FrameLayout.LayoutParams(buttonSize, buttonSize);
         // Preserve the old anchor, then move it 50 physical pixels left as requested.
-        configParams.leftMargin = Math.max(0, 20 + oldButtonSize - 50);
+        configParams.leftMargin = 0; // old 20px anchor shifted 50 physical px left, clamped to edge
         configParams.topMargin = 15;
         frame_layout.addView(buttonConfigure, configParams);
+        prepareConfigureButtonSessionPosition();
+        buttonConfigure.post(() -> FloatingControlPositionStore.restore(
+                buttonConfigure, SETTINGS_POSITION_ID));
 
         buttonClearAll.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
         buttonAddKeys.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);

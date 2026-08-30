@@ -12,9 +12,13 @@ import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.widget.ArrayAdapter;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.limelight.binding.input.GameInputDevice;
+import com.limelight.ui.ArtemisEditorUi;
 import com.limelight.binding.input.KeyboardTranslator;
 import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.utils.KeyConfigHelper;
@@ -101,46 +105,38 @@ public class GameMenu implements Game.GameMenuCallbacks {
     }
 
     private void showMenuDialog(String title, MenuOption[] options) {
-        int themeResId = game.getApplicationInfo().theme;
-        Context themedContext = new ContextThemeWrapper(dialogScreenContext, themeResId);
-        AlertDialog.Builder builder = new AlertDialog.Builder(themedContext);
-        builder.setTitle(title);
-
-        final ArrayAdapter<String> actions = new ArrayAdapter<>(themedContext, android.R.layout.simple_list_item_1);
-
-        builder.setAdapter(actions, (dialog, which) -> {
-            String label = actions.getItem(which);
-            for (MenuOption option : options) {
-                if (label != null && label.equals(option.label)) {
-                    run(option);
-                    break;
-                }
+        Context ui = ArtemisEditorUi.context(dialogScreenContext);
+        LinearLayout rows = new LinearLayout(ui);
+        rows.setOrientation(LinearLayout.VERTICAL);
+        rows.setPadding(ArtemisEditorUi.dp(ui, 10), ArtemisEditorUi.dp(ui, 6),
+                ArtemisEditorUi.dp(ui, 10), ArtemisEditorUi.dp(ui, 6));
+        String cancelLabel = getString(R.string.game_menu_cancel);
+        for (MenuOption option : options) {
+            if (option.runnable == null) {
+                cancelLabel = option.label;
+                continue;
             }
-        });
-
-        builder.setOnCancelListener(dialog -> hideMenu());
-
-        if (currentDialog != null) {
-            currentDialog.dismiss();
-        }
-        currentDialog = builder.show();
-
-        Window window = currentDialog.getWindow();
-        if (window != null) {
-            View decorView = window.getDecorView();
-            decorView.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
-                @Override
-                public void onGlobalLayout() {
-                    decorView.getViewTreeObserver().removeOnGlobalLayoutListener(this);
-                    new Handler(Looper.getMainLooper()).post(() -> {
-                        for (MenuOption option : options) {
-                            actions.add(option.label);
-                        }
-                        actions.notifyDataSetChanged();
-                    });
-                }
+            TextView row = ArtemisEditorUi.menuRow(ui, option.label);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, ArtemisEditorUi.dp(ui, 46));
+            lp.setMargins(0, ArtemisEditorUi.dp(ui, 2), 0, ArtemisEditorUi.dp(ui, 2));
+            rows.addView(row, lp);
+            row.setOnClickListener(v -> {
+                hideMenu();
+                run(option);
             });
         }
+        ScrollView scroll = new ScrollView(ui);
+        scroll.addView(rows);
+        AlertDialog.Builder builder = ArtemisEditorUi.builder(ui, title)
+                .setView(scroll)
+                .setNegativeButton(cancelLabel, (dialog, which) -> currentDialog = null)
+                .setOnCancelListener(dialog -> hideMenu());
+        if (currentDialog != null) currentDialog.dismiss();
+        currentDialog = builder.create();
+        currentDialog.setOnShowListener(ignored ->
+                ArtemisEditorUi.styleDialog(currentDialog, dialogScreenContext, 460));
+        currentDialog.show();
     }
 
     private void showSpecialKeysMenu() {
@@ -271,10 +267,14 @@ public class GameMenu implements Game.GameMenuCallbacks {
                     if (serverCmds.isEmpty()) {
                         int themeResId = game.getApplicationInfo().theme;
                         Context themedContext = new ContextThemeWrapper(dialogScreenContext, themeResId);
-                        new AlertDialog.Builder(themedContext)
-                                .setTitle(R.string.game_dialog_title_server_cmd_empty)
+                        AlertDialog emptyDialog = ArtemisEditorUi.builder(
+                                        themedContext, getString(R.string.game_dialog_title_server_cmd_empty))
                                 .setMessage(R.string.game_dialog_message_server_cmd_empty)
-                                .show();
+                                .setNegativeButton(android.R.string.ok, null)
+                                .create();
+                        emptyDialog.setOnShowListener(ignored ->
+                                ArtemisEditorUi.styleDialog(emptyDialog, themedContext, 440));
+                        emptyDialog.show();
                     } else {
                         hideMenu();
                         showServerCmd(serverCmds);

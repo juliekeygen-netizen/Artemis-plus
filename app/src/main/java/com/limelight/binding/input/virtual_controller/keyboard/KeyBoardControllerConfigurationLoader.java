@@ -567,18 +567,10 @@ public class KeyBoardControllerConfigurationLoader {
         prefEditor.apply();
     }
 
-    static boolean shouldTreatManagedProfileAsBlank(String storageName, boolean hasSavedGeometry) {
-        return storageName != null &&
-                storageName.startsWith("ArtemisKeyboardProfile_") &&
-                !hasSavedGeometry;
-    }
-
     public static void loadFromPreferences(final KeyBoardController controller, final Context context) {
         String name = PreferenceManager.getDefaultSharedPreferences(context).getString(OSC_PREFERENCE, OSC_PREFERENCE_VALUE);
 
         SharedPreferences pref = context.getSharedPreferences(name, Activity.MODE_PRIVATE);
-        boolean blankManagedProfile = shouldTreatManagedProfileAsBlank(name, !pref.getAll().isEmpty());
-
         for (keyBoardVirtualControllerElement element : controller.getElements()) {
             String prefKey = "" + element.elementId;
 
@@ -592,12 +584,7 @@ public class KeyBoardControllerConfigurationLoader {
                     // Remove the corrupt element from the preferences
                     pref.edit().remove(prefKey).apply();
                 }
-            } else if (blankManagedProfile) {
-                // New Artemis Plus profiles are intentionally blank. Previously an empty profile
-                // fell through to every legacy default control's enabled/visible state, layering a
-                // dense set of touch-consuming Views over the stream and making input appear dead.
-                element.hidden = true;
-                element.enabled = true;
+            }
                 element.setVisibility(View.GONE);
             }
         }

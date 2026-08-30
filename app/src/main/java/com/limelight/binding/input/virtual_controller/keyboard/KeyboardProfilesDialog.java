@@ -4,15 +4,13 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.graphics.Color;
-import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
-import android.graphics.drawable.GradientDrawable;
-import android.view.ContextThemeWrapper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.TextView;
@@ -23,419 +21,259 @@ import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.limelight.R;
+import com.limelight.ui.ArtemisEditorUi;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /** Shared keyboard-profile editor used in-stream and from Settings. */
 public final class KeyboardProfilesDialog {
-    private KeyboardProfilesDialog() {
-    }
+    private KeyboardProfilesDialog() {}
 
     public static void show(Context context, KeyBoardController controller) {
         KeyboardProfilesManager.ensureInitialized(context);
-        Context dialogContext = new ContextThemeWrapper(context, R.style.ArtemisEditorDialogTheme);
-        float density = context.getResources().getDisplayMetrics().density;
-        int padding = Math.max(12, Math.round(14 * density));
+        Context ui = ArtemisEditorUi.context(context);
+        int padding = ArtemisEditorUi.dp(ui, 12);
 
-        LinearLayout root = new LinearLayout(dialogContext);
+        LinearLayout root = new LinearLayout(ui);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(padding, Math.round(4 * density), padding, Math.round(4 * density));
-        root.setBackgroundColor(0xFF18181B);
+        root.setPadding(padding, ArtemisEditorUi.dp(ui, 8), padding, ArtemisEditorUi.dp(ui, 6));
+        root.setBackgroundColor(ArtemisEditorUi.SURFACE);
 
-        TextView helper = new TextView(dialogContext);
-        helper.setText("Tap a profile to use it. Hold and drag a row to reorder.");
-        helper.setTextColor(0xFFB5B5BA);
-        helper.setTextSize(13f);
-        helper.setPadding(0, Math.round(4 * density), 0, Math.round(8 * density));
-        root.addView(helper);
-
-        RecyclerView list = new RecyclerView(dialogContext);
-        list.setLayoutManager(new LinearLayoutManager(dialogContext));
+        RecyclerView list = new RecyclerView(ui);
+        list.setLayoutManager(new LinearLayoutManager(ui));
         list.setClipToPadding(false);
-        list.setPadding(0, Math.round(2 * density), 0, Math.round(8 * density));
-        int listHeight = Math.min(
-                Math.round(350 * density),
-                Math.max(Math.round(160 * density),
-                        context.getResources().getDisplayMetrics().heightPixels / 2 - Math.round(44 * density)));
+        list.setPadding(0, 0, 0, ArtemisEditorUi.dp(ui, 4));
+        int listHeight = Math.min(ArtemisEditorUi.dp(ui, 330),
+                Math.max(ArtemisEditorUi.dp(ui, 120),
+                        context.getResources().getDisplayMetrics().heightPixels / 2));
         root.addView(list, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                listHeight));
+                LinearLayout.LayoutParams.MATCH_PARENT, listHeight));
 
         ProfileAdapter adapter = new ProfileAdapter(
-                dialogContext,
-                context,
-                controller,
-                new ArrayList<>(KeyboardProfilesManager.getProfiles(context)));
+                ui, context, controller, new ArrayList<>(KeyboardProfilesManager.getProfiles(context)));
         list.setAdapter(adapter);
-
-        ItemTouchHelper touchHelper = new ItemTouchHelper(new ItemTouchHelper.SimpleCallback(
-                ItemTouchHelper.UP | ItemTouchHelper.DOWN, 0) {
-            @Override
-            public boolean onMove(RecyclerView recyclerView,
-                                  RecyclerView.ViewHolder viewHolder,
-                                  RecyclerView.ViewHolder target) {
-                int from = viewHolder.getBindingAdapterPosition();
-                int to = target.getBindingAdapterPosition();
-                if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION || from == to) {
-                    return false;
-                }
-                return adapter.moveProfile(from, to);
+        new ItemTouchHelper(new ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP | ItemTouchHelper.DOWN, 0) {
+            @Override public boolean onMove(RecyclerView rv, RecyclerView.ViewHolder vh, RecyclerView.ViewHolder target) {
+                int from = vh.getBindingAdapterPosition(), to = target.getBindingAdapterPosition();
+                return from != RecyclerView.NO_POSITION && to != RecyclerView.NO_POSITION &&
+                        from != to && adapter.moveProfile(from, to);
             }
+            @Override public void onSwiped(RecyclerView.ViewHolder viewHolder, int direction) {}
+            @Override public boolean isLongPressDragEnabled() { return true; }
+        }).attachToRecyclerView(list);
 
-            @Override
-            public void onSwiped(RecyclerView.ViewHolder viewHolder, int direction) {
-            }
-
-            @Override
-            public boolean isLongPressDragEnabled() {
-                return true;
-            }
-        });
-        touchHelper.attachToRecyclerView(list);
-
-        AlertDialog dialog = new AlertDialog.Builder(dialogContext)
-                .setTitle("Keyboard Profiles")
+        AlertDialog dialog = ArtemisEditorUi.builder(ui, "Keyboard Profiles")
                 .setView(root)
                 .setNeutralButton("+ Add profile", null)
                 .setNegativeButton("Close", null)
                 .create();
-
         dialog.setOnShowListener(ignored -> {
-            Button addButton = dialog.getButton(DialogInterface.BUTTON_NEUTRAL);
-            addButton.setTextColor(0xFF8BE9A8);
-            addButton.setOnClickListener(v -> promptForName(
-                    dialogContext,
-                    "Add Profile",
-                    "Profile name",
-                    "",
-                    name -> {
-                        KeyboardProfilesManager.Profile profile =
-                                KeyboardProfilesManager.createProfile(context, name);
-                        if (profile != null) {
-                            switchProfile(context, controller, profile.id);
-                            adapter.replaceProfiles(KeyboardProfilesManager.getProfiles(context));
-                            list.scrollToPosition(Math.max(0, adapter.getItemCount() - 1));
-                        }
-                    }));
+            ArtemisEditorUi.styleDialog(dialog, context, 520);
+            Button add = dialog.getButton(DialogInterface.BUTTON_NEUTRAL);
+            ArtemisEditorUi.styleFooterButton(add, ArtemisEditorUi.ACCENT);
+            add.setOnClickListener(v -> promptForName(ui, "Add Profile", "Profile name", "", name -> {
+                KeyboardProfilesManager.Profile profile = KeyboardProfilesManager.createProfile(context, name);
+                if (profile != null) {
+                    switchProfile(context, controller, profile.id);
+                    adapter.replaceProfiles(KeyboardProfilesManager.getProfiles(context));
+                    list.scrollToPosition(Math.max(0, adapter.getItemCount() - 1));
+                }
+            }));
         });
-
         dialog.show();
     }
 
     private static final class ProfileAdapter extends RecyclerView.Adapter<ProfileAdapter.Holder> {
-        private final Context uiContext;
-        private final Context appContext;
+        private final Context ui;
+        private final Context app;
         private final KeyBoardController controller;
         private final List<KeyboardProfilesManager.Profile> profiles = new ArrayList<>();
         private String activeId;
 
-        ProfileAdapter(Context uiContext,
-                       Context appContext,
-                       KeyBoardController controller,
-                       List<KeyboardProfilesManager.Profile> profiles) {
-            this.uiContext = uiContext;
-            this.appContext = appContext;
-            this.controller = controller;
-            replaceProfiles(profiles);
+        ProfileAdapter(Context ui, Context app, KeyBoardController controller,
+                       List<KeyboardProfilesManager.Profile> initial) {
+            this.ui = ui; this.app = app; this.controller = controller; replaceProfiles(initial);
         }
 
         void replaceProfiles(List<KeyboardProfilesManager.Profile> updated) {
-            profiles.clear();
-            profiles.addAll(updated);
-            KeyboardProfilesManager.Profile active = KeyboardProfilesManager.getActiveProfile(appContext);
+            profiles.clear(); profiles.addAll(updated);
+            KeyboardProfilesManager.Profile active = KeyboardProfilesManager.getActiveProfile(app);
             activeId = active == null ? "" : active.id;
             notifyDataSetChanged();
         }
 
         boolean moveProfile(int from, int to) {
-            if (from < 0 || to < 0 || from >= profiles.size() || to >= profiles.size() || from == to) {
-                return false;
-            }
+            if (from < 0 || to < 0 || from >= profiles.size() || to >= profiles.size()) return false;
             KeyboardProfilesManager.Profile moving = profiles.get(from);
             int direction = to > from ? 1 : -1;
-            int steps = Math.abs(to - from);
-            for (int i = 0; i < steps; i++) {
-                if (!KeyboardProfilesManager.moveProfile(appContext, moving.id, direction)) {
-                    replaceProfiles(KeyboardProfilesManager.getProfiles(appContext));
+            for (int i = 0; i < Math.abs(to - from); i++) {
+                if (!KeyboardProfilesManager.moveProfile(app, moving.id, direction)) {
+                    replaceProfiles(KeyboardProfilesManager.getProfiles(app));
                     return false;
                 }
             }
-            profiles.remove(from);
-            profiles.add(to, moving);
-            notifyItemMoved(from, to);
-            return true;
+            profiles.remove(from); profiles.add(to, moving); notifyItemMoved(from, to); return true;
         }
 
-        @Override
-        public Holder onCreateViewHolder(ViewGroup parent, int viewType) {
-            float density = uiContext.getResources().getDisplayMetrics().density;
-
-            CardView card = new CardView(uiContext);
-            card.setCardBackgroundColor(0xFF27272B);
-            card.setRadius(12 * density);
+        @Override public Holder onCreateViewHolder(ViewGroup parent, int viewType) {
+            CardView card = new CardView(ui);
+            card.setRadius(ArtemisEditorUi.dp(ui, 10));
             card.setCardElevation(0);
             card.setUseCompatPadding(false);
-
-            LinearLayout row = new LinearLayout(uiContext);
-            row.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout row = new LinearLayout(ui);
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(Math.round(8 * density), Math.round(8 * density),
-                    Math.round(7 * density), Math.round(8 * density));
+            row.setPadding(ArtemisEditorUi.dp(ui, 6), 0, ArtemisEditorUi.dp(ui, 4), 0);
             card.addView(row, new CardView.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT));
+                    ViewGroup.LayoutParams.MATCH_PARENT, ArtemisEditorUi.dp(ui, 54)));
 
-            TextView drag = new TextView(uiContext);
-            drag.setText("≡");
-            drag.setTextColor(0xFF94949B);
-            drag.setTextSize(24f);
-            drag.setGravity(Gravity.CENTER);
-            drag.setContentDescription("Hold and drag profile to reorder");
+            TextView drag = new TextView(ui);
+            drag.setText("≡"); drag.setTextColor(0xFF94949B); drag.setTextSize(21f);
+            drag.setGravity(Gravity.CENTER); drag.setContentDescription("Hold and drag profile to reorder");
             row.addView(drag, new LinearLayout.LayoutParams(
-                    Math.round(42 * density), Math.round(48 * density)));
+                    ArtemisEditorUi.dp(ui, 48), ArtemisEditorUi.dp(ui, 48)));
 
-            LinearLayout labels = new LinearLayout(uiContext);
-            labels.setOrientation(LinearLayout.VERTICAL);
-            labels.setGravity(Gravity.CENTER_VERTICAL);
-            row.addView(labels, new LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            TextView name = new TextView(ui);
+            name.setTextColor(Color.WHITE); name.setTextSize(15.5f); name.setMaxLines(1);
+            row.addView(name, new LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-            TextView name = new TextView(uiContext);
-            name.setTextColor(Color.WHITE);
-            name.setTextSize(17f);
-            name.setMaxLines(1);
-            labels.addView(name);
-
-            TextView state = new TextView(uiContext);
-            state.setTextSize(11f);
-            state.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-            state.setPadding(0, Math.round(2 * density), 0, 0);
-            labels.addView(state);
-
-            TextView more = new TextView(uiContext);
-            more.setText("⋮");
-            more.setTextColor(0xFFE8E8EA);
-            more.setTextSize(24f);
-            more.setGravity(Gravity.CENTER);
-            more.setContentDescription("Profile options");
-            more.setBackground(roundedBackground(0x33FFFFFF, 10 * density, 0, 0));
-            row.addView(more, new LinearLayout.LayoutParams(
-                    Math.round(40 * density), Math.round(40 * density)));
+            FrameLayout moreTouch = new FrameLayout(ui);
+            TextView moreIcon = new TextView(ui);
+            moreIcon.setText("⋮"); moreIcon.setTextColor(0xFFE8E8EA); moreIcon.setTextSize(21f);
+            moreIcon.setGravity(Gravity.CENTER);
+            moreIcon.setBackground(ArtemisEditorUi.rounded(ui, 0x22FFFFFF, 8, 0, 0));
+            FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
+                    ArtemisEditorUi.dp(ui, 32), ArtemisEditorUi.dp(ui, 32), Gravity.CENTER);
+            moreTouch.addView(moreIcon, iconParams);
+            moreTouch.setContentDescription("Profile options");
+            row.addView(moreTouch, new LinearLayout.LayoutParams(
+                    ArtemisEditorUi.dp(ui, 48), ArtemisEditorUi.dp(ui, 48)));
 
             RecyclerView.LayoutParams outer = new RecyclerView.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT);
-            outer.setMargins(0, Math.round(4 * density), 0, Math.round(4 * density));
+                    ViewGroup.LayoutParams.MATCH_PARENT, ArtemisEditorUi.dp(ui, 54));
+            outer.setMargins(0, ArtemisEditorUi.dp(ui, 3), 0, ArtemisEditorUi.dp(ui, 3));
             card.setLayoutParams(outer);
-
-            return new Holder(card, name, state, more);
+            return new Holder(card, name, moreTouch);
         }
 
-        @Override
-        public void onBindViewHolder(Holder holder, int position) {
+        @Override public void onBindViewHolder(Holder holder, int position) {
             KeyboardProfilesManager.Profile profile = profiles.get(position);
             boolean active = profile.id.equals(activeId);
             holder.name.setText(profile.name);
-            holder.name.setTypeface(Typeface.DEFAULT, active ? Typeface.BOLD : Typeface.NORMAL);
-            holder.state.setText(active ? "ACTIVE" : "");
-            holder.state.setTextColor(active ? 0xFF8BE9A8 : 0xFF8A8A90);
-            ((CardView) holder.itemView).setCardBackgroundColor(active ? 0xFF30363A : 0xFF27272B);
-
+            ((CardView) holder.itemView).setCardBackgroundColor(
+                    active ? ArtemisEditorUi.SURFACE_SELECTED : ArtemisEditorUi.SURFACE_RAISED);
             holder.itemView.setOnClickListener(v -> {
-                switchProfile(appContext, controller, profile.id);
-                KeyboardProfilesManager.Profile current = KeyboardProfilesManager.getActiveProfile(appContext);
+                switchProfile(app, controller, profile.id);
+                KeyboardProfilesManager.Profile current = KeyboardProfilesManager.getActiveProfile(app);
                 activeId = current == null ? "" : current.id;
                 notifyDataSetChanged();
             });
-
             holder.more.setOnClickListener(v -> showProfileMenu(
-                    uiContext,
-                    appContext,
-                    controller,
-                    profile,
-                    profiles.size(),
-                    holder.more,
-                    () -> replaceProfiles(KeyboardProfilesManager.getProfiles(appContext))));
+                    ui, app, controller, profile, profiles.size(), holder.more,
+                    () -> replaceProfiles(KeyboardProfilesManager.getProfiles(app))));
         }
 
-        @Override
-        public int getItemCount() {
-            return profiles.size();
-        }
-
+        @Override public int getItemCount() { return profiles.size(); }
         static final class Holder extends RecyclerView.ViewHolder {
-            final TextView name;
-            final TextView state;
-            final TextView more;
-
-            Holder(View itemView, TextView name, TextView state, TextView more) {
-                super(itemView);
-                this.name = name;
-                this.state = state;
-                this.more = more;
-            }
+            final TextView name; final View more;
+            Holder(View item, TextView name, View more) { super(item); this.name = name; this.more = more; }
         }
     }
 
-    private static void showProfileMenu(Context uiContext,
-                                        Context appContext,
-                                        KeyBoardController controller,
-                                        KeyboardProfilesManager.Profile profile,
-                                        int profileCount,
-                                        View anchor,
-                                        Runnable rebuild) {
-        float density = uiContext.getResources().getDisplayMetrics().density;
-        int popupWidth = Math.round(168 * density);
-
-        LinearLayout content = new LinearLayout(uiContext);
+    private static void showProfileMenu(Context ui, Context app, KeyBoardController controller,
+                                        KeyboardProfilesManager.Profile profile, int count,
+                                        View anchor, Runnable rebuild) {
+        int popupWidth = ArtemisEditorUi.dp(ui, 132);
+        int itemHeight = ArtemisEditorUi.dp(ui, 38);
+        int popupHeight = itemHeight * 3 + ArtemisEditorUi.dp(ui, 8);
+        LinearLayout content = new LinearLayout(ui);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(0, Math.round(5 * density), 0, Math.round(5 * density));
-        content.setBackground(roundedBackground(0xFF242428, 11 * density,
-                Math.max(1, Math.round(density)), 0xFF3B3B40));
-
-        PopupWindow popup = new PopupWindow(
-                content,
-                popupWidth,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                true);
+        content.setPadding(0, ArtemisEditorUi.dp(ui, 4), 0, ArtemisEditorUi.dp(ui, 4));
+        content.setBackground(ArtemisEditorUi.rounded(ui, ArtemisEditorUi.SURFACE_RAISED,
+                10, 1, ArtemisEditorUi.BORDER));
+        PopupWindow popup = new PopupWindow(content, popupWidth, popupHeight, true);
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         popup.setOutsideTouchable(true);
-        popup.setElevation(12 * density);
+        popup.setElevation(ArtemisEditorUi.dp(ui, 10));
 
-        content.addView(profileMenuItem(uiContext, "Rename", Color.WHITE, true, () -> {
+        content.addView(menuItem(ui, "Rename", Color.WHITE, true, itemHeight, () -> {
             popup.dismiss();
-            promptForName(uiContext, "Rename Profile", "Profile name", profile.name, name -> {
-                KeyboardProfilesManager.renameProfile(appContext, profile.id, name);
-                rebuild.run();
+            promptForName(ui, "Rename Profile", "Profile name", profile.name, name -> {
+                KeyboardProfilesManager.renameProfile(app, profile.id, name); rebuild.run();
             });
         }));
-        content.addView(profileMenuItem(uiContext, "Duplicate", Color.WHITE, true, () -> {
-            popup.dismiss();
-            KeyboardProfilesManager.Profile duplicate =
-                    KeyboardProfilesManager.duplicateProfile(appContext, profile.id);
-            if (duplicate != null) {
-                rebuild.run();
-            }
+        content.addView(menuItem(ui, "Duplicate", Color.WHITE, true, itemHeight, () -> {
+            popup.dismiss(); KeyboardProfilesManager.duplicateProfile(app, profile.id); rebuild.run();
         }));
-        content.addView(profileMenuItem(uiContext, "Delete",
-                profileCount > 1 ? 0xFFFF7777 : 0xFF77777D,
-                profileCount > 1,
-                () -> {
+        content.addView(menuItem(ui, "Delete", count > 1 ? ArtemisEditorUi.DANGER : 0xFF77777D,
+                count > 1, itemHeight, () -> {
                     popup.dismiss();
-                    new AlertDialog.Builder(uiContext)
-                            .setTitle("Delete Profile?")
+                    new AlertDialog.Builder(ui).setTitle("Delete Profile?")
                             .setMessage("Delete “" + profile.name + "”? This cannot be undone.")
-                            .setPositiveButton("Delete", (dialog, which) -> {
-                                KeyboardProfilesManager.Profile before =
-                                        KeyboardProfilesManager.getActiveProfile(appContext);
-                                if (KeyboardProfilesManager.deleteProfile(appContext, profile.id)) {
-                                    if (controller != null && before != null && before.id.equals(profile.id)) {
+                            .setPositiveButton("Delete", (d, w) -> {
+                                KeyboardProfilesManager.Profile before = KeyboardProfilesManager.getActiveProfile(app);
+                                if (KeyboardProfilesManager.deleteProfile(app, profile.id)) {
+                                    if (controller != null && before != null && before.id.equals(profile.id))
                                         controller.reloadCurrentProfile();
-                                    }
                                     rebuild.run();
                                 }
-                            })
-                            .setNegativeButton(android.R.string.cancel, null)
-                            .show();
+                            }).setNegativeButton(android.R.string.cancel, null).show();
                 }));
 
         int xOffset = -popupWidth + anchor.getWidth();
-        popup.showAsDropDown(anchor, xOffset, -Math.round(4 * density));
+        int[] location = new int[2]; anchor.getLocationOnScreen(location);
+        int screenHeight = ui.getResources().getDisplayMetrics().heightPixels;
+        int spaceBelow = screenHeight - (location[1] + anchor.getHeight());
+        int yOffset = spaceBelow >= popupHeight + ArtemisEditorUi.dp(ui, 6)
+                ? -ArtemisEditorUi.dp(ui, 2)
+                : -(anchor.getHeight() + popupHeight + ArtemisEditorUi.dp(ui, 4));
+        popup.showAsDropDown(anchor, xOffset, yOffset);
     }
 
-    private static TextView profileMenuItem(Context context,
-                                            String label,
-                                            int color,
-                                            boolean enabled,
-                                            Runnable action) {
-        float density = context.getResources().getDisplayMetrics().density;
+    private static TextView menuItem(Context context, String text, int color, boolean enabled,
+                                     int height, Runnable action) {
         TextView item = new TextView(context);
-        item.setText(label);
-        item.setTextColor(color);
-        item.setTextSize(16f);
+        item.setText(text); item.setTextColor(color); item.setTextSize(13f);
         item.setGravity(Gravity.CENTER_VERTICAL);
-        item.setPadding(Math.round(16 * density), 0, Math.round(12 * density), 0);
-        item.setEnabled(enabled);
-        item.setAlpha(enabled ? 1f : 0.55f);
-        item.setOnClickListener(v -> {
-            if (enabled) {
-                action.run();
-            }
-        });
+        item.setPadding(ArtemisEditorUi.dp(context, 12), 0, ArtemisEditorUi.dp(context, 8), 0);
+        item.setEnabled(enabled); item.setAlpha(enabled ? 1f : .55f);
         item.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                Math.round(46 * density)));
+                LinearLayout.LayoutParams.MATCH_PARENT, height));
+        item.setOnClickListener(v -> { if (enabled) action.run(); });
         return item;
     }
 
-    private static void switchProfile(Context context,
-                                      KeyBoardController controller,
-                                      String profileId) {
+    private static void switchProfile(Context context, KeyBoardController controller, String id) {
         KeyboardProfilesManager.Profile current = KeyboardProfilesManager.getActiveProfile(context);
-        if (current != null && current.id.equals(profileId)) {
-            return;
-        }
-        if (controller != null) {
-            controller.switchKeyboardProfile(profileId);
-        } else {
-            KeyboardProfilesManager.setActiveProfile(context, profileId);
+        if (current != null && current.id.equals(id)) return;
+        if (controller != null) controller.switchKeyboardProfile(id);
+        else {
+            KeyboardProfilesManager.setActiveProfile(context, id);
             Toast.makeText(context, "Keyboard profile selected", Toast.LENGTH_SHORT).show();
         }
     }
 
-    private interface NameCallback {
-        void onName(String name);
-    }
-
-    private static void promptForName(Context context,
-                                      String title,
-                                      String hint,
-                                      String initial,
+    private interface NameCallback { void onName(String name); }
+    private static void promptForName(Context context, String title, String hint, String initial,
                                       NameCallback callback) {
-        float density = context.getResources().getDisplayMetrics().density;
         EditText input = new EditText(context);
-        input.setSingleLine(true);
-        input.setHint(hint);
-        input.setText(initial);
-        input.setTextColor(Color.WHITE);
-        input.setHintTextColor(0xFF8E8E93);
-        input.setPadding(Math.round(14 * density), input.getPaddingTop(),
-                Math.round(14 * density), input.getPaddingBottom());
-        if (!initial.isEmpty()) {
-            input.setSelection(initial.length());
-        }
-
-        AlertDialog dialog = new AlertDialog.Builder(context)
-                .setTitle(title)
-                .setView(input)
-                .setPositiveButton(android.R.string.ok, null)
-                .setNegativeButton(android.R.string.cancel, null)
-                .create();
-        dialog.setOnShowListener(ignored -> dialog.getButton(DialogInterface.BUTTON_POSITIVE)
-                .setOnClickListener(v -> {
-                    String value = input.getText().toString().trim();
-                    if (value.isEmpty()) {
-                        input.setError("Enter a profile name");
-                        return;
-                    }
-                    callback.onName(value);
-                    dialog.dismiss();
-                }));
+        input.setSingleLine(true); input.setHint(hint); input.setText(initial);
+        input.setTextColor(Color.WHITE); input.setHintTextColor(0xFF8E8E93);
+        input.setPadding(ArtemisEditorUi.dp(context, 14), input.getPaddingTop(),
+                ArtemisEditorUi.dp(context, 14), input.getPaddingBottom());
+        if (!initial.isEmpty()) input.setSelection(initial.length());
+        AlertDialog dialog = ArtemisEditorUi.builder(context, title)
+                .setView(input).setPositiveButton(android.R.string.ok, null)
+                .setNegativeButton(android.R.string.cancel, null).create();
+        dialog.setOnShowListener(ignored -> {
+            ArtemisEditorUi.styleDialog(dialog, context, 420);
+            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String value = input.getText().toString().trim();
+                if (value.isEmpty()) { input.setError("Enter a profile name"); return; }
+                callback.onName(value); dialog.dismiss();
+            });
+        });
         dialog.show();
-    }
-
-    private static GradientDrawable roundedBackground(int color,
-                                                      float radius,
-                                                      int strokeWidth,
-                                                      int strokeColor) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(color);
-        drawable.setCornerRadius(radius);
-        if (strokeWidth > 0) {
-            drawable.setStroke(strokeWidth, strokeColor);
-        }
-        return drawable;
     }
 }

@@ -468,7 +468,7 @@ public abstract class keyBoardVirtualControllerElement extends View {
     protected void onDraw(Canvas canvas) {
         onElementDraw(canvas);
 
-        if (currentMode != Mode.Normal &&
+        if (currentMode != Mode.Normal && shouldDrawBaseEditorOutline() &&
                 (virtualController == null || !virtualController.isElementCoveredByGroupOutline(this))) {
             paint.setColor(configSelectedColor);
             paint.setStrokeWidth(getDefaultStrokeWidth());
@@ -504,6 +504,10 @@ public abstract class keyBoardVirtualControllerElement extends View {
             return enabled ? configSelectedColor: configDisabledColor;
         else
             return normalColor;
+    }
+
+    protected boolean shouldDrawBaseEditorOutline() {
+        return true;
     }
 
     protected int getDefaultStrokeWidth() {

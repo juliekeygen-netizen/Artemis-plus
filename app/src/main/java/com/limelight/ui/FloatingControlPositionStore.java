@@ -1,0 +1,94 @@
+package com.limelight.ui;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.content.res.Configuration;
+import android.view.View;
+import android.view.ViewParent;
+
+import androidx.preference.PreferenceManager;
+
+/** Shared portrait/landscape normalized-position persistence for Artemis floating controls. */
+public final class FloatingControlPositionStore {
+    public static final String PREFS = "ArtemisPlusFloatingControlPositions";
+    public static final String RESET_BETWEEN_SESSIONS_KEY =
+            "checkbox_reset_floating_controls_between_sessions";
+
+    private FloatingControlPositionStore() {}
+
+    public static boolean shouldResetBetweenSessions(Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean(RESET_BETWEEN_SESSIONS_KEY, false);
+    }
+
+    public static void save(View view, String identity) {
+        ViewParent parent = view.getParent();
+        if (!(parent instanceof View) || view.getWidth() <= 0 || view.getHeight() <= 0) return;
+        View parentView = (View) parent;
+        int maxX = Math.max(0, parentView.getWidth() - view.getWidth());
+        int maxY = Math.max(0, parentView.getHeight() - view.getHeight());
+        if (maxX <= 0 || maxY <= 0) return;
+        String id = identity == null ? identityForView(view) : identity;
+        prefs(view.getContext()).edit()
+                .putBoolean(key(view.getContext(), id, "saved"), true)
+                .putFloat(key(view.getContext(), id, "x"), clamp(view.getX() / maxX))
+                .putFloat(key(view.getContext(), id, "y"), clamp(view.getY() / maxY))
+                .apply();
+    }
+
+    public static boolean restore(View view, String identity) {
+        ViewParent parent = view.getParent();
+        if (!(parent instanceof View) || view.getWidth() <= 0 || view.getHeight() <= 0) return false;
+        String id = identity == null ? identityForView(view) : identity;
+        SharedPreferences preferences = prefs(view.getContext());
+        if (!preferences.getBoolean(key(view.getContext(), id, "saved"), false)) return false;
+        View parentView = (View) parent;
+        int maxX = Math.max(0, parentView.getWidth() - view.getWidth());
+        int maxY = Math.max(0, parentView.getHeight() - view.getHeight());
+        if (maxX <= 0 || maxY <= 0) return false;
+        view.setX(clamp(preferences.getFloat(key(view.getContext(), id, "x"), 0f)) * maxX);
+        view.setY(clamp(preferences.getFloat(key(view.getContext(), id, "y"), 0f)) * maxY);
+        return true;
+    }
+
+    public static void clearCurrentOrientation(Context context, String identity) {
+        SharedPreferences.Editor editor = prefs(context).edit();
+        editor.remove(key(context, identity, "saved"));
+        editor.remove(key(context, identity, "x"));
+        editor.remove(key(context, identity, "y"));
+        editor.apply();
+    }
+
+    public static void clearAllOrientations(Context context, String identity) {
+        SharedPreferences.Editor editor = prefs(context).edit();
+        for (String orientation : new String[]{"portrait", "landscape"}) {
+            editor.remove(identity + "_" + orientation + "_saved");
+            editor.remove(identity + "_" + orientation + "_x");
+            editor.remove(identity + "_" + orientation + "_y");
+        }
+        editor.apply();
+    }
+
+    public static String identityForView(View view) {
+        try {
+            return view.getResources().getResourceEntryName(view.getId());
+        } catch (Exception ignored) {
+            return Integer.toString(view.getId());
+        }
+    }
+
+    private static SharedPreferences prefs(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+
+    private static String key(Context context, String identity, String axis) {
+        int orientation = context.getResources().getConfiguration().orientation;
+        String orientationName = orientation == Configuration.ORIENTATION_PORTRAIT
+                ? "portrait" : "landscape";
+        return identity + "_" + orientationName + "_" + axis;
+    }
+
+    private static float clamp(float value) {
+        return Math.max(0f, Math.min(1f, value));
+    }
+}

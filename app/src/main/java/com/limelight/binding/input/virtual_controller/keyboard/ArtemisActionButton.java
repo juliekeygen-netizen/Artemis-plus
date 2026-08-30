@@ -181,7 +181,6 @@ final class ArtemisActionButton extends KeyBoardDigitalButton {
             case TOGGLE_HUD:
             case TOGGLE_STATS_OVERLAY:
             case TOGGLE_FLOATING_MENU:
-            case TOUCH_SENSITIVITY:
             case TOGGLE_ZOOM:
             case TOGGLE_VIRTUAL_CONTROLLER:
             case TOGGLE_KEYBOARD_CONTROLLER:
@@ -189,6 +188,12 @@ final class ArtemisActionButton extends KeyBoardDigitalButton {
             default:
                 return false;
         }
+    }
+
+    @Override
+    protected boolean shouldDrawBaseEditorOutline() {
+        // Action buttons already draw their own state-aware 2dp ring.
+        return false;
     }
 
     @Override

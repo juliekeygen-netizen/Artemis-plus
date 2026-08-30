@@ -80,17 +80,6 @@ public class KeyComboManagerTest {
     }
 
     @Test
-    public void emptyManagedProfileIsBlankButLegacyProfileIsNot() {
-        assertTrue(KeyBoardControllerConfigurationLoader.shouldTreatManagedProfileAsBlank(
-                "ArtemisKeyboardProfile_abc123", false));
-        assertFalse(KeyBoardControllerConfigurationLoader.shouldTreatManagedProfileAsBlank(
-                "ArtemisKeyboardProfile_abc123", true));
-        assertFalse(KeyBoardControllerConfigurationLoader.shouldTreatManagedProfileAsBlank(
-                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE, false));
-        assertFalse(KeyBoardControllerConfigurationLoader.shouldTreatManagedProfileAsBlank(null, false));
-    }
-
-    @Test
     public void longLabelsGrowBubbleWithoutShrinkingShortLabelsBelowSquare() {
         Context context = ApplicationProvider.getApplicationContext();
         int baseSize = 80;

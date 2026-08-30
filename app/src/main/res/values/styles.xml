@@ -56,14 +56,14 @@
         both entry points render identically.
     -->
     <style name="ArtemisEditorDialogTheme" parent="Theme.MaterialComponents.Dialog.Alert">
-        <item name="android:windowBackground">#18181B</item>
-        <item name="android:colorBackground">#18181B</item>
+        <item name="android:windowBackground">#1A1A1A</item>
+        <item name="android:colorBackground">#1A1A1A</item>
         <item name="android:textColorPrimary">#FFFFFFFF</item>
         <item name="android:textColorSecondary">#FFB5B5BA</item>
         <item name="android:colorAccent">#FFFFFFFF</item>
         <item name="android:colorControlNormal">#FFFFFFFF</item>
         <item name="android:colorControlActivated">#FF8BE9A8</item>
-        <item name="colorSurface">#FF18181B</item>
+        <item name="colorSurface">#FF1A1A1A</item>
         <item name="colorOnSurface">#FFFFFFFF</item>
         <item name="colorPrimary">#FFFFFFFF</item>
         <item name="colorSecondary">#FF8BE9A8</item>

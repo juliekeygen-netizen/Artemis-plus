@@ -210,6 +210,11 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement {
     }
 
     @Override
+    protected int getDefaultStrokeWidth() {
+        return Math.max(1, Math.round(2f * getResources().getDisplayMetrics().density));
+    }
+
+    @Override
     protected void onElementDraw(Canvas canvas) {
         // set transparent background
         canvas.drawColor(Color.TRANSPARENT);

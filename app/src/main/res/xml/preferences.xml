@@ -4,6 +4,10 @@
     xmlns:seekbar="http://schemas.moonlight-stream.com/apk/res/seekbar"
     app:iconSpaceReserved="false">
 
+    <com.bytehamster.lib.preferencesearch.SearchPreference
+        android:key="searchPreference"
+        app:iconSpaceReserved="false" />
+
     <PreferenceCategory
         android:key="category_video_settings"
         android:title="@string/category_video_settings"
@@ -547,6 +551,14 @@
             android:key="checkbox_enable_floating_button"
             android:summary="@string/summary_floating_button"
             android:title="@string/title_floating_button"
+            app:iconSpaceReserved="false" />
+        <ListPreference
+            android:defaultValue="follow_system"
+            android:entries="@array/outside_stream_orientation_names"
+            android:entryValues="@array/outside_stream_orientation_values"
+            android:key="list_outside_stream_orientation"
+            android:title="Outside stream orientation"
+            android:summary="Controls Artemis screens when no stream is open. Follow system respects Android rotation lock; Portrait keeps Artemis menus upright."
             app:iconSpaceReserved="false" />
         <CheckBoxPreference
             android:defaultValue="false"

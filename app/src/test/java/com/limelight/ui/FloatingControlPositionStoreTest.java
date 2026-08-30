@@ -47,6 +47,34 @@ public class FloatingControlPositionStoreTest {
     }
 
     @Test
+    public void beginStreamSessionKeepsPositionsWhenResetIsDisabled() {
+        SharedPreferences preferences = context.getSharedPreferences(
+                FloatingControlPositionStore.PREFS, Context.MODE_PRIVATE);
+        preferences.edit().putBoolean("floatingMenuButton_portrait_saved", true).commit();
+
+        FloatingControlPositionStore.beginStreamSession(context);
+
+        assertTrue(preferences.contains("floatingMenuButton_portrait_saved"));
+    }
+
+    @Test
+    public void beginStreamSessionClearsAllControlsWhenResetIsEnabled() {
+        SharedPreferences preferences = context.getSharedPreferences(
+                FloatingControlPositionStore.PREFS, Context.MODE_PRIVATE);
+        preferences.edit()
+                .putBoolean("floatingMenuButton_portrait_saved", true)
+                .putBoolean("keyboardSettingsButton_landscape_saved", true)
+                .commit();
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putBoolean(FloatingControlPositionStore.RESET_BETWEEN_SESSIONS_KEY, true).commit();
+
+        FloatingControlPositionStore.beginStreamSession(context);
+
+        assertFalse(preferences.contains("floatingMenuButton_portrait_saved"));
+        assertFalse(preferences.contains("keyboardSettingsButton_landscape_saved"));
+    }
+
+    @Test
     public void clearAllOrientationsRemovesPortraitAndLandscapeCoordinates() {
         String id = "keyboardSettingsButton";
         SharedPreferences preferences = context.getSharedPreferences(

@@ -9,8 +9,6 @@ import android.widget.ImageButton;
 
 /** ImageButton that preserves its dragged position across Game sessions. */
 public class PersistentPositionImageButton extends ImageButton {
-    private boolean sessionResetApplied;
-
     public PersistentPositionImageButton(Context context) { super(context); }
     public PersistentPositionImageButton(Context context, AttributeSet attrs) { super(context, attrs); }
     public PersistentPositionImageButton(Context context, AttributeSet attrs, int defStyleAttr) {
@@ -20,13 +18,8 @@ public class PersistentPositionImageButton extends ImageButton {
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        if (!sessionResetApplied) {
-            sessionResetApplied = true;
-            if (FloatingControlPositionStore.shouldResetBetweenSessions(getContext())) {
-                FloatingControlPositionStore.clearAllOrientations(
-                        getContext(), FloatingControlPositionStore.identityForView(this));
-            }
-        }
+        // Session-wide reset is performed once by Game.onCreate(). A View attach is not a
+        // session boundary and may happen repeatedly during one stream.
         post(() -> FloatingControlPositionStore.restore(this, null));
     }
 

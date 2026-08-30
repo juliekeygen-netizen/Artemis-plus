@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string-array name="outside_stream_orientation_names">
+        <item>Follow system</item>
+        <item>Portrait</item>
+    </string-array>
+    <string-array name="outside_stream_orientation_values" translatable="false">
+        <item>follow_system</item>
+        <item>portrait</item>
+    </string-array>
+
     <string-array name="resolution_names">
         <item>@string/resolution_360p</item>
         <item>@string/resolution_480p</item>

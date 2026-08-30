@@ -25,6 +25,7 @@ import androidx.preference.ListPreference;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceFragmentCompat;
+import androidx.preference.PreferenceGroup;
 import androidx.preference.PreferenceManager;
 import androidx.preference.PreferenceScreen;
 
@@ -43,11 +44,17 @@ import android.view.WindowInsets;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import com.bytehamster.lib.preferencesearch.PreferenceItem;
+import com.bytehamster.lib.preferencesearch.SearchConfiguration;
+import com.bytehamster.lib.preferencesearch.SearchPreference;
+import com.bytehamster.lib.preferencesearch.SearchPreferenceResult;
+import com.bytehamster.lib.preferencesearch.SearchPreferenceResultListener;
 import com.google.gson.Gson;
 import com.limelight.DebugInfoActivity;
 import com.limelight.BuildConfig;
 import com.limelight.GameMenu;
 import com.limelight.LimeLog;
+import com.limelight.OutsideStreamOrientationPolicy;
 import com.limelight.PcView;
 import com.limelight.R;
 import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardControllerConfigurationLoader;
@@ -66,7 +73,7 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.Map;
 
-public class StreamSettings extends AppCompatActivity {
+public class StreamSettings extends AppCompatActivity implements SearchPreferenceResultListener {
     private PreferenceConfiguration previousPrefs;
     private int previousDisplayPixelCount;
 
@@ -159,6 +166,14 @@ public class StreamSettings extends AppCompatActivity {
                     System.exit(0);
                 }
             }
+        }
+    }
+
+    @Override
+    public void onSearchResultClicked(SearchPreferenceResult result) {
+        result.closeSearchPage(this);
+        if (prefsFragment != null) {
+            prefsFragment.revealAndHighlightSearchResult(result);
         }
     }
 
@@ -922,6 +937,16 @@ public class StreamSettings extends AppCompatActivity {
                 });
             }
 
+            ListPreference outsideStreamOrientation = findPreference(OutsideStreamOrientationPolicy.PREF_KEY);
+            if (outsideStreamOrientation != null) {
+                outsideStreamOrientation.setOnPreferenceChangeListener((preference, newValue) -> {
+                    // Apply the chosen value immediately; the lifecycle callback will also re-apply
+                    // the persisted mode whenever a normal Artemis screen resumes.
+                    OutsideStreamOrientationPolicy.apply(requireActivity(), String.valueOf(newValue));
+                    return true;
+                });
+            }
+
             EditTextPreference customRefreshRatePref = findPreference(PreferenceConfiguration.CUSTOM_REFRESH_RATE_PREF_STRING);
             if (customRefreshRatePref != null) {
                 customRefreshRatePref.setOnBindEditTextListener((EditText editText) -> {
@@ -957,6 +982,76 @@ public class StreamSettings extends AppCompatActivity {
                     }
                 });
             }
+
+            configurePreferenceSearch(screen);
+        }
+
+        private void configurePreferenceSearch(PreferenceScreen screen) {
+            SearchPreference searchPreference = findPreference("searchPreference");
+            if (searchPreference == null) {
+                return;
+            }
+
+            SearchConfiguration configuration = searchPreference.getSearchConfiguration();
+            configuration.setActivity((AppCompatActivity) requireActivity());
+            configuration.setBreadcrumbsEnabled(true);
+            configuration.setHistoryId("artemis_settings");
+
+            // Index the final runtime Preference tree rather than parsing the raw XML. Device- or
+            // API-specific settings removed above therefore cannot appear as dead search results.
+            indexVisiblePreferences(configuration, screen, null);
+        }
+
+        private void indexVisiblePreferences(SearchConfiguration configuration,
+                                             PreferenceGroup group,
+                                             String breadcrumb) {
+            for (int i = 0; i < group.getPreferenceCount(); i++) {
+                Preference preference = group.getPreference(i);
+                if (preference instanceof SearchPreference) {
+                    continue;
+                }
+
+                if (preference instanceof PreferenceGroup) {
+                    String nextBreadcrumb = breadcrumb;
+                    CharSequence title = preference.getTitle();
+                    if (!TextUtils.isEmpty(title)) {
+                        nextBreadcrumb = TextUtils.isEmpty(breadcrumb)
+                                ? title.toString()
+                                : breadcrumb + " > " + title;
+                    }
+                    indexVisiblePreferences(configuration, (PreferenceGroup) preference, nextBreadcrumb);
+                    continue;
+                }
+
+                if (preference.getKey() == null ||
+                        (preference.getTitle() == null && preference.getSummary() == null)) {
+                    continue;
+                }
+
+                PreferenceItem item = configuration.indexItem(preference);
+                if (!TextUtils.isEmpty(breadcrumb)) {
+                    item.addBreadcrumb(breadcrumb);
+                }
+            }
+        }
+
+        void revealAndHighlightSearchResult(SearchPreferenceResult result) {
+            Preference target = findPreference(result.getKey());
+            if (target != null) {
+                PreferenceGroup parent = target.getParent();
+                while (parent != null) {
+                    parent.setInitialExpandedChildrenCount(Integer.MAX_VALUE);
+                    parent = parent.getParent();
+                }
+            }
+            // Changing initialExpandedChildrenCount alone does not notify AndroidX's
+            // PreferenceGroupAdapter. Rebuild the adapter so results hidden behind an expand
+            // button become addressable before SearchPreference scrolls/highlights them.
+            PreferenceScreen screen = getPreferenceScreen();
+            if (screen != null) {
+                getListView().setAdapter(onCreateAdapter(screen));
+            }
+            result.highlight(this);
         }
 
         private void removeEntryFromListAndSetValue(String resolutionPrefString, String entryToRemove, String nextDefault) {

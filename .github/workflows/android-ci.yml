@@ -60,6 +60,7 @@ jobs:
           --tests "com.limelight.binding.input.virtual_controller.keyboard.LongPressMoveGestureGuardTest"
           --tests "com.limelight.nvstream.http.PairingManagerRetryTest"
           --tests "com.limelight.ui.FloatingControlPositionStoreTest"
+          --tests "com.limelight.preferences.StreamSettingsFragmentLifecycleTest"
           --stacktrace
 
       - name: Run full inherited unit suite (diagnostic)

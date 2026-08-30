@@ -1044,6 +1044,13 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
                     parent = parent.getParent();
                 }
             }
+            // Changing initialExpandedChildrenCount alone does not notify AndroidX's
+            // PreferenceGroupAdapter. Rebuild the adapter so results hidden behind an expand
+            // button become addressable before SearchPreference scrolls/highlights them.
+            PreferenceScreen screen = getPreferenceScreen();
+            if (screen != null) {
+                getListView().setAdapter(onCreateAdapter(screen));
+            }
             result.highlight(this);
         }
 

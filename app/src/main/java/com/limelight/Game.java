@@ -46,6 +46,7 @@ import com.limelight.profiles.ProfilesManager;
 import com.limelight.ui.ExternalControllerView;
 import com.limelight.ui.GameGestures;
 import com.limelight.ui.ArtemisEditorUi;
+import com.limelight.ui.FloatingControlPositionStore;
 import com.limelight.ui.StreamContainer;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.ExternalDisplayControlActivity;
@@ -365,6 +366,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         // Read the stream preferences
         prefConfig = PreferenceConfiguration.readPreferences(this);
+
+        // This Activity is the stream-session owner in the current architecture. Reset persistent
+        // floating positions exactly once here, before any stream controls are restored.
+        FloatingControlPositionStore.beginStreamSession(this);
+
         tombstonePrefs = Game.this.getSharedPreferences("DecoderTombstone", 0);
 
         if (prefConfig.fullScreen) {

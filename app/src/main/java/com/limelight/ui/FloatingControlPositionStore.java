@@ -21,6 +21,19 @@ public final class FloatingControlPositionStore {
                 .getBoolean(RESET_BETWEEN_SESSIONS_KEY, false);
     }
 
+    /**
+     * Starts a real stream session. Resetting belongs to the Game lifecycle rather than to an
+     * individual View attach, because controls can be detached/re-attached while one stream is
+     * still running. The dedicated floating-position store contains no unrelated preferences, so a
+     * single synchronous clear resets every control and both orientation slots before any control
+     * posts its restore callback.
+     */
+    public static void beginStreamSession(Context context) {
+        if (shouldResetBetweenSessions(context)) {
+            prefs(context).edit().clear().commit();
+        }
+    }
+
     public static void save(View view, String identity) {
         ViewParent parent = view.getParent();
         if (!(parent instanceof View) || view.getWidth() <= 0 || view.getHeight() <= 0) return;

@@ -72,7 +72,10 @@ public class KeyBoardController {
     private View groupOutline;
 
     private static final String SETTINGS_POSITION_ID = "keyboardSettingsButton";
-    private boolean configureSessionPositionPrepared;
+    // Keep the persisted reset target and the layout default literally identical by sharing these
+    // physical-pixel anchors. They intentionally preserve the V4 position established previously.
+    private static final int SETTINGS_DEFAULT_X_PX = 0;
+    private static final int SETTINGS_DEFAULT_Y_PX = 15;
 
     private final Vibrator vibrator;
     private final List<keyBoardVirtualControllerElement> elements = new ArrayList<>();
@@ -114,6 +117,7 @@ public class KeyBoardController {
             private boolean moveArmed;
             private boolean moved;
             private boolean resetPromptShown;
+            private final LongPressMoveGestureGuard gestureGuard = new LongPressMoveGestureGuard();
 
             private final Runnable armMove = () -> {
                 if (moved || resetPromptShown) return;
@@ -154,6 +158,7 @@ public class KeyBoardController {
                         moveArmed = false;
                         moved = false;
                         resetPromptShown = false;
+                        gestureGuard.reset();
                         handler.postDelayed(armMove, configureLongPressMs);
                         handler.postDelayed(offerReset, configureResetHoldMs);
                         return true;
@@ -164,6 +169,11 @@ public class KeyBoardController {
                         boolean beyondSlop = Math.hypot(dx, dy) > configureTouchSlop;
                         if (beyondSlop) {
                             handler.removeCallbacks(offerReset);
+                            // Movement before the long-press threshold is an ordinary cancelled
+                            // gesture, not a drag waiting to arm later.
+                            if (gestureGuard.onMovePastSlop(moveArmed)) {
+                                handler.removeCallbacks(armMove);
+                            }
                         }
                         if (moveArmed && beyondSlop) {
                             moved = true;
@@ -180,7 +190,7 @@ public class KeyBoardController {
                         if (moved) {
                             FloatingControlPositionStore.save(view, SETTINGS_POSITION_ID);
                         } else if (event.getActionMasked() == MotionEvent.ACTION_UP &&
-                                !moveArmed && !resetPromptShown) {
+                                gestureGuard.canPerformClick(moved, moveArmed, resetPromptShown)) {
                             view.performClick();
                         }
                         return true;
@@ -555,19 +565,11 @@ public class KeyBoardController {
         }
     }
 
-    private void prepareConfigureButtonSessionPosition() {
-        if (configureSessionPositionPrepared) return;
-        configureSessionPositionPrepared = true;
-        if (FloatingControlPositionStore.shouldResetBetweenSessions(context)) {
-            FloatingControlPositionStore.clearAllOrientations(context, SETTINGS_POSITION_ID);
-        }
-    }
-
     private void resetConfigureButtonPosition() {
         FloatingControlPositionStore.clearCurrentOrientation(context, SETTINGS_POSITION_ID);
         if (buttonConfigure == null) return;
-        buttonConfigure.setX(0f);
-        buttonConfigure.setY(15f);
+        buttonConfigure.setX(SETTINGS_DEFAULT_X_PX);
+        buttonConfigure.setY(SETTINGS_DEFAULT_Y_PX);
     }
 
     public void refreshLayout() {
@@ -580,10 +582,9 @@ public class KeyBoardController {
 
         FrameLayout.LayoutParams configParams = new FrameLayout.LayoutParams(buttonSize, buttonSize);
         // Preserve the old anchor, then move it 50 physical pixels left as requested.
-        configParams.leftMargin = 0; // old 20px anchor shifted 50 physical px left, clamped to edge
-        configParams.topMargin = 15;
+        configParams.leftMargin = SETTINGS_DEFAULT_X_PX; // old 20px anchor shifted left, clamped to edge
+        configParams.topMargin = SETTINGS_DEFAULT_Y_PX;
         frame_layout.addView(buttonConfigure, configParams);
-        prepareConfigureButtonSessionPosition();
         buttonConfigure.post(() -> FloatingControlPositionStore.restore(
                 buttonConfigure, SETTINGS_POSITION_ID));
 

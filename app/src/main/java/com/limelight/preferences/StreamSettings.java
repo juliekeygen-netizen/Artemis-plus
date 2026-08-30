@@ -363,7 +363,9 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
             PreferenceScreen screen = getPreferenceScreen();
 
             ListPreference outsideOrientation = findPreference(OutsideStreamOrientationPolicy.PREF_KEY);
-            if (outsideOrientation != null) {
+            // Only the real global Settings screen should immediately apply this app-level policy.
+            // ProfilePreferenceFragment inherits this class but edits a future profile in isolation.
+            if (outsideOrientation != null && requireActivity() instanceof StreamSettings) {
                 outsideOrientation.setOnPreferenceChangeListener((preference, newValue) -> {
                     String requestedMode = String.valueOf(newValue);
                     requireActivity().getWindow().getDecorView().post(() ->

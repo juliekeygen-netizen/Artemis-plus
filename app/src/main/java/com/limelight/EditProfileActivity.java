@@ -35,6 +35,9 @@ public class EditProfileActivity extends AppCompatActivity {
     private ProfilePreferenceFragment prefsFragment;
     private String pendingProfileName; // Holds new name for unsaved profiles
 
+    private static final String STATE_PENDING_PROFILE_NAME = "profile.pendingName";
+    private static final String STATE_PROFILE_PREFS = "profile.unsavedPrefs";
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -74,6 +77,18 @@ public class EditProfileActivity extends AppCompatActivity {
             inMemoryPrefs = new InMemorySharedPreferences(PreferenceManager.getDefaultSharedPreferences(this).getAll());
         }
 
+        if (savedInstanceState != null) {
+            Map<String, Object> restoredPrefs = decodePreferenceState(
+                    savedInstanceState.getBundle(STATE_PROFILE_PREFS));
+            if (restoredPrefs != null) {
+                inMemoryPrefs = new InMemorySharedPreferences(restoredPrefs);
+            }
+            pendingProfileName = savedInstanceState.getString(STATE_PENDING_PROFILE_NAME);
+            if (currentProfile == null && pendingProfileName != null && !pendingProfileName.trim().isEmpty()) {
+                setTitle(getString(R.string.profile_manager_new_profile_with, pendingProfileName));
+            }
+        }
+
         androidx.fragment.app.Fragment restoredFragment =
                 getSupportFragmentManager().findFragmentById(R.id.preferences_container);
         if (restoredFragment instanceof ProfilePreferenceFragment) {
@@ -87,6 +102,69 @@ public class EditProfileActivity extends AppCompatActivity {
         }
 
         UiHelper.notifyNewRootView(this);
+    }
+
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putString(STATE_PENDING_PROFILE_NAME, pendingProfileName);
+        if (inMemoryPrefs != null) {
+            outState.putBundle(STATE_PROFILE_PREFS, encodePreferenceState(inMemoryPrefs.getAll()));
+        }
+    }
+
+    private static Bundle encodePreferenceState(Map<String, ?> values) {
+        Bundle state = new Bundle();
+        if (values == null) {
+            return state;
+        }
+        for (Map.Entry<String, ?> entry : values.entrySet()) {
+            String key = entry.getKey();
+            Object value = entry.getValue();
+            if (value instanceof String) {
+                state.putString(key, (String) value);
+            } else if (value instanceof Integer) {
+                state.putInt(key, (Integer) value);
+            } else if (value instanceof Long) {
+                state.putLong(key, (Long) value);
+            } else if (value instanceof Float) {
+                state.putFloat(key, (Float) value);
+            } else if (value instanceof Boolean) {
+                state.putBoolean(key, (Boolean) value);
+            } else if (value instanceof java.util.Set) {
+                java.util.ArrayList<String> copy = new java.util.ArrayList<>();
+                for (Object item : (java.util.Set<?>) value) {
+                    if (item instanceof String) {
+                        copy.add((String) item);
+                    }
+                }
+                state.putStringArrayList(key, copy);
+            }
+        }
+        return state;
+    }
+
+    private static Map<String, Object> decodePreferenceState(Bundle state) {
+        if (state == null) {
+            return null;
+        }
+        Map<String, Object> values = new HashMap<>();
+        for (String key : state.keySet()) {
+            Object value = state.get(key);
+            if (value instanceof java.util.ArrayList) {
+                java.util.HashSet<String> set = new java.util.HashSet<>();
+                for (Object item : (java.util.ArrayList<?>) value) {
+                    if (item instanceof String) {
+                        set.add((String) item);
+                    }
+                }
+                values.put(key, set);
+            } else if (value instanceof String || value instanceof Integer || value instanceof Long ||
+                    value instanceof Float || value instanceof Boolean) {
+                values.put(key, value);
+            }
+        }
+        return values;
     }
 
     @Override
@@ -344,7 +422,16 @@ public class EditProfileActivity extends AppCompatActivity {
 
         @Override
         public Map<String, ?> getAll() {
-            return new HashMap<>(values);
+            Map<String, Object> copy = new HashMap<>();
+            for (Map.Entry<String, Object> entry : values.entrySet()) {
+                Object value = entry.getValue();
+                if (value instanceof java.util.Set) {
+                    copy.put(entry.getKey(), new java.util.HashSet<>((java.util.Set<String>) value));
+                } else {
+                    copy.put(entry.getKey(), value);
+                }
+            }
+            return copy;
         }
 
         @Override
@@ -386,7 +473,9 @@ public class EditProfileActivity extends AppCompatActivity {
         @Override
         public java.util.Set<String> getStringSet(String key, java.util.Set<String> defValues) {
             Object value = values.get(key);
-            return value instanceof java.util.Set ? (java.util.Set<String>) value : defValues;
+            return value instanceof java.util.Set
+                    ? new java.util.HashSet<>((java.util.Set<String>) value)
+                    : defValues;
         }
 
         @Override
@@ -409,6 +498,7 @@ public class EditProfileActivity extends AppCompatActivity {
 
         private class InMemoryEditor implements Editor {
             private final Map<String, Object> changes = new HashMap<>();
+            private boolean clearRequested;
 
             @Override
             public Editor putString(String key, String value) {
@@ -442,7 +532,7 @@ public class EditProfileActivity extends AppCompatActivity {
 
             @Override
             public Editor putStringSet(String key, java.util.Set<String> values) {
-                changes.put(key, values);
+                changes.put(key, values == null ? null : new java.util.HashSet<>(values));
                 return this;
             }
 
@@ -454,7 +544,7 @@ public class EditProfileActivity extends AppCompatActivity {
 
             @Override
             public Editor clear() {
-                values.clear();
+                clearRequested = true;
                 return this;
             }
 
@@ -466,6 +556,10 @@ public class EditProfileActivity extends AppCompatActivity {
 
             @Override
             public void apply() {
+                if (clearRequested) {
+                    values.clear();
+                    clearRequested = false;
+                }
                 for (Map.Entry<String, Object> entry : changes.entrySet()) {
                     if (entry.getValue() == null) {
                         values.remove(entry.getKey());

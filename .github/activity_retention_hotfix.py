@@ -14,9 +14,13 @@ test.write_text('''package com.limelight;\n\nimport static org.junit.Assert.asse
 
 ci = Path('.github/workflows/android-ci.yml')
 ci_text = ci.read_text(encoding='utf-8')
-anchor = '          com.limelight.preferences.BackgroundStreamingPolicyTest'
+anchor = '          --tests "com.limelight.preferences.BackgroundStreamingPolicyTest"\n'
 if anchor not in ci_text:
     raise SystemExit('CI regression anchor not found')
 if 'com.limelight.GameActivityManifestTest' not in ci_text:
-    ci_text = ci_text.replace(anchor, anchor + ' \\\n          com.limelight.GameActivityManifestTest', 1)
+    ci_text = ci_text.replace(
+        anchor,
+        anchor + '          --tests "com.limelight.GameActivityManifestTest"\n',
+        1,
+    )
     ci.write_text(ci_text, encoding='utf-8')

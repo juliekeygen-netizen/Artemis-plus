@@ -26,6 +26,7 @@ jobs:
           python3 .github/keep_alive_patch.py
           python3 .github/keep_alive_audit_patch.py
           python3 .github/keep_alive_audit2_patch.py
+          python3 .github/keep_alive_audit3_patch.py
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -65,5 +66,5 @@ jobs:
             echo "No product changes to commit"
             exit 0
           fi
-          git commit -m "feat: add experimental Keep Connection Alive POC"
+          git commit -m "feat: harden experimental Keep Connection Alive"
           git push origin feature/background-keep-alive-poc

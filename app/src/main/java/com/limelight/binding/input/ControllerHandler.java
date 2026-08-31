@@ -130,8 +130,8 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     private final HandlerThread backgroundHandlerThread;
     private final Handler backgroundThreadHandler;
     private boolean hasGameController;
-    private boolean stopped = false;
-    private boolean suspendedForReconnect = false;
+    private volatile boolean stopped = false;
+    private volatile boolean suspendedForReconnect = false;
 
     // Stats overlay toggle: Select+L1 held for 2 seconds
     private boolean selectL1HoldPending;
@@ -301,6 +301,16 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     public void resumeAfterReconnect() {
         if (stopped || !suspendedForReconnect) {
             return;
+        }
+
+        // Device removal callbacks are not delivered while suspended. Reconcile retained
+        // contexts before accepting new input so a controller unplugged in the background does
+        // not leave a stale controller number/context behind after Fast Resume.
+        for (int i = inputDeviceContexts.size() - 1; i >= 0; i--) {
+            int deviceId = inputDeviceContexts.keyAt(i);
+            if (InputDevice.getDevice(deviceId) == null) {
+                onInputDeviceRemoved(deviceId);
+            }
         }
 
         suspendedForReconnect = false;

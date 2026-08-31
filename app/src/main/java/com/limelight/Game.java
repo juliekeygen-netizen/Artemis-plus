@@ -1334,6 +1334,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     @TargetApi(Build.VERSION_CODES.O)
     public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+        if (isInPictureInPictureMode) {
+            // PiP owns this transition. Do not let an earlier pause callback reinterpret it as
+            // Fast Resume if the platform changes lifecycle ordering on a particular device.
+            fastResumeLifecycleArmed = false;
+        }
         updatePipOverlayState(isInPictureInPictureMode);
         if (!isInPictureInPictureMode) {
             updatePipAutoEnter();
@@ -1928,12 +1933,18 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     protected void onPause() {
-        if (!isFinishing() && prefConfig != null &&
-                BackgroundStreamingPolicy.isFastResume(prefConfig.backgroundStreamingMode) &&
-                !isChangingConfigurations() && !isOnExternalDisplay()) {
+        boolean multiWindow = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInMultiWindowMode();
+        boolean pipTransitionExpected = autoEnterPip || isCurrentlyInPip();
+        if (prefConfig != null && BackgroundStreamingPolicy.shouldArmFastResumeBeforeSurfaceLoss(
+                prefConfig.backgroundStreamingMode,
+                isFinishing(), isChangingConfigurations(), pipTransitionExpected,
+                isOnExternalDisplay(), multiWindow)) {
             // Arm before Surface destruction so an expected graceful connection teardown cannot
-            // race ahead of onStop(). PiP entry explicitly clears this arm below.
+            // race ahead of onStop(). PiP and visible multi-window transitions deliberately do not
+            // arm Fast Resume because the stream should remain live in those modes.
             fastResumeLifecycleArmed = true;
+        } else if (!fastResumeBackgrounded && !fastResumeReconnectPending) {
+            fastResumeLifecycleArmed = false;
         }
 
         if (isFinishing()) {
@@ -4355,11 +4366,17 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         surfaceCreated = false;
 
         if (attemptedConnection) {
-            // Let the decoder know immediately that the surface is gone
+            // Let the decoder know immediately that the surface is gone.
             decoderRenderer.prepareForStop();
 
-            if (connected) {
-                stopConnection();
+            // Surface destruction can occur after onPause() but before onStop(). If Fast Resume
+            // was armed in onPause(), preserve controller contexts here too; otherwise this early
+            // lifecycle callback would accidentally take the terminal Disconnect/Quit path before
+            // onStop() gets a chance to park the stream.
+            boolean preserveForFastResume = fastResumeLifecycleArmed ||
+                    fastResumeBackgrounded || fastResumeReconnectPending;
+            if (connecting || connected) {
+                stopConnection(preserveForFastResume);
             }
         }
     }

@@ -32,6 +32,20 @@ public final class BackgroundStreamingPolicy {
         }
     }
 
+    public static boolean shouldArmFastResumeBeforeSurfaceLoss(String mode,
+                                                               boolean finishing,
+                                                               boolean changingConfigurations,
+                                                               boolean pipTransitionExpected,
+                                                               boolean externalDisplay,
+                                                               boolean multiWindow) {
+        return isFastResume(mode) &&
+                !finishing &&
+                !changingConfigurations &&
+                !pipTransitionExpected &&
+                !externalDisplay &&
+                !multiWindow;
+    }
+
     public static boolean shouldUseFastResume(String mode,
                                                boolean finishing,
                                                boolean changingConfigurations,

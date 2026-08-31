@@ -26,6 +26,31 @@ public class BackgroundStreamingPolicyTest {
     }
 
     @Test
+    public void fastResumeArmingAvoidsPipAndVisibleMultiWindowTransitions() {
+        assertTrue(BackgroundStreamingPolicy.shouldArmFastResumeBeforeSurfaceLoss(
+                BackgroundStreamingPolicy.MODE_FAST_RESUME,
+                false, false, false, false, false));
+        assertFalse(BackgroundStreamingPolicy.shouldArmFastResumeBeforeSurfaceLoss(
+                BackgroundStreamingPolicy.MODE_FAST_RESUME,
+                false, false, true, false, false));
+        assertFalse(BackgroundStreamingPolicy.shouldArmFastResumeBeforeSurfaceLoss(
+                BackgroundStreamingPolicy.MODE_FAST_RESUME,
+                false, false, false, false, true));
+        assertFalse(BackgroundStreamingPolicy.shouldArmFastResumeBeforeSurfaceLoss(
+                BackgroundStreamingPolicy.MODE_DISABLED,
+                false, false, false, false, false));
+        assertFalse(BackgroundStreamingPolicy.shouldArmFastResumeBeforeSurfaceLoss(
+                BackgroundStreamingPolicy.MODE_FAST_RESUME,
+                true, false, false, false, false));
+        assertFalse(BackgroundStreamingPolicy.shouldArmFastResumeBeforeSurfaceLoss(
+                BackgroundStreamingPolicy.MODE_FAST_RESUME,
+                false, true, false, false, false));
+        assertFalse(BackgroundStreamingPolicy.shouldArmFastResumeBeforeSurfaceLoss(
+                BackgroundStreamingPolicy.MODE_FAST_RESUME,
+                false, false, false, true, false));
+    }
+
+    @Test
     public void fastResumeOnlyOwnsOrdinaryBackgroundStop() {
         assertTrue(BackgroundStreamingPolicy.shouldUseFastResume(
                 BackgroundStreamingPolicy.MODE_FAST_RESUME, false, false, false, false));

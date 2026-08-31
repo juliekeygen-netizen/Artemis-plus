@@ -25,6 +25,7 @@ jobs:
         run: |
           python3 .github/keep_alive_patch.py
           python3 .github/keep_alive_audit_patch.py
+          python3 .github/keep_alive_audit2_patch.py
 
       - name: Set up Java
         uses: actions/setup-java@v4

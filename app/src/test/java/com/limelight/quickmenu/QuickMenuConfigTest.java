@@ -114,6 +114,33 @@ public class QuickMenuConfigTest {
     }
 
     @Test
+    public void parserNeverExceedsGlobalNodeLimit() throws Exception {
+        JSONObject root = new JSONObject();
+        root.put("id", "root");
+        root.put("title", "Oversized");
+        JSONArray items = new JSONArray();
+        for (int i = 0; i < QuickMenuConfig.MAX_TOTAL_NODES + 40; i++) {
+            JSONObject page = new JSONObject();
+            page.put("id", "page-" + i);
+            page.put("title", "Page " + i);
+            JSONArray childItems = new JSONArray();
+            childItems.put(new JSONObject()
+                    .put("type", "action")
+                    .put("actionId", StreamActionRegistry.TASK_MANAGER));
+            page.put("items", childItems);
+            items.put(new JSONObject().put("type", "page").put("page", page));
+        }
+        root.put("items", items);
+        JSONObject object = new JSONObject()
+                .put("version", QuickMenuConfig.CURRENT_VERSION)
+                .put("root", root);
+
+        QuickMenuConfig parsed = QuickMenuConfig.fromJson(object);
+        assertNotNull(parsed);
+        assertTrue(QuickMenuConfig.countNodes(parsed.root) <= QuickMenuConfig.MAX_TOTAL_NODES);
+    }
+
+    @Test
     public void registryIdsAreUniqueAndResolvable() {
         Set<String> ids = new HashSet<>();
         for (StreamActionRegistry.ActionDefinition action : StreamActionRegistry.getAll()) {

@@ -1,7 +1,5 @@
 package com.limelight.quickmenu;
 
-import android.content.Context;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -111,8 +109,4 @@ public final class StreamActionRegistry {
         return categories;
     }
 
-    public static String editorLabel(Context context, String id) {
-        ActionDefinition definition = find(id);
-        return definition == null ? id : definition.label;
-    }
 }

@@ -16,7 +16,7 @@ public final class QuickMenuConfig {
     public static final int CURRENT_VERSION = 1;
     private static final String PREFS_NAME = "quick_menu_config";
     private static final String KEY_CONFIG = "config_v1";
-    private static final int MAX_DEPTH = 6;
+    public static final int MAX_PAGE_DEPTH = 6;
     public static final int MAX_TOTAL_NODES = 128;
     private static final int MAX_TITLE_LENGTH = 48;
 
@@ -173,7 +173,11 @@ public final class QuickMenuConfig {
     }
 
     private static Page pageFromJson(JSONObject object, int depth, Counter counter, boolean root) {
-        if (object == null || depth > MAX_DEPTH || counter.nodes >= MAX_TOTAL_NODES) return null;
+        if (object == null || depth > MAX_PAGE_DEPTH) return null;
+        if (!root) {
+            if (counter.nodes >= MAX_TOTAL_NODES) return null;
+            counter.nodes++;
+        }
         String fallbackTitle = root ? "Quick Menu" : "Page";
         Page page = new Page(root ? "root" : object.optString("id", null),
                 normalizeTitle(object.optString("title", fallbackTitle), fallbackTitle));
@@ -189,11 +193,10 @@ public final class QuickMenuConfig {
                     page.items.add(Node.action(actionId));
                     counter.nodes++;
                 }
-            } else if (TYPE_PAGE.equals(type) && depth < MAX_DEPTH) {
+            } else if (TYPE_PAGE.equals(type) && depth < MAX_PAGE_DEPTH) {
                 Page child = pageFromJson(item.optJSONObject("page"), depth + 1, counter, false);
                 if (child != null) {
                     page.items.add(Node.page(child));
-                    counter.nodes++;
                 }
             }
         }

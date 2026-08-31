@@ -11,7 +11,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
-import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -33,8 +32,6 @@ import java.util.Locale;
 
 /** Shared editor for the persisted in-stream Quick Menu tree. */
 public final class QuickMenuEditorDialog {
-    private static final int MAX_PAGE_DEPTH = 6;
-
     private QuickMenuEditorDialog() {}
 
     public static void show(Context context) {
@@ -146,7 +143,7 @@ public final class QuickMenuEditorDialog {
                     Toast.makeText(app, "Quick Menu item limit reached", Toast.LENGTH_SHORT).show();
                     return;
                 }
-                if (pageStack.size() - 1 >= MAX_PAGE_DEPTH) {
+                if (pageStack.size() - 1 >= QuickMenuConfig.MAX_PAGE_DEPTH) {
                     Toast.makeText(app, "Maximum Quick Menu nesting reached", Toast.LENGTH_SHORT).show();
                     return;
                 }
@@ -203,7 +200,7 @@ public final class QuickMenuEditorDialog {
         }
 
         private void openPage(QuickMenuConfig.Page page) {
-            if (page == null || pageStack.size() - 1 >= MAX_PAGE_DEPTH) return;
+            if (page == null || pageStack.size() - 1 >= QuickMenuConfig.MAX_PAGE_DEPTH) return;
             pageStack.add(page);
             refresh();
         }

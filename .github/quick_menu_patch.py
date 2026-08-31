@@ -16,15 +16,18 @@ else:
 
 # The settings XML is also reused by profile editing. Quick Menu layout is intentionally global,
 # so remove this entry before search indexing when SettingsFragment is hosted elsewhere.
+# StreamSettings is a legacy CRLF file in this repository; normalize only in memory and always
+# write CRLF back so this tiny insertion never turns into a whole-file line-ending rewrite.
 path = Path('app/src/main/java/com/limelight/preferences/StreamSettings.java')
-text = path.read_text(encoding='utf-8')
+raw = path.read_bytes().decode('utf-8')
+text = raw.replace('\r\n', '\n')
 old = '''            addPreferencesFromResource(R.xml.preferences);\n            PreferenceScreen screen = getPreferenceScreen();\n\n            ListPreference outsideOrientation = findPreference(OutsideStreamOrientationPolicy.PREF_KEY);'''
 new = '''            addPreferencesFromResource(R.xml.preferences);\n            PreferenceScreen screen = getPreferenceScreen();\n\n            Preference quickMenuPreference = findPreference("customize_quick_menu");\n            if (quickMenuPreference != null && !(requireActivity() instanceof StreamSettings)) {\n                PreferenceGroup parent = quickMenuPreference.getParent();\n                if (parent != null) {\n                    parent.removePreference(quickMenuPreference);\n                }\n            }\n\n            ListPreference outsideOrientation = findPreference(OutsideStreamOrientationPolicy.PREF_KEY);'''
 if old in text:
     text = text.replace(old, new, 1)
 if 'Preference quickMenuPreference = findPreference("customize_quick_menu");' not in text:
     raise SystemExit('StreamSettings profile-scope patch did not apply')
-path.write_text(text, encoding='utf-8')
+path.write_bytes(text.replace('\n', '\r\n').encode('utf-8'))
 
 # Runtime subpage navigation: preserve the existing Cancel button while adding an explicit Back row.
 path = Path('app/src/main/java/com/limelight/GameMenu.java')

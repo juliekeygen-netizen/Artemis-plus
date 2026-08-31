@@ -64,7 +64,14 @@ public final class ArtemisActionButtonFactory {
         AlertDialog dialog = ArtemisEditorUi.builder(ui, "Add Artemis Actions")
                 .setView(scroll)
                 .setPositiveButton("Apply", (d, which) -> {
+                    // Preserve opaque IDs from newer clients. They remain inert on this build,
+                    // but editing known actions must not silently erase forward-compatible data.
                     HashSet<String> requested = new HashSet<>();
+                    for (String id : selected) {
+                        if (ArtemisAction.fromId(id) == null && id != null && !id.isEmpty()) {
+                            requested.add(id);
+                        }
+                    }
                     for (int i = 0; i < actions.length; i++) {
                         if (boxes[i].isChecked()) {
                             requested.add(actions[i].getId());
@@ -217,7 +224,6 @@ public final class ArtemisActionButtonFactory {
         KeyBoardDigitalButton button = createButton(action, controller, context);
         controller.addElement(button, position.x, position.y, size, size);
         loadSavedConfiguration(button, context);
-
         if (forceVisible) {
             button.hidden = false;
             button.enabled = true;
@@ -294,11 +300,18 @@ public final class ArtemisActionButtonFactory {
     static JSONArray exportSelectionForLayout(Context context, String layout) {
         JSONArray array = new JSONArray();
         Set<String> selected = getSelectedActionIdsForLayout(context, layout);
-        // Keep bundles deterministic and never propagate stale IDs that an older import may
-        // have left in preferences. Enum order is the stable action-selection order.
+        java.util.TreeSet<String> unknown = new java.util.TreeSet<>(selected);
+        // Known IDs use enum order. Unknown IDs are kept inert and sorted after them so an older
+        // client can round-trip selections created by a newer client without executing them.
         for (ArtemisAction action : ArtemisAction.values()) {
             if (selected.contains(action.getId())) {
                 array.put(action.getId());
+            }
+            unknown.remove(action.getId());
+        }
+        for (String id : unknown) {
+            if (id != null && !id.isEmpty()) {
+                array.put(id);
             }
         }
         return array;
@@ -309,7 +322,7 @@ public final class ArtemisActionButtonFactory {
         if (array != null) {
             for (int i = 0; i < array.length(); i++) {
                 String value = array.optString(i, "");
-                if (ArtemisAction.fromId(value) != null) {
+                if (!value.isEmpty()) {
                     values.add(value);
                 }
             }

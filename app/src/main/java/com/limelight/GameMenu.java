@@ -5,22 +5,19 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Handler;
-import android.os.Looper;
 import android.text.TextUtils;
 import android.view.ContextThemeWrapper;
-import android.view.View;
-import android.view.ViewTreeObserver;
-import android.view.Window;
-import android.widget.ArrayAdapter;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import com.limelight.binding.input.GameInputDevice;
-import com.limelight.ui.ArtemisEditorUi;
 import com.limelight.binding.input.KeyboardTranslator;
 import com.limelight.preferences.PreferenceConfiguration;
+import com.limelight.quickmenu.QuickMenuConfig;
+import com.limelight.quickmenu.StreamActionRegistry;
+import com.limelight.ui.ArtemisEditorUi;
 import com.limelight.utils.KeyConfigHelper;
 import com.limelight.utils.KeyMapper;
 
@@ -30,9 +27,11 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Provide options for ongoing Game Stream.
- * <p>
- * Shown on back action in game activity.
+ * Provides the customizable Quick Menu for an ongoing Game stream.
+ *
+ * The persisted tree contains only stable action IDs and subpages. This class keeps runtime
+ * availability/execution tied to the active Game so saved layouts remain portable across hosts,
+ * displays, and controllers.
  */
 public class GameMenu implements Game.GameMenuCallbacks {
 
@@ -60,7 +59,6 @@ public class GameMenu implements Game.GameMenuCallbacks {
 
     private final Game game;
     private final Context dialogScreenContext;
-
     private AlertDialog currentDialog;
 
     public GameMenu(Game game, Context dialogScreenContext) {
@@ -82,9 +80,7 @@ public class GameMenu implements Game.GameMenuCallbacks {
     }
 
     private void runWithGameFocus(Runnable runnable) {
-        if (game.isFinishing()) {
-            return;
-        }
+        if (game.isFinishing()) return;
         if (!game.hasWindowFocus() && dialogScreenContext instanceof Game) {
             new Handler().postDelayed(() -> runWithGameFocus(runnable), TEST_GAME_FOCUS_DELAY);
             return;
@@ -93,15 +89,9 @@ public class GameMenu implements Game.GameMenuCallbacks {
     }
 
     private void run(MenuOption option) {
-        if (option.runnable == null) {
-            return;
-        }
-
-        if (option.withGameFocus) {
-            runWithGameFocus(option.runnable);
-        } else {
-            option.runnable.run();
-        }
+        if (option == null || option.runnable == null) return;
+        if (option.withGameFocus) runWithGameFocus(option.runnable);
+        else option.runnable.run();
     }
 
     private void showMenuDialog(String title, MenuOption[] options) {
@@ -175,16 +165,13 @@ public class GameMenu implements Game.GameMenuCallbacks {
 
         SharedPreferences preferences = game.getSharedPreferences(PREF_NAME, Activity.MODE_PRIVATE);
         String value = preferences.getString(KEY_NAME, "");
-
         if (!TextUtils.isEmpty(value)) {
             try {
                 KeyConfigHelper.ShortcutFile shortcutFile = KeyConfigHelper.parseShortcutFile(value);
                 if (shortcutFile != null && shortcutFile.data != null && !shortcutFile.data.isEmpty()) {
-                    List<KeyConfigHelper.Shortcut> data = shortcutFile.data;
-                    for (KeyConfigHelper.Shortcut sc : data) {
+                    for (KeyConfigHelper.Shortcut sc : shortcutFile.data) {
                         List<String> keys = sc.keys;
                         short[] keyCodes = new short[keys.size()];
-
                         for (int i = 0; i < keys.size(); i++) {
                             String code = keys.get(i);
                             int keycode;
@@ -198,7 +185,6 @@ public class GameMenu implements Game.GameMenuCallbacks {
                             }
                             keyCodes[i] = (short) keycode;
                         }
-
                         options.add(new MenuOption(sc.name, () -> sendKeys(keyCodes)));
                     }
                 }
@@ -209,36 +195,6 @@ public class GameMenu implements Game.GameMenuCallbacks {
         }
         options.add(new MenuOption(getString(R.string.game_menu_cancel), null));
         showMenuDialog(getString(R.string.game_menu_send_keys), options.toArray(new MenuOption[0]));
-    }
-
-    private void showAdvancedMenu(GameInputDevice device) {
-        List<MenuOption> options = new ArrayList<>();
-        if (game.allowChangeMouseMode) {
-            options.add(new MenuOption(getString(R.string.game_menu_select_mouse_mode), true,
-                    () -> game.selectMouseMode(dialogScreenContext)));
-        }
-
-        options.add(new MenuOption(getString(R.string.game_menu_toggle_hud), true, game::toggleHUD));
-        options.add(new MenuOption(getString(R.string.game_menu_toggle_floating_button), true, game::toggleFloatingButtonVisibility));
-        options.add(new MenuOption(getString(R.string.game_menu_toggle_keyboard_model), true, game::toggleKeyboardController));
-        if (!game.isOnExternalDisplay()) {
-            options.add(new MenuOption(getString(R.string.game_menu_toggle_virtual_model), true, game::toggleVirtualController));
-        }
-        options.add(new MenuOption(getString(R.string.game_menu_toggle_virtual_keyboard_model), true, game::toggleFullKeyboard));
-        options.add(new MenuOption(getString(R.string.game_menu_task_manager), true,
-                () -> sendKeys(new short[]{KeyboardTranslator.VK_LCONTROL, KeyboardTranslator.VK_LSHIFT, KeyboardTranslator.VK_ESCAPE})));
-
-        options.add(new MenuOption(getString(R.string.game_menu_send_keys), () -> {
-            hideMenu();
-            showSpecialKeysMenu();
-        }));
-
-        options.add(new MenuOption(getString(R.string.game_menu_switch_touch_sensitivity_model), true, game::switchTouchSensitivity));
-        if (device != null) {
-            options.addAll(device.getGameMenuOptions());
-        }
-        options.add(new MenuOption(getString(R.string.game_menu_cancel), null));
-        showMenuDialog(getString(R.string.game_menu_advanced), options.toArray(new MenuOption[0]));
     }
 
     private void showServerCmd(ArrayList<String> serverCmds) {
@@ -252,57 +208,119 @@ public class GameMenu implements Game.GameMenuCallbacks {
         showMenuDialog(getString(R.string.game_menu_server_cmd), options.toArray(new MenuOption[0]));
     }
 
-    public void showMenu(GameInputDevice device) {
-        List<MenuOption> options = new ArrayList<>();
-
-        options.add(new MenuOption(getString(R.string.game_menu_disconnect), game::disconnect));
-        options.add(new MenuOption(getString(R.string.game_menu_quit_session), game::quit));
-        options.add(new MenuOption(getString(R.string.game_menu_upload_clipboard), true,
-                () -> game.sendClipboard(true)));
-        options.add(new MenuOption(getString(R.string.game_menu_fetch_clipboard), true,
-                () -> game.getClipboard(0)));
-        options.add(new MenuOption(getString(R.string.game_menu_server_cmd), true,
-                () -> {
-                    ArrayList<String> serverCmds = game.getServerCmds();
-                    if (serverCmds.isEmpty()) {
-                        int themeResId = game.getApplicationInfo().theme;
-                        Context themedContext = new ContextThemeWrapper(dialogScreenContext, themeResId);
-                        AlertDialog emptyDialog = ArtemisEditorUi.builder(
-                                        themedContext, getString(R.string.game_dialog_title_server_cmd_empty))
-                                .setMessage(R.string.game_dialog_message_server_cmd_empty)
-                                .setNegativeButton(android.R.string.ok, null)
-                                .create();
-                        emptyDialog.setOnShowListener(ignored ->
-                                ArtemisEditorUi.styleDialog(emptyDialog, themedContext, 440));
-                        emptyDialog.show();
-                    } else {
-                        hideMenu();
-                        showServerCmd(serverCmds);
-                    }
-                }));
-        options.add(new MenuOption(getString(R.string.game_menu_toggle_keyboard), true, game::toggleKeyboard));
-        options.add(new MenuOption(getString(game.isZoomModeEnabled()
-                        ? R.string.game_menu_disable_zoom_mode
-                        : R.string.game_menu_enable_zoom_mode), true,
-                game::toggleZoomMode));
-
-        if (dialogScreenContext == game) {
-            options.add(new MenuOption(getString(R.string.game_menu_rotate_screen), true,
-                    () -> ArtemisOrientationHelper.rotate(game)));
+    private void openServerCommands() {
+        ArrayList<String> serverCmds = game.getServerCmds();
+        if (serverCmds.isEmpty()) {
+            int themeResId = game.getApplicationInfo().theme;
+            Context themedContext = new ContextThemeWrapper(dialogScreenContext, themeResId);
+            AlertDialog emptyDialog = ArtemisEditorUi.builder(
+                            themedContext, getString(R.string.game_dialog_title_server_cmd_empty))
+                    .setMessage(R.string.game_dialog_message_server_cmd_empty)
+                    .setNegativeButton(android.R.string.ok, null)
+                    .create();
+            emptyDialog.setOnShowListener(ignored ->
+                    ArtemisEditorUi.styleDialog(emptyDialog, themedContext, 440));
+            emptyDialog.show();
+        } else {
+            showServerCmd(serverCmds);
         }
+    }
 
-        options.add(new MenuOption(getString(R.string.game_menu_advanced), true,
-                () -> showAdvancedMenu(device)));
+    private MenuOption buildActionOption(String actionId) {
+        switch (actionId) {
+            case StreamActionRegistry.DISCONNECT:
+                return new MenuOption(getString(R.string.game_menu_disconnect), game::disconnect);
+            case StreamActionRegistry.QUIT_SESSION:
+                return new MenuOption(getString(R.string.game_menu_quit_session), game::quit);
+            case StreamActionRegistry.UPLOAD_CLIPBOARD:
+                return new MenuOption(getString(R.string.game_menu_upload_clipboard), true,
+                        () -> game.sendClipboard(true));
+            case StreamActionRegistry.FETCH_CLIPBOARD:
+                return new MenuOption(getString(R.string.game_menu_fetch_clipboard), true,
+                        () -> game.getClipboard(0));
+            case StreamActionRegistry.SERVER_COMMANDS:
+                return new MenuOption(getString(R.string.game_menu_server_cmd), true, this::openServerCommands);
+            case StreamActionRegistry.TOGGLE_KEYBOARD:
+                return new MenuOption(getString(R.string.game_menu_toggle_keyboard), true, game::toggleKeyboard);
+            case StreamActionRegistry.TOGGLE_ZOOM:
+                return new MenuOption(getString(game.isZoomModeEnabled()
+                        ? R.string.game_menu_disable_zoom_mode
+                        : R.string.game_menu_enable_zoom_mode), true, game::toggleZoomMode);
+            case StreamActionRegistry.ROTATE_SCREEN:
+                if (dialogScreenContext != game) return null;
+                return new MenuOption(getString(R.string.game_menu_rotate_screen), true,
+                        () -> ArtemisOrientationHelper.rotate(game));
+            case StreamActionRegistry.SELECT_MOUSE_MODE:
+                if (!game.allowChangeMouseMode) return null;
+                return new MenuOption(getString(R.string.game_menu_select_mouse_mode), true,
+                        () -> game.selectMouseMode(dialogScreenContext));
+            case StreamActionRegistry.TOGGLE_HUD:
+                return new MenuOption(getString(R.string.game_menu_toggle_hud), true, game::toggleHUD);
+            case StreamActionRegistry.TOGGLE_FLOATING_BUTTON:
+                return new MenuOption(getString(R.string.game_menu_toggle_floating_button), true,
+                        game::toggleFloatingButtonVisibility);
+            case StreamActionRegistry.TOGGLE_KEYBOARD_CONTROLLER:
+                return new MenuOption(getString(R.string.game_menu_toggle_keyboard_model), true,
+                        game::toggleKeyboardController);
+            case StreamActionRegistry.TOGGLE_VIRTUAL_CONTROLLER:
+                if (game.isOnExternalDisplay()) return null;
+                return new MenuOption(getString(R.string.game_menu_toggle_virtual_model), true,
+                        game::toggleVirtualController);
+            case StreamActionRegistry.TOGGLE_FULL_KEYBOARD:
+                return new MenuOption(getString(R.string.game_menu_toggle_virtual_keyboard_model), true,
+                        game::toggleFullKeyboard);
+            case StreamActionRegistry.TASK_MANAGER:
+                return new MenuOption(getString(R.string.game_menu_task_manager), true,
+                        () -> sendKeys(new short[]{KeyboardTranslator.VK_LCONTROL,
+                                KeyboardTranslator.VK_LSHIFT, KeyboardTranslator.VK_ESCAPE}));
+            case StreamActionRegistry.SEND_KEYS:
+                return new MenuOption(getString(R.string.game_menu_send_keys), this::showSpecialKeysMenu);
+            case StreamActionRegistry.SWITCH_TOUCH_SENSITIVITY:
+                return new MenuOption(getString(R.string.game_menu_switch_touch_sensitivity_model), true,
+                        game::switchTouchSensitivity);
+            case StreamActionRegistry.DEVICE_ACTIONS:
+                // This reserved dynamic slot is expanded directly while rendering a page.
+                return null;
+            default:
+                return null;
+        }
+    }
+
+    private void showConfiguredPage(QuickMenuConfig.Page page, GameInputDevice device, Runnable backAction) {
+        List<MenuOption> options = new ArrayList<>();
+        if (backAction != null) {
+            options.add(new MenuOption("‹ Back", true, backAction));
+        }
+        for (QuickMenuConfig.Node node : page.items) {
+            if (node == null) continue;
+            if (node.isPage()) {
+                options.add(new MenuOption(node.page.title, true,
+                        () -> showConfiguredPage(node.page, device,
+                                () -> showConfiguredPage(page, device, backAction))));
+            } else if (node.isAction()) {
+                if (StreamActionRegistry.DEVICE_ACTIONS.equals(node.actionId)) {
+                    if (device != null) {
+                        List<MenuOption> deviceOptions = device.getGameMenuOptions();
+                        if (deviceOptions != null) options.addAll(deviceOptions);
+                    }
+                } else {
+                    MenuOption option = buildActionOption(node.actionId);
+                    if (option != null) options.add(option);
+                }
+            }
+        }
         options.add(new MenuOption(getString(R.string.game_menu_cancel), null));
+        showMenuDialog(page.title, options.toArray(new MenuOption[0]));
+    }
 
-        showMenuDialog(getString(R.string.quick_menu_title), options.toArray(new MenuOption[0]));
+    public void showMenu(GameInputDevice device) {
+        QuickMenuConfig config = QuickMenuConfig.load(game);
+        showConfiguredPage(config.root, device, null);
     }
 
     @Override
     public void hideMenu() {
-        if (currentDialog != null && currentDialog.isShowing()) {
-            currentDialog.dismiss();
-        }
+        if (currentDialog != null && currentDialog.isShowing()) currentDialog.dismiss();
         currentDialog = null;
     }
 

@@ -362,6 +362,14 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
             addPreferencesFromResource(R.xml.preferences);
             PreferenceScreen screen = getPreferenceScreen();
 
+            Preference quickMenuPreference = findPreference("customize_quick_menu");
+            if (quickMenuPreference != null && !(requireActivity() instanceof StreamSettings)) {
+                PreferenceGroup parent = quickMenuPreference.getParent();
+                if (parent != null) {
+                    parent.removePreference(quickMenuPreference);
+                }
+            }
+
             ListPreference outsideOrientation = findPreference(OutsideStreamOrientationPolicy.PREF_KEY);
             // Only the real global Settings screen should immediately apply this app-level policy.
             // ProfilePreferenceFragment inherits this class but edits a future profile in isolation.

@@ -31,9 +31,9 @@ public final class BackgroundStreamingPolicy {
     }
 
     public static boolean isKeepAlivePlatformSupported(int sdkInt, int renderMode) {
-        // MediaCodec.setOutputSurface() was added in Android 6.0. The first POC is intentionally
-        // limited to the normal 2D SurfaceView path; Artemis' stereo modes own a separate GL
-        // Surface lifecycle and transparently fall back to Fast Resume for now.
+        // MediaCodec.setOutputSurface() was added in Android 6.0. Keep Alive is intentionally
+        // limited to the normal 2D MediaCodec path (SurfaceView or sideways TextureView); Artemis'
+        // stereo modes own a separate GL Surface lifecycle and transparently fall back to Fast Resume.
         return sdkInt >= Build.VERSION_CODES.M && renderMode == 0;
     }
 

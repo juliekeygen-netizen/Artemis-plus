@@ -7,6 +7,11 @@ import android.content.SharedPreferences;
 import android.os.Handler;
 import android.text.TextUtils;
 import android.view.ContextThemeWrapper;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewParent;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -60,6 +65,7 @@ public class GameMenu implements Game.GameMenuCallbacks {
     private final Game game;
     private final Context dialogScreenContext;
     private AlertDialog currentDialog;
+    private View currentOverlay;
 
     public GameMenu(Game game, Context dialogScreenContext) {
         this.game = game;
@@ -94,7 +100,17 @@ public class GameMenu implements Game.GameMenuCallbacks {
         else option.runnable.run();
     }
 
+    private boolean shouldUseSidewaysOverlay() {
+        return dialogScreenContext == game && game.isSidewaysStreamActive() &&
+                game.getStreamVisualRoot() != null;
+    }
+
     private void showMenuDialog(String title, MenuOption[] options) {
+        if (shouldUseSidewaysOverlay()) {
+            showSidewaysOverlay(title, null, options, getString(R.string.game_menu_cancel));
+            return;
+        }
+
         Context ui = ArtemisEditorUi.context(dialogScreenContext);
         LinearLayout rows = new LinearLayout(ui);
         rows.setOrientation(LinearLayout.VERTICAL);
@@ -127,6 +143,111 @@ public class GameMenu implements Game.GameMenuCallbacks {
         currentDialog.setOnShowListener(ignored ->
                 ArtemisEditorUi.styleDialog(currentDialog, dialogScreenContext, 460));
         currentDialog.show();
+    }
+
+    private void showSidewaysOverlay(String title,
+                                     String message,
+                                     MenuOption[] options,
+                                     String fallbackCancelLabel) {
+        FrameLayout root = game.getStreamVisualRoot();
+        if (root == null) {
+            return;
+        }
+
+        hideMenu();
+
+        Context ui = ArtemisEditorUi.context(game);
+        FrameLayout overlay = new FrameLayout(ui);
+        overlay.setClickable(true);
+        overlay.setFocusable(true);
+        overlay.setBackgroundColor(0xB8000000);
+        overlay.setOnClickListener(v -> hideMenu());
+
+        int logicalWidth = root.getWidth() > 0
+                ? root.getWidth() : game.getResources().getDisplayMetrics().heightPixels;
+        int logicalHeight = root.getHeight() > 0
+                ? root.getHeight() : game.getResources().getDisplayMetrics().widthPixels;
+        int widthCap = Math.max(ArtemisEditorUi.dp(ui, 280),
+                Math.round(logicalWidth * 0.90f));
+        int panelWidth = Math.min(ArtemisEditorUi.dp(ui, 460), widthCap);
+        panelWidth = Math.min(panelWidth, Math.max(1, logicalWidth - ArtemisEditorUi.dp(ui, 24)));
+        int panelHeight = Math.min(ArtemisEditorUi.dp(ui, 620),
+                Math.max(ArtemisEditorUi.dp(ui, 220), Math.round(logicalHeight * 0.86f)));
+        panelHeight = Math.min(panelHeight, Math.max(1, logicalHeight - ArtemisEditorUi.dp(ui, 24)));
+
+        LinearLayout panel = new LinearLayout(ui);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setClickable(true); // Do not let taps inside the card hit the dismissing scrim.
+        panel.setBackground(ArtemisEditorUi.rounded(
+                ui, ArtemisEditorUi.SURFACE, 14, 1, ArtemisEditorUi.BORDER));
+
+        TextView header = ArtemisEditorUi.header(ui, title);
+        panel.addView(header);
+
+        if (message != null && !message.isEmpty()) {
+            TextView body = ArtemisEditorUi.label(
+                    ui, message, 14f, ArtemisEditorUi.TEXT_SECONDARY);
+            body.setPadding(ArtemisEditorUi.dp(ui, 20), ArtemisEditorUi.dp(ui, 14),
+                    ArtemisEditorUi.dp(ui, 20), ArtemisEditorUi.dp(ui, 14));
+            panel.addView(body, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+        }
+
+        LinearLayout rows = new LinearLayout(ui);
+        rows.setOrientation(LinearLayout.VERTICAL);
+        rows.setPadding(ArtemisEditorUi.dp(ui, 10), ArtemisEditorUi.dp(ui, 6),
+                ArtemisEditorUi.dp(ui, 10), ArtemisEditorUi.dp(ui, 6));
+        String cancelLabel = fallbackCancelLabel;
+        if (options != null) {
+            for (MenuOption option : options) {
+                if (option == null) continue;
+                if (option.runnable == null) {
+                    cancelLabel = option.label;
+                    continue;
+                }
+                TextView row = ArtemisEditorUi.menuRow(ui, option.label);
+                LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, ArtemisEditorUi.dp(ui, 46));
+                rowParams.setMargins(0, ArtemisEditorUi.dp(ui, 2), 0,
+                        ArtemisEditorUi.dp(ui, 2));
+                rows.addView(row, rowParams);
+                row.setOnClickListener(v -> {
+                    hideMenu();
+                    run(option);
+                });
+            }
+        }
+
+        ScrollView scroll = new ScrollView(ui);
+        scroll.setFillViewport(false);
+        scroll.addView(rows);
+        panel.addView(scroll, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        TextView cancel = ArtemisEditorUi.menuRow(ui, cancelLabel);
+        cancel.setTextColor(ArtemisEditorUi.TEXT_SECONDARY);
+        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, ArtemisEditorUi.dp(ui, 46));
+        cancelParams.setMargins(ArtemisEditorUi.dp(ui, 10), ArtemisEditorUi.dp(ui, 4),
+                ArtemisEditorUi.dp(ui, 10), ArtemisEditorUi.dp(ui, 10));
+        panel.addView(cancel, cancelParams);
+        cancel.setOnClickListener(v -> hideMenu());
+
+        FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(panelWidth, panelHeight);
+        panelParams.gravity = Gravity.CENTER;
+        overlay.addView(panel, panelParams);
+
+        root.addView(overlay, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        overlay.bringToFront();
+        currentOverlay = overlay;
+    }
+
+    private void showSidewaysMessage(String title, String message) {
+        showSidewaysOverlay(title, message, new MenuOption[0],
+                getString(android.R.string.ok));
     }
 
     private void showSpecialKeysMenu() {
@@ -211,6 +332,12 @@ public class GameMenu implements Game.GameMenuCallbacks {
     private void openServerCommands() {
         ArrayList<String> serverCmds = game.getServerCmds();
         if (serverCmds.isEmpty()) {
+            if (shouldUseSidewaysOverlay()) {
+                showSidewaysMessage(
+                        getString(R.string.game_dialog_title_server_cmd_empty),
+                        getString(R.string.game_dialog_message_server_cmd_empty));
+                return;
+            }
             int themeResId = game.getApplicationInfo().theme;
             Context themedContext = new ContextThemeWrapper(dialogScreenContext, themeResId);
             AlertDialog emptyDialog = ArtemisEditorUi.builder(
@@ -322,10 +449,18 @@ public class GameMenu implements Game.GameMenuCallbacks {
     public void hideMenu() {
         if (currentDialog != null && currentDialog.isShowing()) currentDialog.dismiss();
         currentDialog = null;
+        if (currentOverlay != null) {
+            ViewParent parent = currentOverlay.getParent();
+            if (parent instanceof ViewGroup) {
+                ((ViewGroup) parent).removeView(currentOverlay);
+            }
+            currentOverlay = null;
+        }
     }
 
     @Override
     public boolean isMenuOpen() {
-        return currentDialog != null && currentDialog.isShowing();
+        return (currentDialog != null && currentDialog.isShowing()) ||
+                (currentOverlay != null && currentOverlay.getParent() != null);
     }
 }

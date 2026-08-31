@@ -475,6 +475,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         // Inflate the content
         setContentView(R.layout.activity_game);
         sidewaysStreamLayout = findViewById(R.id.gamePhysicalRoot);
+        if (sidewaysStreamLayout != null) {
+            // Apply the logical landscape transform before any stream-session UI (including the
+            // connection spinner) can become visible.
+            sidewaysStreamLayout.setSidewaysMode(activeSidewaysStreamMode);
+        }
 
         clipboardManager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
 
@@ -1581,6 +1586,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     public String getActiveSidewaysStreamMode() {
         return activeSidewaysStreamMode;
+    }
+
+    /** Logical in-stream root. Sideways-safe menus/overlays must attach here, not to a new Window. */
+    public FrameLayout getStreamVisualRoot() {
+        return rootView instanceof FrameLayout ? (FrameLayout) rootView : null;
     }
 
     public SidewaysStreamMode.LogicalPoint mapRawToStreamCoordinates(float rawX, float rawY) {

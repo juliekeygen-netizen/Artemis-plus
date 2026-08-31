@@ -22,6 +22,7 @@ import androidx.core.content.ContextCompat;
 public class StreamKeepAliveService extends Service {
     private static final String CHANNEL_ID = "artemis_background_stream";
     private static final int NOTIFICATION_ID = 0x4152;
+    private static volatile boolean foregroundActive;
 
     public static boolean start(Context context) {
         try {
@@ -29,12 +30,18 @@ public class StreamKeepAliveService extends Service {
             ContextCompat.startForegroundService(context, intent);
             return true;
         } catch (RuntimeException e) {
+            foregroundActive = false;
             LimeLog.warning("Unable to start Keep Alive foreground service: " + e.getMessage());
             return false;
         }
     }
 
+    public static boolean isForegroundActive() {
+        return foregroundActive;
+    }
+
     public static void stop(Context context) {
+        foregroundActive = false;
         try {
             context.stopService(new Intent(context, StreamKeepAliveService.class));
         } catch (RuntimeException e) {
@@ -45,6 +52,7 @@ public class StreamKeepAliveService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        foregroundActive = false;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
@@ -78,7 +86,9 @@ public class StreamKeepAliveService extends Service {
             } else {
                 startForeground(NOTIFICATION_ID, notification);
             }
+            foregroundActive = true;
         } catch (RuntimeException e) {
+            foregroundActive = false;
             LimeLog.warning("Unable to enter foreground for Keep Alive: " + e.getMessage());
             stopSelf();
             return START_NOT_STICKY;
@@ -89,6 +99,7 @@ public class StreamKeepAliveService extends Service {
 
     @Override
     public void onDestroy() {
+        foregroundActive = false;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE);
         } else {

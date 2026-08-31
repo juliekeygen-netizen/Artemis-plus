@@ -29,8 +29,8 @@ short/portrait layouts usable.
 - Task branch: `audit/editor-ui-localization`
 - Product commit: `f80c4a68e4993bf3487942df6f3a0b1309d95aec`
 - Current handoff commit: this commit (the PR tip includes this packet)
-- Pull request: pending publication
-- PR state: local validation complete; ready to push and open for review
+- Pull request: [#14 — Polish Artemis editor dialogs and localization](https://github.com/juliekeygen-netizen/Artemis-plus/pull/14)
+- PR state: open; `build` and `verify` GitHub Actions checks are in progress at the time of update
 
 ### Scope completed
 
@@ -97,7 +97,7 @@ short/portrait layouts usable.
 
 ### GitHub Actions / release
 
-- CI result: not yet run; branch has not been pushed at handoff creation.
+- CI result: `build` and two `verify` checks are in progress at the time of this update.
 - APK/release publication: not requested and not performed.
 - Signing material/configuration: untouched.
 

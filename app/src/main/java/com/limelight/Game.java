@@ -417,6 +417,35 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         bottomEdgeStartGestureDetector = new BottomEdgeStartGestureDetector(
                 getResources().getDisplayMetrics().density);
 
+        // Resolve the target display and experimental sideways policy before inflating the render
+        // tree. A TextureView can become available immediately after inflation, so requesting the
+        // physical portrait Activity here prevents a transient landscape Surface from racing stream
+        // startup before Android applies the sideways mode's fixed portrait window.
+        Display currentDisplay = null;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            int displayId = getIntent().getIntExtra(EXTRA_DISPLAY_ID, Display.DEFAULT_DISPLAY);
+            currentDisplay = getSystemService(DisplayManager.class).getDisplay(displayId);
+        }
+        if (currentDisplay == null) {
+            currentDisplay = getWindowManager().getDefaultDisplay();
+        }
+        onExternelDisplay = currentDisplay.getDisplayId() != Display.DEFAULT_DISPLAY;
+
+        activeSidewaysStreamMode = SidewaysStreamMode.resolveSessionMode(
+                prefConfig.sidewaysStreamMode, prefConfig.renderMode, onExternelDisplay);
+        // StreamContainer reads the resolved value, so unsupported renderers/displays retain the
+        // established SurfaceView path.
+        prefConfig.sidewaysStreamMode = activeSidewaysStreamMode;
+        if (isSidewaysStreamActive()) {
+            prefConfig.enablePip = false;
+            if (SidewaysStreamMode.shouldForceSdr(activeSidewaysStreamMode)) {
+                // Rotated TextureView composition is not a reliable HDR presentation path across
+                // Android/vendor stacks. Preserve HDR on the normal SurfaceView path instead.
+                prefConfig.enableHdr = false;
+            }
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        }
+
         // This Activity is the stream-session owner in the current architecture. Reset persistent
         // floating positions exactly once here, before any stream controls are restored.
         FloatingControlPositionStore.beginStreamSession(this);
@@ -454,36 +483,17 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 getResources().getString(R.string.conn_establishing_msg), true);
 
 
-        Display currentDisplay = null;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            int displayId = getIntent().getIntExtra(EXTRA_DISPLAY_ID, Display.DEFAULT_DISPLAY);
-            currentDisplay = getSystemService(DisplayManager.class).getDisplay(displayId);
-        }
-
-        if (currentDisplay == null) {
-            currentDisplay = getWindowManager().getDefaultDisplay();
-        }
-
-        onExternelDisplay = currentDisplay.getDisplayId() != Display.DEFAULT_DISPLAY;
-
         boolean shouldInvertDecoderResolution = false;
 
-        activeSidewaysStreamMode = SidewaysStreamMode.resolveSessionMode(
-                prefConfig.sidewaysStreamMode, prefConfig.renderMode, onExternelDisplay);
-        // StreamContainer reads the session-resolved value so unsupported 3D/external-display
-        // sessions never switch away from the existing SurfaceView path.
-        prefConfig.sidewaysStreamMode = activeSidewaysStreamMode;
         if (sidewaysStreamLayout != null) {
             sidewaysStreamLayout.setSidewaysMode(activeSidewaysStreamMode);
         }
 
         if (isSidewaysStreamActive()) {
-            // Android stays physically portrait; the logical stream canvas remains landscape.
-            prefConfig.enablePip = false;
+            // Android is already physically portrait; Artemis's logical stream stays landscape.
             currentOrientation = Configuration.ORIENTATION_LANDSCAPE;
             displayWidth = prefConfig.width;
             displayHeight = prefConfig.height;
-            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
                 && onExternelDisplay
                 && prefConfig.renderMode == 0 // For 3D we want to maintain configured resolution

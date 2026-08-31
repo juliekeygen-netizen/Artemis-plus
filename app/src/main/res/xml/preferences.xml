@@ -595,7 +595,7 @@
             android:entryValues="@array/sideways_stream_mode_values"
             android:key="list_sideways_stream_mode"
             android:title="Sideways stream orientation (experimental)"
-            android:summary="Keeps the Android stream Activity physically portrait so system bars stay on a short edge, while rotating the 2D stream and in-stream controls into landscape. Ignored for 3D and external displays; PiP and manual stream rotation are disabled while active."
+            android:summary="Experimental 2D/internal-display mode. Keeps Android physically portrait so system bars stay on a short edge while rotating the stream and controls into landscape. Uses TextureView, disables HDR and PiP, and may use slightly more GPU/battery. Ignored for 3D and external displays."
             app:iconSpaceReserved="false" />
         <CheckBoxPreference
             android:defaultValue="false"

@@ -56,6 +56,39 @@ public class SidewaysStreamModeTest {
     }
 
     @Test
+    public void sidewaysTextureViewSessionsForceSdrOnlyWhenActive() {
+        assertFalse(SidewaysStreamMode.shouldForceSdr(SidewaysStreamMode.MODE_OFF));
+        assertTrue(SidewaysStreamMode.shouldForceSdr(SidewaysStreamMode.MODE_CW));
+        assertTrue(SidewaysStreamMode.shouldForceSdr(SidewaysStreamMode.MODE_CCW));
+    }
+
+    @Test
+    public void physicalCornersMapToLogicalLandscapeCorners() {
+        assertPoint(0f, 100f, SidewaysStreamMode.physicalRawToLogical(
+                0f, 0f, 0f, 0f, 100, 200, SidewaysStreamMode.MODE_CW));
+        assertPoint(0f, 0f, SidewaysStreamMode.physicalRawToLogical(
+                100f, 0f, 0f, 0f, 100, 200, SidewaysStreamMode.MODE_CW));
+        assertPoint(200f, 100f, SidewaysStreamMode.physicalRawToLogical(
+                0f, 200f, 0f, 0f, 100, 200, SidewaysStreamMode.MODE_CW));
+        assertPoint(200f, 0f, SidewaysStreamMode.physicalRawToLogical(
+                100f, 200f, 0f, 0f, 100, 200, SidewaysStreamMode.MODE_CW));
+
+        assertPoint(200f, 0f, SidewaysStreamMode.physicalRawToLogical(
+                0f, 0f, 0f, 0f, 100, 200, SidewaysStreamMode.MODE_CCW));
+        assertPoint(200f, 100f, SidewaysStreamMode.physicalRawToLogical(
+                100f, 0f, 0f, 0f, 100, 200, SidewaysStreamMode.MODE_CCW));
+        assertPoint(0f, 0f, SidewaysStreamMode.physicalRawToLogical(
+                0f, 200f, 0f, 0f, 100, 200, SidewaysStreamMode.MODE_CCW));
+        assertPoint(0f, 100f, SidewaysStreamMode.physicalRawToLogical(
+                100f, 200f, 0f, 0f, 100, 200, SidewaysStreamMode.MODE_CCW));
+    }
+
+    private static void assertPoint(float x, float y, SidewaysStreamMode.LogicalPoint point) {
+        assertEquals(x, point.x, 0.001f);
+        assertEquals(y, point.y, 0.001f);
+    }
+
+    @Test
     public void floatingPositionSlotsDoNotCollide() {
         assertEquals("portrait", SidewaysStreamMode.positionSlot(
                 SidewaysStreamMode.MODE_OFF, Configuration.ORIENTATION_PORTRAIT));

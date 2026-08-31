@@ -44,6 +44,11 @@ public final class SidewaysStreamMode {
         return MODE_CW.equals(mode) || MODE_CCW.equals(mode);
     }
 
+    /** Sideways 2D uses TextureView for rotation; keep HDR on the normal SurfaceView path. */
+    public static boolean shouldForceSdr(String mode) {
+        return isActive(mode);
+    }
+
     public static float rotationDegrees(String mode) {
         if (MODE_CW.equals(mode)) {
             return 90f;

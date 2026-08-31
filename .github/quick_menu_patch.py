@@ -62,14 +62,14 @@ if 'public static final int MAX_PAGE_DEPTH = 6;' not in text:
     raise SystemExit('Shared Quick Menu depth limit missing')
 if 'depth < MAX_DEPTH' in text or 'depth > MAX_DEPTH' in text:
     raise SystemExit('Legacy Quick Menu depth limit still referenced')
-if 'counter.nodes++;\n                }\n            }\n        }\n        return page;' not in text:
-    # This broad check only guards against accidentally deleting action-node accounting.
+if 'page.items.add(Node.action(actionId));\n                    counter.nodes++;' not in text:
     raise SystemExit('Quick Menu parser action-node accounting missing')
 path.write_text(text, encoding='utf-8')
 
 # Editor uses the exact same depth constant as persistence and enforces the global tree cap.
 path = Path('app/src/main/java/com/limelight/quickmenu/QuickMenuEditorDialog.java')
 text = path.read_text(encoding='utf-8')
+text = text.replace('import android.widget.Button;\n', '')
 text = text.replace('    private static final int MAX_PAGE_DEPTH = 6;\n\n', '')
 text = text.replace('pageStack.size() - 1 >= MAX_PAGE_DEPTH',
                     'pageStack.size() - 1 >= QuickMenuConfig.MAX_PAGE_DEPTH')
@@ -94,7 +94,7 @@ text = text.replace('import android.content.Context;\n\n', '')
 text = text.replace('''\n    public static String editorLabel(Context context, String id) {\n        ActionDefinition definition = find(id);\n        return definition == null ? id : definition.label;\n    }\n''', '\n')
 path.write_text(text, encoding='utf-8')
 
-# Add direct coverage for the parser cap, including many nested page nodes mixed with actions.
+# Add direct coverage for the parser cap, including many page nodes mixed with actions.
 path = Path('app/src/test/java/com/limelight/quickmenu/QuickMenuConfigTest.java')
 text = path.read_text(encoding='utf-8')
 anchor = '''    @Test\n    public void registryIdsAreUniqueAndResolvable() {'''

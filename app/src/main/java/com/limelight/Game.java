@@ -476,8 +476,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         setContentView(R.layout.activity_game);
         sidewaysStreamLayout = findViewById(R.id.gamePhysicalRoot);
         if (sidewaysStreamLayout != null) {
-            // Apply the logical landscape transform before any stream-session UI (including the
-            // connection spinner) can become visible.
+            // Apply the logical landscape transform before in-root stream UI can become visible.
+            // Separate Android windows (for example the connection spinner) remain physical portrait.
             sidewaysStreamLayout.setSidewaysMode(activeSidewaysStreamMode);
         }
 
@@ -2933,6 +2933,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     public void toggleKeyboard() {
         if (isOnExternalDisplay()) {
             ExternalDisplayControlActivity.toggleKeyboard();
+        } else if (isSidewaysStreamActive()) {
+            // The Android IME belongs to the physically portrait Activity window and therefore
+            // cannot inherit streamVisualRoot's 90-degree transform. Use Artemis's in-stream
+            // keyboard instead so the default keyboard action remains upright in sideways mode.
+            LimeLog.info("Using in-stream keyboard for sideways mode");
+            toggleFullKeyboard();
         } else {
             LimeLog.info("Toggling keyboard overlay");
             InputMethodManager inputManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);

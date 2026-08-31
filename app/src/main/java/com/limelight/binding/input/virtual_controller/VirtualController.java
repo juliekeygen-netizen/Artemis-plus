@@ -17,6 +17,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
+import com.limelight.Game;
 import com.limelight.LimeLog;
 import com.limelight.R;
 import com.limelight.binding.input.ControllerHandler;
@@ -219,11 +220,17 @@ public class VirtualController {
     }
 
     public int getLayoutWidth() {
-        return frame_layout != null ? frame_layout.getWidth() : 0;
+        if (frame_layout != null && frame_layout.getWidth() > 0) return frame_layout.getWidth();
+        DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+        return context instanceof Game && ((Game) context).isSidewaysStreamActive()
+                ? metrics.heightPixels : metrics.widthPixels;
     }
 
     public int getLayoutHeight() {
-        return frame_layout != null ? frame_layout.getHeight() : 0;
+        if (frame_layout != null && frame_layout.getHeight() > 0) return frame_layout.getHeight();
+        DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+        return context instanceof Game && ((Game) context).isSidewaysStreamActive()
+                ? metrics.widthPixels : metrics.heightPixels;
     }
 
     public boolean isSnappingEnabled() {
@@ -272,7 +279,7 @@ public class VirtualController {
 
         DisplayMetrics screen = context.getResources().getDisplayMetrics();
 
-        int buttonSize = (int)(screen.heightPixels*0.06f);
+        int buttonSize = (int)(getLayoutHeight()*0.06f);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(buttonSize, buttonSize);
         params.leftMargin = 15;
         params.topMargin = 15;

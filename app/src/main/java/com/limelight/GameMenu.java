@@ -247,7 +247,7 @@ public class GameMenu implements Game.GameMenuCallbacks {
                         ? R.string.game_menu_disable_zoom_mode
                         : R.string.game_menu_enable_zoom_mode), true, game::toggleZoomMode);
             case StreamActionRegistry.ROTATE_SCREEN:
-                if (dialogScreenContext != game) return null;
+                if (dialogScreenContext != game || game.isSidewaysStreamActive()) return null;
                 return new MenuOption(getString(R.string.game_menu_rotate_screen), true,
                         () -> ArtemisOrientationHelper.rotate(game));
             case StreamActionRegistry.SELECT_MOUSE_MODE:

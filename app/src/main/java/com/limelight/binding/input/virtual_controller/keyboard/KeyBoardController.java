@@ -83,8 +83,8 @@ public class KeyBoardController {
 
     private final List<keyBoardVirtualControllerElement> activeMoveGroup = new ArrayList<>();
     private final List<keyBoardVirtualControllerElement> outlinedGroup = new ArrayList<>();
-    private float groupLastRawX;
-    private float groupLastRawY;
+    private float groupLastPointerX;
+    private float groupLastPointerY;
 
     public KeyBoardController(final NvConnection conn,
                               FrameLayout layout,
@@ -111,8 +111,8 @@ public class KeyBoardController {
         final long configureResetHoldMs = Math.max(1300L, configureLongPressMs + 700L);
         buttonConfigure.setOnClickListener(v -> cycleEditorMode());
         buttonConfigure.setOnTouchListener(new View.OnTouchListener() {
-            private float downRawX;
-            private float downRawY;
+            private float downParentX;
+            private float downParentY;
             private float startViewX;
             private float startViewY;
             private boolean moveArmed;
@@ -158,8 +158,8 @@ public class KeyBoardController {
             public boolean onTouch(View view, MotionEvent event) {
                 switch (event.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
-                        downRawX = event.getRawX();
-                        downRawY = event.getRawY();
+                        downParentX = view.getX() + event.getX();
+                        downParentY = view.getY() + event.getY();
                         startViewX = view.getX();
                         startViewY = view.getY();
                         moveArmed = false;
@@ -171,8 +171,10 @@ public class KeyBoardController {
                         return true;
 
                     case MotionEvent.ACTION_MOVE:
-                        float dx = event.getRawX() - downRawX;
-                        float dy = event.getRawY() - downRawY;
+                        float currentParentX = view.getX() + event.getX();
+                        float currentParentY = view.getY() + event.getY();
+                        float dx = currentParentX - downParentX;
+                        float dy = currentParentY - downParentY;
                         boolean beyondSlop = Math.hypot(dx, dy) > configureTouchSlop;
                         if (beyondSlop) {
                             handler.removeCallbacks(offerReset);
@@ -405,6 +407,20 @@ public class KeyBoardController {
         frame_layout.addView(element, layoutParams);
     }
 
+    public int getLayoutWidth() {
+        if (frame_layout != null && frame_layout.getWidth() > 0) return frame_layout.getWidth();
+        DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+        return context instanceof Game && ((Game) context).isSidewaysStreamActive()
+                ? metrics.heightPixels : metrics.widthPixels;
+    }
+
+    public int getLayoutHeight() {
+        if (frame_layout != null && frame_layout.getHeight() > 0) return frame_layout.getHeight();
+        DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+        return context instanceof Game && ((Game) context).isSidewaysStreamActive()
+                ? metrics.widthPixels : metrics.heightPixels;
+    }
+
     public List<keyBoardVirtualControllerElement> getElements() {
         return elements;
     }
@@ -596,7 +612,7 @@ public class KeyBoardController {
         removeElements();
 
         DisplayMetrics screen = context.getResources().getDisplayMetrics();
-        int oldButtonSize = (int) (screen.heightPixels * 0.06f);
+        int oldButtonSize = (int) (getLayoutHeight() * 0.06f);
         int buttonSize = Math.max(1, Math.round(oldButtonSize * 1.15f));
 
         FrameLayout.LayoutParams configParams = new FrameLayout.LayoutParams(buttonSize, buttonSize);
@@ -881,17 +897,17 @@ public class KeyBoardController {
         return activeMoveGroup.contains(element);
     }
 
-    void beginActiveGroupMove(float rawX, float rawY) {
-        groupLastRawX = rawX;
-        groupLastRawY = rawY;
+    void beginActiveGroupMove(float pointerX, float pointerY) {
+        groupLastPointerX = pointerX;
+        groupLastPointerY = pointerY;
     }
 
-    void moveActiveGroup(float rawX, float rawY) {
+    void moveActiveGroup(float pointerX, float pointerY) {
         if (activeMoveGroup.isEmpty()) {
             return;
         }
-        int dx = Math.round(rawX - groupLastRawX);
-        int dy = Math.round(rawY - groupLastRawY);
+        int dx = Math.round(pointerX - groupLastPointerX);
+        int dy = Math.round(pointerY - groupLastPointerY);
         if (dx == 0 && dy == 0) {
             return;
         }
@@ -914,8 +930,8 @@ public class KeyBoardController {
             p.bottomMargin = 0;
             element.requestLayout();
         }
-        groupLastRawX = rawX;
-        groupLastRawY = rawY;
+        groupLastPointerX = pointerX;
+        groupLastPointerY = pointerY;
         updateGroupOutline();
     }
 

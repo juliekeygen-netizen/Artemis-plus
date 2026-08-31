@@ -343,8 +343,14 @@ public class KeyBoardLayoutController {
             width = widthPreference == 1000 ? ViewGroup.LayoutParams.MATCH_PARENT : dip2px(context, widthPreference);
         } else {
             DisplayMetrics screen = context.getResources().getDisplayMetrics();
-            width = screen.widthPixels;
-            height = (int) (screen.heightPixels * 0.5);
+            int layoutWidth = frame_layout.getWidth() > 0 ? frame_layout.getWidth()
+                    : (context instanceof Game && ((Game) context).isSidewaysStreamActive()
+                    ? screen.heightPixels : screen.widthPixels);
+            int layoutHeight = frame_layout.getHeight() > 0 ? frame_layout.getHeight()
+                    : (context instanceof Game && ((Game) context).isSidewaysStreamActive()
+                    ? screen.widthPixels : screen.heightPixels);
+            width = layoutWidth;
+            height = (int) (layoutHeight * 0.5);
         }
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
         params.gravity = Gravity.BOTTOM;

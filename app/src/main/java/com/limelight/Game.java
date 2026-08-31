@@ -327,6 +327,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private ArrayList<String> serverCommands;
 
     private ViewParent rootView;
+    private FrameLayout gamePhysicalRoot;
+    private FrameLayout gameVisualRoot;
+    private boolean sidewaysStreamActive;
     private ClipboardManager clipboardManager;
     private boolean clipboardSyncRunning = false;
 
@@ -442,6 +445,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         // Inflate the content
         setContentView(R.layout.activity_game);
+        gamePhysicalRoot = findViewById(R.id.gamePhysicalRoot);
+        gameVisualRoot = findViewById(R.id.gameVisualRoot);
 
         clipboardManager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
 
@@ -461,10 +466,29 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
 
         onExternelDisplay = currentDisplay.getDisplayId() != Display.DEFAULT_DISPLAY;
+        sidewaysStreamActive = SidewaysStreamPolicy.shouldApply(
+                prefConfig.sidewaysStreamMode, onExternelDisplay, prefConfig.renderMode);
+        if (sidewaysStreamActive) {
+            // PiP is intentionally disabled for the first sideways POC because PiP is sized in
+            // physical-window coordinates rather than the rotated logical game hierarchy.
+            prefConfig.enablePip = false;
+            FloatingControlPositionStore.setSessionLayoutSlot(
+                    this, SidewaysStreamPolicy.positionSlot(prefConfig.sidewaysStreamMode));
+        } else {
+            FloatingControlPositionStore.clearSessionLayoutSlot(this);
+        }
 
         boolean shouldInvertDecoderResolution = false;
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+        if (sidewaysStreamActive) {
+            // Logical content stays in the configured stream orientation. Only the Android
+            // window is portrait, so never invert the decoder just because the physical
+            // Configuration reports portrait.
+            currentOrientation = Configuration.ORIENTATION_PORTRAIT;
+            displayWidth = prefConfig.width;
+            displayHeight = prefConfig.height;
+            setPreferredOrientationForActivity();
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
                 && onExternelDisplay
                 && prefConfig.renderMode == 0 // For 3D we want to maintain configured resolution
         ) {
@@ -530,6 +554,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         streamContainer.setCommitTextEnabled(prefConfig.enableCommitText);
 
         rootView = streamContainer.getParent();
+        applySidewaysVisualTransform();
 
         //串流画面 顶部居中显示
         if(prefConfig.alignDisplayTopCenter){
@@ -1019,19 +1044,21 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 overlayToggleButton.setOnTouchListener((view, event) -> {
                     switch (event.getAction()) {
                         case MotionEvent.ACTION_DOWN:
-                            zoomButtonStartX = event.getRawX();
-                            zoomButtonStartY = event.getRawY();
-                            zoomButtonDX = view.getX() - event.getRawX();
-                            zoomButtonDY = view.getY() - event.getRawY();
+                            zoomButtonStartX = view.getX() + event.getX();
+                            zoomButtonStartY = view.getY() + event.getY();
+                            zoomButtonDX = -event.getX();
+                            zoomButtonDY = -event.getY();
                             isZoomButtonMoving = false;
                             return true;
                         case MotionEvent.ACTION_MOVE:
-                            float newX = event.getRawX() + zoomButtonDX;
-                            float newY = event.getRawY() + zoomButtonDY;
+                            float zoomPointerX = view.getX() + event.getX();
+                            float zoomPointerY = view.getY() + event.getY();
+                            float newX = zoomPointerX + zoomButtonDX;
+                            float newY = zoomPointerY + zoomButtonDY;
 
                             // Check if it's a move or just a tap
-                            if (Math.abs(event.getRawX() - zoomButtonStartX) > CLICK_ACTION_THRESHOLD ||
-                                    Math.abs(event.getRawY() - zoomButtonStartY) > CLICK_ACTION_THRESHOLD) {
+                            if (Math.abs(zoomPointerX - zoomButtonStartX) > CLICK_ACTION_THRESHOLD ||
+                                    Math.abs(zoomPointerY - zoomButtonStartY) > CLICK_ACTION_THRESHOLD) {
                                 isZoomButtonMoving = true;
                             }
 
@@ -1039,12 +1066,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                             if (newX < 0) newX = 0;
                             if (newY < 0) newY = 0;
 
-                            int maxOffsetX = getWindow().getDecorView().getWidth() - view.getWidth();
+                            int maxOffsetX = ((View) view.getParent()).getWidth() - view.getWidth();
                             if (newX > maxOffsetX) {
                                 newX = maxOffsetX;
                             }
 
-                            int maxOffsetY = getWindow().getDecorView().getHeight() - view.getHeight();
+                            int maxOffsetY = ((View) view.getParent()).getHeight() - view.getHeight();
                             if (newY > maxOffsetY) {
                                 newY = maxOffsetY;
                             }
@@ -1130,19 +1157,21 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             floatingMenuButton.setOnTouchListener((view, event) -> {
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
-                        floatingButtonStartX = event.getRawX();
-                        floatingButtonStartY = event.getRawY();
-                        floatingButtonDX = view.getX() - event.getRawX();
-                        floatingButtonDY = view.getY() - event.getRawY();
+                        floatingButtonStartX = view.getX() + event.getX();
+                        floatingButtonStartY = view.getY() + event.getY();
+                        floatingButtonDX = -event.getX();
+                        floatingButtonDY = -event.getY();
                         isButtonMoving = false;
                         return true;
                     case MotionEvent.ACTION_MOVE:
-                        float newX = event.getRawX() + floatingButtonDX;
-                        float newY = event.getRawY() + floatingButtonDY;
+                        float pointerX = view.getX() + event.getX();
+                        float pointerY = view.getY() + event.getY();
+                        float newX = pointerX + floatingButtonDX;
+                        float newY = pointerY + floatingButtonDY;
 
                         // Check if it's a move or just a tap
-                        if (Math.abs(event.getRawX() - floatingButtonStartX) > CLICK_ACTION_THRESHOLD ||
-                                Math.abs(event.getRawY() - floatingButtonStartY) > CLICK_ACTION_THRESHOLD) {
+                        if (Math.abs(pointerX - floatingButtonStartX) > CLICK_ACTION_THRESHOLD ||
+                                Math.abs(pointerY - floatingButtonStartY) > CLICK_ACTION_THRESHOLD) {
                             isButtonMoving = true;
                         }
 
@@ -1150,12 +1179,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                         if (newX < 0) newX = 0;
                         if (newY < 0) newY = 0;
 
-                        int maxOffsetX = getWindow().getDecorView().getWidth() - view.getWidth();
+                        int maxOffsetX = ((View) view.getParent()).getWidth() - view.getWidth();
                         if (newX > maxOffsetX) {
                             newX = maxOffsetX;
                         }
 
-                        int maxOffsetY = getWindow().getDecorView().getHeight() - view.getHeight();
+                        int maxOffsetY = ((View) view.getParent()).getHeight() - view.getHeight();
                         if (newY > maxOffsetY) {
                             newY = maxOffsetY;
                         }
@@ -1230,7 +1259,56 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         prefConfig.onscreenController= virtualController.switchShowHide() != 0;
     }
 
+    public boolean isSidewaysStreamActive() {
+        return sidewaysStreamActive;
+    }
+
+    private void refreshSidewaysDependentLayouts() {
+        if (!sidewaysStreamActive) return;
+        if (virtualController != null) virtualController.refreshLayout();
+        if (keyBoardController != null) keyBoardController.refreshLayout();
+        if (keyBoardLayoutController != null) keyBoardLayoutController.refreshLayout();
+    }
+
+    private void applySidewaysVisualTransform() {
+        if (gamePhysicalRoot == null || gameVisualRoot == null) return;
+        gamePhysicalRoot.post(() -> {
+            if (isFinishing() || gamePhysicalRoot == null || gameVisualRoot == null) return;
+            int physicalWidth = gamePhysicalRoot.getWidth();
+            int physicalHeight = gamePhysicalRoot.getHeight();
+            if (physicalWidth <= 0 || physicalHeight <= 0) return;
+
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) gameVisualRoot.getLayoutParams();
+            params.gravity = Gravity.CENTER;
+            if (sidewaysStreamActive) {
+                params.width = SidewaysStreamPolicy.logicalWidth(
+                        physicalWidth, physicalHeight, true);
+                params.height = SidewaysStreamPolicy.logicalHeight(
+                        physicalWidth, physicalHeight, true);
+            } else {
+                params.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                params.height = ViewGroup.LayoutParams.MATCH_PARENT;
+            }
+            gameVisualRoot.setLayoutParams(params);
+            gameVisualRoot.setRotation(sidewaysStreamActive
+                    ? SidewaysStreamPolicy.rotationDegrees(prefConfig.sidewaysStreamMode)
+                    : 0f);
+            gameVisualRoot.post(() -> {
+                if (gameVisualRoot == null) return;
+                gameVisualRoot.setPivotX(gameVisualRoot.getWidth() / 2f);
+                gameVisualRoot.setPivotY(gameVisualRoot.getHeight() / 2f);
+                refreshSidewaysDependentLayouts();
+            });
+        });
+    }
+
     private void setPreferredOrientationForActivity() {
+        if (sidewaysStreamActive) {
+            currentOrientation = Configuration.ORIENTATION_PORTRAIT;
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+            return;
+        }
+
         Display display = getActiveDisplay(Game.this, prefConfig);
 
         // For semi-square displays, we use more complex logic to determine which orientation to use (if any)
@@ -1279,6 +1357,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         // Set requested orientation for possible new screen size
         setPreferredOrientationForActivity();
+        applySidewaysVisualTransform();
 
         if (virtualController != null) {
             // Refresh layout of OSC for possible new screen size
@@ -1477,6 +1556,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     @Override
     @TargetApi(Build.VERSION_CODES.R)
     public boolean onPictureInPictureRequested() {
+        if (sidewaysStreamActive) return false;
         // Enter PiP when requested unless we're on Android 12 which supports auto-enter.
         if (autoEnterPip && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             enterPictureInPictureMode(getPictureInPictureParams(false));
@@ -1791,6 +1871,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     protected void onDestroy() {
         super.onDestroy();
 
+        FloatingControlPositionStore.clearSessionLayoutSlot(this);
         instance = null;
         discardBottomEdgeGesture();
         if (bottomEdgeStartGestureDetector != null) {
@@ -2929,7 +3010,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         normalized[1]=normalizedY;
 
         //如果不是全局模式 并且 坐标 不在右边 则返回
-        if(!prefConfig.touchSensitivityGlobal&&normalizedX<getResources().getDisplayMetrics().widthPixels/2){
+        if(!prefConfig.touchSensitivityGlobal&&normalizedX<streamContainer.getWidth()/2.0f){
             return normalized;
         }
         if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
@@ -4861,6 +4942,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     public void rotateScreen() {
+        if (sidewaysStreamActive) return;
         if (currentOrientation == Configuration.ORIENTATION_LANDSCAPE) {
             currentOrientation = Configuration.ORIENTATION_PORTRAIT;
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT);

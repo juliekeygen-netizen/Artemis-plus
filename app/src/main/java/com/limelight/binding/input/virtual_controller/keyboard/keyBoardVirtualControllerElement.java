@@ -84,8 +84,8 @@ public abstract class keyBoardVirtualControllerElement extends View {
     // Stable raw-coordinate resize gesture tracking. Raw coordinates do not change when this View's
     // bounds change, unlike MotionEvent.getX()/getY(), which caused the old grouped scaling to flash.
     private boolean resizeGestureMoved;
-    private float resizeDownRawX;
-    private float resizeDownRawY;
+    private float resizeDownParentX;
+    private float resizeDownParentY;
     private long lastResizeTapUpTime;
     private List<GroupResizeSnapshot> resizeGroup;
     private int resizeGroupOriginX;
@@ -95,8 +95,8 @@ public abstract class keyBoardVirtualControllerElement extends View {
 
     // Move-mode double tap enters explicit group-position mode.
     private boolean moveGestureMoved;
-    private float moveDownRawX;
-    private float moveDownRawY;
+    private float moveDownParentX;
+    private float moveDownParentY;
     private long lastMoveTapUpTime;
     private boolean stickyMoveX;
     private boolean stickyMoveY;
@@ -321,7 +321,7 @@ public abstract class keyBoardVirtualControllerElement extends View {
         resizeGroupBottom = maxBottom;
     }
 
-    private void resizeConnectedGroup(float rawX, float rawY, int localX, int localY) {
+    private void resizeConnectedGroup(float parentX, float parentY, int localX, int localY) {
         if (resizeGroup == null || resizeGroup.size() <= 1) {
             resizeElement(
                     (int) position_pressed_x,
@@ -333,8 +333,8 @@ public abstract class keyBoardVirtualControllerElement extends View {
 
         int groupWidth = Math.max(1, resizeGroupRight - resizeGroupOriginX);
         int groupHeight = Math.max(1, resizeGroupBottom - resizeGroupOriginY);
-        float normalizedX = (rawX - resizeDownRawX) / groupWidth;
-        float normalizedY = (rawY - resizeDownRawY) / groupHeight;
+        float normalizedX = (parentX - resizeDownParentX) / groupWidth;
+        float normalizedY = (parentY - resizeDownParentY) / groupHeight;
         float normalizedDelta = Math.abs(normalizedX) >= Math.abs(normalizedY)
                 ? normalizedX : normalizedY;
         float scale = 1f + normalizedDelta;
@@ -557,22 +557,23 @@ public abstract class keyBoardVirtualControllerElement extends View {
                 startSize_y = getHeight();
 
                 if (virtualController.getControllerMode() == KeyBoardController.ControllerMode.MoveButtons) {
-                    moveDownRawX = event.getRawX();
-                    moveDownRawY = event.getRawY();
+                    moveDownParentX = getX() + event.getX();
+                    moveDownParentY = getY() + event.getY();
                     moveGestureMoved = false;
                     stickyMoveX = false;
                     stickyMoveY = false;
                     if (virtualController.isGroupMoveModeActive()) {
                         if (virtualController.isInActiveMoveGroup(this)) {
-                            virtualController.beginActiveGroupMove(event.getRawX(), event.getRawY());
+                            virtualController.beginActiveGroupMove(
+                                    getX() + event.getX(), getY() + event.getY());
                             actionEnableMove();
                         }
                     } else {
                         actionEnableMove();
                     }
                 } else if (virtualController.getControllerMode() == KeyBoardController.ControllerMode.ResizeButtons) {
-                    resizeDownRawX = event.getRawX();
-                    resizeDownRawY = event.getRawY();
+                    resizeDownParentX = getX() + event.getX();
+                    resizeDownParentY = getY() + event.getY();
                     resizeGestureMoved = false;
                     prepareGroupedResize();
                     actionEnableResize();
@@ -586,11 +587,14 @@ public abstract class keyBoardVirtualControllerElement extends View {
                     case Move:
                         if (virtualController.isGroupMoveModeActive()) {
                             if (virtualController.isInActiveMoveGroup(this)) {
-                                virtualController.moveActiveGroup(event.getRawX(), event.getRawY());
+                                virtualController.moveActiveGroup(
+                                        getX() + event.getX(), getY() + event.getY());
                             }
                         } else {
-                            if (Math.abs(event.getRawX() - moveDownRawX) > touchSlop ||
-                                    Math.abs(event.getRawY() - moveDownRawY) > touchSlop) {
+                            float parentX = getX() + event.getX();
+                            float parentY = getY() + event.getY();
+                            if (Math.abs(parentX - moveDownParentX) > touchSlop ||
+                                    Math.abs(parentY - moveDownParentY) > touchSlop) {
                                 moveGestureMoved = true;
                             }
                             moveElement(
@@ -601,13 +605,15 @@ public abstract class keyBoardVirtualControllerElement extends View {
                         }
                         break;
                     case Resize:
-                        if (Math.abs(event.getRawX() - resizeDownRawX) > touchSlop ||
-                                Math.abs(event.getRawY() - resizeDownRawY) > touchSlop) {
+                        float resizeParentX = getX() + event.getX();
+                        float resizeParentY = getY() + event.getY();
+                        if (Math.abs(resizeParentX - resizeDownParentX) > touchSlop ||
+                                Math.abs(resizeParentY - resizeDownParentY) > touchSlop) {
                             resizeGestureMoved = true;
                         }
                         resizeConnectedGroup(
-                                event.getRawX(),
-                                event.getRawY(),
+                                resizeParentX,
+                                resizeParentY,
                                 (int) event.getX(),
                                 (int) event.getY());
                         break;

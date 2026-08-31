@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.view.Display;
 
+import com.limelight.SidewaysStreamPolicy;
 import com.limelight.nvstream.jni.MoonBridge;
 import com.limelight.profiles.ProfilesManager;
 
@@ -138,6 +139,7 @@ public class PreferenceConfiguration {
 
     private static final String CHECKBOX_ENABLE_COMMIT_TEXT = "checkbox_enable_commit_text";
     private static final String BOTTOM_EDGE_START_GESTURE_PREF_STRING = "list_bottom_edge_start_gesture";
+    private static final String SIDEWAYS_STREAM_MODE_PREF_STRING = SidewaysStreamPolicy.PREF_KEY;
     static final String BACKGROUND_STREAMING_MODE_PREF_STRING = "list_background_streaming_mode";
     static final String BACKGROUND_STREAMING_TIMEOUT_PREF_STRING = "list_background_streaming_timeout";
 
@@ -210,6 +212,7 @@ public class PreferenceConfiguration {
     private static final boolean DEFAULT_TRACKPAD_SWAP_AXIS = false;
     private static final boolean DEFAULT_ENABLE_COMMIT_TEXT = false;
     private static final String DEFAULT_BOTTOM_EDGE_START_GESTURE = "native";
+    private static final String DEFAULT_SIDEWAYS_STREAM_MODE = SidewaysStreamPolicy.MODE_OFF;
     private static final String DEFAULT_BACKGROUND_STREAMING_MODE = BackgroundStreamingPolicy.MODE_DISABLED;
     private static final String DEFAULT_BACKGROUND_STREAMING_TIMEOUT = "120000";
     private static final String DEFAULT_ONSCREEN_KEYBOARD_ALIGN_MODE = "center";
@@ -271,6 +274,7 @@ public class PreferenceConfiguration {
     public boolean enableHdr;
     public boolean enablePip;
     public String bottomEdgeStartGestureMode;
+    public String sidewaysStreamMode;
     public String backgroundStreamingMode;
     public long backgroundStreamingTimeoutMs;
 
@@ -1012,6 +1016,8 @@ private static int getFramePacingValue(Context context) {
         config.trackpadSwapAxis = prefs.getBoolean(CHECKBOX_TRACKPAD_SWAP_AXIS, DEFAULT_TRACKPAD_SWAP_AXIS);
         config.bottomEdgeStartGestureMode = prefs.getString(
                 BOTTOM_EDGE_START_GESTURE_PREF_STRING, DEFAULT_BOTTOM_EDGE_START_GESTURE);
+        config.sidewaysStreamMode = SidewaysStreamPolicy.sanitizeMode(prefs.getString(
+                SIDEWAYS_STREAM_MODE_PREF_STRING, DEFAULT_SIDEWAYS_STREAM_MODE));
         config.backgroundStreamingMode = prefs.getString(
                 BACKGROUND_STREAMING_MODE_PREF_STRING, DEFAULT_BACKGROUND_STREAMING_MODE);
         config.backgroundStreamingTimeoutMs = BackgroundStreamingPolicy.parseTimeoutMillis(

@@ -355,15 +355,16 @@ public class KeyBoardControllerConfigurationLoader {
 
         PreferenceConfiguration config = PreferenceConfiguration.readPreferences(context);
 
-        int height = screen.heightPixels;
+        int layoutWidth = controller.getLayoutWidth() > 0 ? controller.getLayoutWidth() : screen.widthPixels;
+        int height = controller.getLayoutHeight() > 0 ? controller.getLayoutHeight() : screen.heightPixels;
 
-        int rightDisplacement = screen.widthPixels - screen.heightPixels * 16 / 9;
+        int rightDisplacement = layoutWidth - height * 16 / 9;
 
         int BUTTON_SIZE = 10;
 
         int w = screenScale(BUTTON_SIZE, height);
 
-        int maxW = screen.widthPixels / 18;
+        int maxW = layoutWidth / 18;
 
         if (w > maxW) {
             BUTTON_SIZE = screenScaleSwitch(maxW, height);

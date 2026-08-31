@@ -95,6 +95,15 @@
             android:title="@string/title_auto_orientation"
             app:iconSpaceReserved="false" />
 
+        <ListPreference
+            android:defaultValue="off"
+            android:entries="@array/sideways_stream_mode_names"
+            android:entryValues="@array/sideways_stream_mode_values"
+            android:key="list_sideways_stream_mode"
+            android:title="Sideways stream / short-edge system bar (experimental)"
+            android:summary="Keeps the Android stream window physically portrait, then rotates the stream and in-layout Artemis controls 90°. This POC is 2D-only, disables PiP while active, and is ignored on external displays."
+            app:iconSpaceReserved="false" />
+
         <CheckBoxPreference
             android:defaultValue="true"
             android:dependency="checkbox_auto_orientation"

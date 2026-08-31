@@ -89,6 +89,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.PersistableBundle;
+import android.os.PowerManager;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.util.Rational;
@@ -238,6 +239,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private boolean keepAliveFallbackToFastResume;
     private boolean keepAliveServiceStarted;
     private HeadlessVideoSurface keepAliveSurface;
+    private PowerManager.WakeLock keepAliveCpuWakeLock;
     private boolean reportedShortcutUsage;
     private final Runnable fastResumeTimeoutRunnable = () -> {
         if (!fastResumeBackgrounded || isFinishing()) {
@@ -1810,6 +1812,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         keepAliveReturnPending = false;
         timerHandler.removeCallbacks(keepAliveTimeoutRunnable);
         stopKeepAliveService();
+        releaseKeepAliveCpuWakeLock();
         closeKeepAliveSurface();
         stopListeningForExternalDisplayRemoval();
 
@@ -1899,6 +1902,39 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
     }
 
+    private void acquireKeepAliveCpuWakeLock() {
+        if (keepAliveCpuWakeLock == null) {
+            PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (powerManager != null) {
+                keepAliveCpuWakeLock = powerManager.newWakeLock(
+                        PowerManager.PARTIAL_WAKE_LOCK,
+                        getPackageName() + ":KeepConnectionAlive");
+                keepAliveCpuWakeLock.setReferenceCounted(false);
+            }
+        }
+        if (keepAliveCpuWakeLock != null && !keepAliveCpuWakeLock.isHeld()) {
+            try {
+                if (prefConfig != null && prefConfig.backgroundStreamingTimeoutMs > 0) {
+                    keepAliveCpuWakeLock.acquire(prefConfig.backgroundStreamingTimeoutMs + 15_000L);
+                } else {
+                    keepAliveCpuWakeLock.acquire();
+                }
+            } catch (RuntimeException e) {
+                LimeLog.warning("Unable to acquire Keep Alive CPU wake lock: " + e.getMessage());
+            }
+        }
+    }
+
+    private void releaseKeepAliveCpuWakeLock() {
+        if (keepAliveCpuWakeLock != null && keepAliveCpuWakeLock.isHeld()) {
+            try {
+                keepAliveCpuWakeLock.release();
+            } catch (RuntimeException e) {
+                LimeLog.warning("Unable to release Keep Alive CPU wake lock: " + e.getMessage());
+            }
+        }
+    }
+
     private void closeKeepAliveSurface() {
         if (keepAliveSurface != null) {
             keepAliveSurface.close();
@@ -1913,8 +1949,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         keepAliveBackgrounded = false;
         keepAliveReturnPending = false;
         timerHandler.removeCallbacks(keepAliveTimeoutRunnable);
+        releaseKeepAliveCpuWakeLock();
         stopKeepAliveService();
-        closeKeepAliveSurface();
         fastResumeLifecycleArmed = true;
     }
 
@@ -1927,6 +1963,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         keepAliveBackgrounded = true;
         keepAliveReturnPending = false;
         timerHandler.removeCallbacks(keepAliveTimeoutRunnable);
+        acquireKeepAliveCpuWakeLock();
         setInputGrabState(false);
         if (controllerHandler != null) {
             controllerHandler.suspendForReconnect();
@@ -1943,13 +1980,18 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         keepAliveLifecycleArmed = false;
         keepAliveBackgrounded = false;
         keepAliveReturnPending = false;
+        displayedFailureDialog = true;
         if (decoderRenderer != null && (connecting || connected)) {
             decoderRenderer.prepareForStop();
         }
-        stopConnection();
-        closeKeepAliveSurface();
-        stopKeepAliveService();
-        finish();
+        stopConnection(false, () -> {
+            closeKeepAliveSurface();
+            releaseKeepAliveCpuWakeLock();
+            stopKeepAliveService();
+            if (!isFinishing()) {
+                finish();
+            }
+        });
     }
 
     private boolean restoreKeepAliveVisibleSurfaceIfReady() {
@@ -1968,14 +2010,18 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             downgradeKeepAliveToFastResume("decoder rejected return to visible Surface");
             fastResumeBackgrounded = true;
             fastResumeReconnectPending = true;
-            displayedFailureDialog = false;
-            stopConnection(true);
-            decoderRenderer.setRenderTarget(visibleSurface);
-            startFastResumeReconnectIfReady();
+            displayedFailureDialog = true;
+            stopConnection(true, () -> {
+                closeKeepAliveSurface();
+                displayedFailureDialog = false;
+                decoderRenderer.setRenderTarget(visibleSurface);
+                startFastResumeReconnectIfReady();
+            });
             return true;
         }
 
         closeKeepAliveSurface();
+        releaseKeepAliveCpuWakeLock();
         keepAliveLifecycleArmed = false;
         keepAliveBackgrounded = false;
         keepAliveReturnPending = false;
@@ -3981,10 +4027,14 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private void stopConnection() {
-        stopConnection(false);
+        stopConnection(false, null);
     }
 
     private void stopConnection(boolean preserveControllerStateForReconnect) {
+        stopConnection(preserveControllerStateForReconnect, null);
+    }
+
+    private void stopConnection(boolean preserveControllerStateForReconnect, Runnable onStopped) {
         stopKeepAliveService();
         if (connecting || connected) {
             connecting = connected = false;
@@ -4024,8 +4074,13 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                             Game.this.runOnUiThread(() -> Toast.makeText(Game.this, e.getMessage(), Toast.LENGTH_LONG).show());
                         }
                     }
+                    if (onStopped != null) {
+                        Game.this.runOnUiThread(onStopped);
+                    }
                 }
             }.start();
+        } else if (onStopped != null) {
+            runOnUiThread(onStopped);
         }
     }
 
@@ -4373,6 +4428,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                     fastResumeBackgrounded = false;
                     fastResumeReconnectPending = false;
                     timerHandler.removeCallbacks(fastResumeTimeoutRunnable);
+                    closeKeepAliveSurface();
+                    releaseKeepAliveCpuWakeLock();
                 }
                 if (reconnectOverlay != null) {
                     reconnectOverlay.hide();
@@ -4604,6 +4661,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 }
 
                 downgradeKeepAliveToFastResume("decoder rejected headless Surface");
+                closeKeepAliveSurface();
             }
 
             // Let the decoder know immediately that the surface is gone.

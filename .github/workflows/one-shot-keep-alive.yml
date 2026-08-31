@@ -21,8 +21,8 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Apply final Keep Alive audit pass
-        run: python3 .github/keep_alive_audit4_patch.py
+      - name: Apply Keep Alive fallback audit
+        run: python3 .github/keep_alive_audit5_patch.py
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -62,5 +62,5 @@ jobs:
             echo "No product changes to commit"
             exit 0
           fi
-          git commit -m "feat: finalize Keep Connection Alive lifecycle hardening"
+          git commit -m "feat: fix Keep Alive fallback transition semantics"
           git push origin feature/background-keep-alive-poc

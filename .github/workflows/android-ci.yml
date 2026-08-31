@@ -63,6 +63,7 @@ jobs:
           --tests "com.limelight.preferences.BackgroundStreamingPolicyTest"
           --tests "com.limelight.GameActivityManifestTest"
           --tests "com.limelight.preferences.StreamSettingsFragmentLifecycleTest"
+          --tests "com.limelight.quickmenu.QuickMenuConfigTest"
           --stacktrace
 
       - name: Run full inherited unit suite (diagnostic)

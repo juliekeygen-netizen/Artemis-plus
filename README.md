@@ -76,10 +76,10 @@ The gamepad OSC now has a basic multi-profile system:
 - Existing Artemis `OSC` layout data remains compatible; Artemis Plus snapshots/restores profiles around the original format rather than replacing it.
 - Invalid/missing profile metadata is repaired back to a valid `Default` state instead of leaving stale profile references behind.
 - Switching profiles while Move/Resize/Enable mode is active preserves that editor mode correctly.
+- Profiles can be assigned to an individual streamed PC/app combination; future launches automatically activate the mapped profile before the OSC becomes visible.
+- Per-game mappings can be changed or cleared from the same profile menu, and stale mappings are repaired automatically if their profile no longer exists.
 
-**Usage:** long-press the gamepad OSC settings gear to open **OSC Profiles**. A normal tap on the gear still cycles through enable/disable, move, resize, and active modes as before.
-
-Per-game profile metadata support is being laid down internally, but automatic per-game selection and its UI are **not wired yet**.
+**Usage:** long-press the gamepad OSC settings gear to open **OSC Profiles**. A normal tap on the gear still cycles through enable/disable, move, resize, and active modes as before. Use **Auto profile for _game_** in the profile menu to choose the layout that should load automatically for the current PC/app.
 
 ## Floating Artemis Action buttons
 
@@ -147,7 +147,6 @@ The Marssvoodoo base already contained much of Diana's useful keyboard-OSC work,
 
 The current pass intentionally does **not** include everything from Diana or every planned Artemis Plus UI refinement:
 
-- Automatic per-game OSC profile selection/UI
 - Artemis Action entries in custom-key import/export files
 - Final localization/menu polish
 - Diana's foldable cover-screen trigger controller and analog trigger emulation
@@ -228,7 +227,7 @@ GitHub Actions uses the non-root debug variant as the main verification target:
 
 The inherited test baseline currently contains five known Robolectric failures across `LayoutInflationTest`, `SimpleStartupTest`, `StartupTest`, and `ProfilesNavigationTest`. The second audit reproduced the same five failures from the **pre-OSC base commit** (`f5587a81d73bf2501b68f1e5a48ca736aa5520a2`), proving they were not introduced by the Artemis Plus OSC changes. They remain visible in CI reports instead of being hidden, but do not make unrelated OSC commits fail their gate.
 
-Dedicated Artemis Plus regression coverage currently includes profile metadata recovery, profile lifecycle behavior, direct-press-only safety for local Artemis Action buttons, and state-aware icon switching for the Custom Buttons toggle.
+Dedicated Artemis Plus regression coverage currently includes profile metadata recovery and lifecycle behavior, per-game OSC mapping/key persistence and cleanup, direct-press-only safety for local Artemis Action buttons, and state-aware icon switching for the Custom Buttons toggle.
 
 ## Credits
 

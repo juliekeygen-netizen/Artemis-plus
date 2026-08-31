@@ -78,6 +78,9 @@ public class VirtualController {
     private boolean snappingEnabled;
     private boolean pairedSizingEnabled;
     private boolean shown;
+    private String gameProfileKey;
+    private String gameDisplayName;
+    private boolean gameProfileSelectionApplied;
 
     public VirtualController(final ControllerHandler controllerHandler, FrameLayout layout, final Context context) {
         this.controllerHandler = controllerHandler;
@@ -96,6 +99,19 @@ public class VirtualController {
             defaultVibrationEffect = VibrationEffect.createOneShot(10, VibrationEffect.DEFAULT_AMPLITUDE);
         } else {
             defaultVibrationEffect = null;
+        }
+
+        if (context instanceof Game) {
+            Game game = (Game) context;
+            gameProfileKey = OscGameProfileKey.build(
+                    game.getIntent().getStringExtra(Game.EXTRA_PC_UUID),
+                    game.getIntent().getStringExtra(Game.EXTRA_HOST),
+                    game.getIntent().getStringExtra(Game.EXTRA_APP_UUID),
+                    game.getIntent().getIntExtra(Game.EXTRA_APP_ID, -1));
+            String appName = game.getIntent().getStringExtra(Game.EXTRA_APP_NAME);
+            if (appName != null && !appName.trim().isEmpty()) {
+                gameDisplayName = appName.trim();
+            }
         }
 
         buttonConfigure = new Button(context);
@@ -150,6 +166,16 @@ public class VirtualController {
     }
 
     public void show() {
+        // Apply a saved game mapping only once, after the legacy OSC working set has been loaded by
+        // refreshLayout() but before this controller becomes visible. switchProfile() can therefore
+        // snapshot the real current layout safely and rebuild directly into the mapped profile.
+        if (!gameProfileSelectionApplied) {
+            gameProfileSelectionApplied = true;
+            if (gameProfileKey != null) {
+                OscProfilesManager.activateProfileForGame(context, this, gameProfileKey);
+            }
+        }
+
         shown = true;
         showEnabledElements();
 
@@ -158,6 +184,14 @@ public class VirtualController {
 
     public boolean isShown() {
         return shown;
+    }
+
+    String getGameProfileKey() {
+        return gameProfileKey;
+    }
+
+    String getGameDisplayName() {
+        return gameDisplayName;
     }
 
     public int switchShowHide() {

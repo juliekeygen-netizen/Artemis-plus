@@ -194,14 +194,33 @@ public final class OscProfilesManager {
         return true;
     }
 
+    public static synchronized boolean clearProfileForGame(Context context, String gameKey) {
+        if (gameKey == null || gameKey.trim().isEmpty()) {
+            return false;
+        }
+        getMetaPreferences(context)
+                .edit()
+                .remove(KEY_GAME_PROFILE_PREFIX + gameKey)
+                .apply();
+        return true;
+    }
+
     public static synchronized String getProfileForGame(Context context, String gameKey) {
         if (gameKey == null || gameKey.trim().isEmpty()) {
             return null;
         }
-        String profileId = getMetaPreferences(context).getString(
-                KEY_GAME_PROFILE_PREFIX + gameKey,
-                null);
-        return findById(getProfiles(context), profileId) != null ? profileId : null;
+        SharedPreferences meta = getMetaPreferences(context);
+        String preferenceKey = KEY_GAME_PROFILE_PREFIX + gameKey;
+        String profileId = meta.getString(preferenceKey, null);
+        if (findById(getProfiles(context), profileId) != null) {
+            return profileId;
+        }
+
+        // Repair stale/corrupt mappings immediately so they do not linger forever.
+        if (profileId != null) {
+            meta.edit().remove(preferenceKey).apply();
+        }
+        return null;
     }
 
     public static synchronized boolean activateProfileForGame(Context context,

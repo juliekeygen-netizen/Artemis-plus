@@ -53,6 +53,7 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
     private TextureView mTextureView;
     private View mRenderView;
     private Surface mTextureSurface;
+    private SurfaceTexture mAttachedSurfaceTexture;
     private Surface mCurrentSurface;
     private Runnable onSurfaceAvailable;
     private StreamMode renderMode = null;
@@ -123,12 +124,7 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
         mTextureView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
             @Override
             public void onSurfaceTextureAvailable(SurfaceTexture surfaceTexture, int width, int height) {
-                closeTextureSurface();
-                mTextureSurface = new Surface(surfaceTexture);
-                mCurrentSurface = mTextureSurface;
-                game.streamSurfaceCreated(mTextureSurface);
-                notifySurfaceReady();
-                game.streamSurfaceChanged(PixelFormat.RGBA_8888, width, height);
+                attachSidewaysTexture(surfaceTexture, width, height);
             }
 
             @Override
@@ -140,6 +136,11 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
 
             @Override
             public boolean onSurfaceTextureDestroyed(SurfaceTexture surfaceTexture) {
+                // Ignore a stale destroy callback for a producer that is no longer our active
+                // render target. This is defensive against vendor TextureView callback ordering.
+                if (mAttachedSurfaceTexture != surfaceTexture) {
+                    return true;
+                }
                 isSurfaceReady = false;
                 if (mCurrentSurface != null) {
                     game.streamSurfaceDestroyed();
@@ -156,13 +157,49 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
         addView(mTextureView, childParams);
 
         if (mTextureView.isAvailable() && mTextureView.getSurfaceTexture() != null) {
-            SurfaceTexture texture = mTextureView.getSurfaceTexture();
-            mTextureSurface = new Surface(texture);
-            mCurrentSurface = mTextureSurface;
-            game.streamSurfaceCreated(mTextureSurface);
-            notifySurfaceReady();
-            game.streamSurfaceChanged(PixelFormat.RGBA_8888,
+            attachSidewaysTexture(mTextureView.getSurfaceTexture(),
                     mTextureView.getWidth(), mTextureView.getHeight());
+        }
+    }
+
+    /**
+     * Attach one TextureView producer exactly once. Some vendor implementations can make the
+     * TextureView already available during init and still deliver an availability callback.
+     * Releasing/re-wrapping that same SurfaceTexture after MediaCodec starts would risk replacing
+     * the Java Surface wrapper underneath a live decoder, so duplicate callbacks are idempotent.
+     */
+    private void attachSidewaysTexture(SurfaceTexture surfaceTexture, int width, int height) {
+        if (surfaceTexture == null) {
+            return;
+        }
+        if (mAttachedSurfaceTexture == surfaceTexture && mTextureSurface != null &&
+                mTextureSurface.isValid()) {
+            mCurrentSurface = mTextureSurface;
+            if (!isSurfaceReady) {
+                notifySurfaceReady();
+            }
+            if (width > 0 && height > 0) {
+                game.streamSurfaceChanged(PixelFormat.RGBA_8888, width, height);
+            }
+            return;
+        }
+
+        // A genuinely different producer should normally arrive only after the previous destroy
+        // callback. If a vendor skips that callback, explicitly end the old visible-surface
+        // lifecycle before releasing our wrapper so Fast Resume/Keep Alive can transition safely.
+        if (mCurrentSurface != null) {
+            isSurfaceReady = false;
+            game.streamSurfaceDestroyed();
+            mCurrentSurface = null;
+        }
+        closeTextureSurface();
+        mAttachedSurfaceTexture = surfaceTexture;
+        mTextureSurface = new Surface(surfaceTexture);
+        mCurrentSurface = mTextureSurface;
+        game.streamSurfaceCreated(mTextureSurface);
+        notifySurfaceReady();
+        if (width > 0 && height > 0) {
+            game.streamSurfaceChanged(PixelFormat.RGBA_8888, width, height);
         }
     }
 
@@ -352,6 +389,7 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
             }
             mTextureSurface = null;
         }
+        mAttachedSurfaceTexture = null;
     }
 
     public void onDestroy() {

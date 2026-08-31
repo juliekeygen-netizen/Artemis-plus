@@ -27,8 +27,8 @@ failures.
 - Task branch: `audit/regression-coverage-gap`
 - Product commit: `41702e4c8995819d8573dbde03b4b1b013a0a598`
 - Current handoff commit: this commit (the PR tip includes this packet)
-- Pull request: pending publication
-- PR state: local validation complete; ready to push and open for review
+- Pull request: [#15 — Cover quick menu and OSC profile boundaries](https://github.com/juliekeygen-netizen/Artemis-plus/pull/15)
+- PR state: open; `build` and `verify` GitHub Actions checks are in progress at the time of update
 
 ### Scope completed
 
@@ -76,7 +76,7 @@ user-supplied profile names.
 
 ### GitHub Actions / release
 
-- CI result: not yet run; branch has not been pushed at handoff creation.
+- CI result: `build` and two `verify` checks are in progress at the time of this update.
 - APK/release publication: not requested and not performed.
 - Signing material/configuration: untouched.
 

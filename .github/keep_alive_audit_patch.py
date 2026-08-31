@@ -25,8 +25,15 @@ def replace_once(path, old, new):
 # excluded from Recents, so removing this flag doesn't change normal stream exit behavior.
 replace_once(
     'app/src/main/AndroidManifest.xml',
-    '            android:noHistory="true"\n',
-    '')
+    '''        <activity
+            android:name=".Game"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection"
+            android:noHistory="true"
+            android:supportsPictureInPicture="true"''',
+    '''        <activity
+            android:name=".Game"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection"
+            android:supportsPictureInPicture="true"''')
 
 game = 'app/src/main/java/com/limelight/Game.java'
 

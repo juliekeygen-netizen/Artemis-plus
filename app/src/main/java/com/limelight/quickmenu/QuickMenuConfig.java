@@ -17,7 +17,7 @@ public final class QuickMenuConfig {
     private static final String PREFS_NAME = "quick_menu_config";
     private static final String KEY_CONFIG = "config_v1";
     private static final int MAX_DEPTH = 6;
-    private static final int MAX_TOTAL_NODES = 128;
+    public static final int MAX_TOTAL_NODES = 128;
     private static final int MAX_TITLE_LENGTH = 48;
 
     public static final String TYPE_ACTION = "action";
@@ -232,7 +232,7 @@ public final class QuickMenuConfig {
         if (page != null) page.title = normalizeTitle(title, page.title);
     }
 
-    private static int countNodes(Page page) {
+    public static int countNodes(Page page) {
         if (page == null) return 0;
         int total = 0;
         for (Node node : page.items) {

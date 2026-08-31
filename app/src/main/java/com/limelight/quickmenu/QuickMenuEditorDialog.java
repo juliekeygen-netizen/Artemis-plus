@@ -142,6 +142,10 @@ public final class QuickMenuEditorDialog {
 
             addAction.setOnClickListener(v -> showActionPicker());
             addPage.setOnClickListener(v -> {
+                if (QuickMenuConfig.countNodes(config.root) >= QuickMenuConfig.MAX_TOTAL_NODES) {
+                    Toast.makeText(app, "Quick Menu item limit reached", Toast.LENGTH_SHORT).show();
+                    return;
+                }
                 if (pageStack.size() - 1 >= MAX_PAGE_DEPTH) {
                     Toast.makeText(app, "Maximum Quick Menu nesting reached", Toast.LENGTH_SHORT).show();
                     return;
@@ -356,6 +360,10 @@ public final class QuickMenuEditorDialog {
             params.setMargins(0, ArtemisEditorUi.dp(ui, 2), 0, ArtemisEditorUi.dp(ui, 2));
             row.setLayoutParams(params);
             row.setOnClickListener(v -> {
+                if (QuickMenuConfig.countNodes(config.root) >= QuickMenuConfig.MAX_TOTAL_NODES) {
+                    Toast.makeText(app, "Quick Menu item limit reached", Toast.LENGTH_SHORT).show();
+                    return;
+                }
                 if (QuickMenuConfig.addAction(currentPage(), action.id)) {
                     save();
                     refresh();

@@ -286,13 +286,17 @@ public class GameMenu implements Game.GameMenuCallbacks {
         }
     }
 
-    private void showConfiguredPage(QuickMenuConfig.Page page, GameInputDevice device) {
+    private void showConfiguredPage(QuickMenuConfig.Page page, GameInputDevice device, Runnable backAction) {
         List<MenuOption> options = new ArrayList<>();
+        if (backAction != null) {
+            options.add(new MenuOption("‹ Back", true, backAction));
+        }
         for (QuickMenuConfig.Node node : page.items) {
             if (node == null) continue;
             if (node.isPage()) {
                 options.add(new MenuOption(node.page.title, true,
-                        () -> showConfiguredPage(node.page, device)));
+                        () -> showConfiguredPage(node.page, device,
+                                () -> showConfiguredPage(page, device, backAction))));
             } else if (node.isAction()) {
                 if (StreamActionRegistry.DEVICE_ACTIONS.equals(node.actionId)) {
                     if (device != null) {
@@ -311,7 +315,7 @@ public class GameMenu implements Game.GameMenuCallbacks {
 
     public void showMenu(GameInputDevice device) {
         QuickMenuConfig config = QuickMenuConfig.load(game);
-        showConfiguredPage(config.root, device);
+        showConfiguredPage(config.root, device, null);
     }
 
     @Override

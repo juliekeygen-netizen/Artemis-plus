@@ -613,6 +613,14 @@ public class KeyBoardController {
         return SidewaysStreamMode.logicalHeight(screen.widthPixels, screen.heightPixels, mode);
     }
 
+    int getLayoutWidth() {
+        return logicalLayoutWidth();
+    }
+
+    int getLayoutHeight() {
+        return logicalLayoutHeight();
+    }
+
     private void resetConfigureButtonPosition() {
         FloatingControlPositionStore.clearCurrentOrientation(context, SETTINGS_POSITION_ID);
         if (buttonConfigure == null) return;

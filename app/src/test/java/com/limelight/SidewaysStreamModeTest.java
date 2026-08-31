@@ -89,6 +89,14 @@ public class SidewaysStreamModeTest {
     }
 
     @Test
+    public void logicalChildPositionClampUsesParentCoordinateSpace() {
+        assertEquals(0f, SidewaysStreamMode.clampChildPosition(-20f, 200, 40), 0.001f);
+        assertEquals(75f, SidewaysStreamMode.clampChildPosition(75f, 200, 40), 0.001f);
+        assertEquals(160f, SidewaysStreamMode.clampChildPosition(190f, 200, 40), 0.001f);
+        assertEquals(0f, SidewaysStreamMode.clampChildPosition(20f, 30, 40), 0.001f);
+    }
+
+    @Test
     public void floatingPositionSlotsDoNotCollide() {
         assertEquals("portrait", SidewaysStreamMode.positionSlot(
                 SidewaysStreamMode.MODE_OFF, Configuration.ORIENTATION_PORTRAIT));

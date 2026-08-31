@@ -1074,15 +1074,17 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                             if (newX < 0) newX = 0;
                             if (newY < 0) newY = 0;
 
-                            int maxOffsetX = getWindow().getDecorView().getWidth() - view.getWidth();
-                            if (newX > maxOffsetX) {
-                                newX = maxOffsetX;
-                            }
-
-                            int maxOffsetY = getWindow().getDecorView().getHeight() - view.getHeight();
-                            if (newY > maxOffsetY) {
-                                newY = maxOffsetY;
-                            }
+                            ViewParent dragParent = view.getParent();
+                            int parentWidth = dragParent instanceof View
+                                    ? ((View) dragParent).getWidth()
+                                    : getWindow().getDecorView().getWidth();
+                            int parentHeight = dragParent instanceof View
+                                    ? ((View) dragParent).getHeight()
+                                    : getWindow().getDecorView().getHeight();
+                            newX = SidewaysStreamMode.clampChildPosition(
+                                    newX, parentWidth, view.getWidth());
+                            newY = SidewaysStreamMode.clampChildPosition(
+                                    newY, parentHeight, view.getHeight());
 
                             view.setX(newX);
                             view.setY(newY);
@@ -1185,15 +1187,17 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                         if (newX < 0) newX = 0;
                         if (newY < 0) newY = 0;
 
-                        int maxOffsetX = getWindow().getDecorView().getWidth() - view.getWidth();
-                        if (newX > maxOffsetX) {
-                            newX = maxOffsetX;
-                        }
-
-                        int maxOffsetY = getWindow().getDecorView().getHeight() - view.getHeight();
-                        if (newY > maxOffsetY) {
-                            newY = maxOffsetY;
-                        }
+                        ViewParent dragParent = view.getParent();
+                        int parentWidth = dragParent instanceof View
+                                ? ((View) dragParent).getWidth()
+                                : getWindow().getDecorView().getWidth();
+                        int parentHeight = dragParent instanceof View
+                                ? ((View) dragParent).getHeight()
+                                : getWindow().getDecorView().getHeight();
+                        newX = SidewaysStreamMode.clampChildPosition(
+                                newX, parentWidth, view.getWidth());
+                        newY = SidewaysStreamMode.clampChildPosition(
+                                newY, parentHeight, view.getHeight());
 
                         view.setX(newX);
                         view.setY(newY);

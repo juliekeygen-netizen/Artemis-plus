@@ -67,6 +67,12 @@ public final class SidewaysStreamMode {
         return isActive(mode) ? physicalWidth : physicalHeight;
     }
 
+    /** Maximum top/left coordinate that keeps a child fully inside its logical parent. */
+    public static float clampChildPosition(float position, int parentSize, int childSize) {
+        int max = Math.max(0, parentSize - childSize);
+        return Math.max(0f, Math.min(position, max));
+    }
+
     /**
      * Converts absolute screen/raw coordinates into coordinates in the rotated logical stream root.
      * Values are intentionally not clamped because drag/gesture delta calculations must continue to

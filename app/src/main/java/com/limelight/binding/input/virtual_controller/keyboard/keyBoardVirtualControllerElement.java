@@ -16,6 +16,9 @@ import android.view.View;
 import android.view.ViewConfiguration;
 import android.widget.FrameLayout;
 
+import com.limelight.Game;
+import com.limelight.SidewaysStreamMode;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -539,6 +542,14 @@ public abstract class keyBoardVirtualControllerElement extends View {
         alert.show();
     }
 
+    private SidewaysStreamMode.LogicalPoint mapRaw(MotionEvent event) {
+        Game game = Game.instance;
+        if (game != null) {
+            return game.mapRawToStreamCoordinates(event.getRawX(), event.getRawY());
+        }
+        return new SidewaysStreamMode.LogicalPoint(event.getRawX(), event.getRawY());
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         if (event.getActionIndex() != 0) {
@@ -551,28 +562,29 @@ public abstract class keyBoardVirtualControllerElement extends View {
 
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN: {
+                SidewaysStreamMode.LogicalPoint rawPoint = mapRaw(event);
                 position_pressed_x = event.getX();
                 position_pressed_y = event.getY();
                 startSize_x = getWidth();
                 startSize_y = getHeight();
 
                 if (virtualController.getControllerMode() == KeyBoardController.ControllerMode.MoveButtons) {
-                    moveDownRawX = event.getRawX();
-                    moveDownRawY = event.getRawY();
+                    moveDownRawX = rawPoint.x;
+                    moveDownRawY = rawPoint.y;
                     moveGestureMoved = false;
                     stickyMoveX = false;
                     stickyMoveY = false;
                     if (virtualController.isGroupMoveModeActive()) {
                         if (virtualController.isInActiveMoveGroup(this)) {
-                            virtualController.beginActiveGroupMove(event.getRawX(), event.getRawY());
+                            virtualController.beginActiveGroupMove(rawPoint.x, rawPoint.y);
                             actionEnableMove();
                         }
                     } else {
                         actionEnableMove();
                     }
                 } else if (virtualController.getControllerMode() == KeyBoardController.ControllerMode.ResizeButtons) {
-                    resizeDownRawX = event.getRawX();
-                    resizeDownRawY = event.getRawY();
+                    resizeDownRawX = rawPoint.x;
+                    resizeDownRawY = rawPoint.y;
                     resizeGestureMoved = false;
                     prepareGroupedResize();
                     actionEnableResize();
@@ -582,15 +594,16 @@ public abstract class keyBoardVirtualControllerElement extends View {
                 return true;
             }
             case MotionEvent.ACTION_MOVE: {
+                SidewaysStreamMode.LogicalPoint rawPoint = mapRaw(event);
                 switch (currentMode) {
                     case Move:
                         if (virtualController.isGroupMoveModeActive()) {
                             if (virtualController.isInActiveMoveGroup(this)) {
-                                virtualController.moveActiveGroup(event.getRawX(), event.getRawY());
+                                virtualController.moveActiveGroup(rawPoint.x, rawPoint.y);
                             }
                         } else {
-                            if (Math.abs(event.getRawX() - moveDownRawX) > touchSlop ||
-                                    Math.abs(event.getRawY() - moveDownRawY) > touchSlop) {
+                            if (Math.abs(rawPoint.x - moveDownRawX) > touchSlop ||
+                                    Math.abs(rawPoint.y - moveDownRawY) > touchSlop) {
                                 moveGestureMoved = true;
                             }
                             moveElement(
@@ -601,13 +614,13 @@ public abstract class keyBoardVirtualControllerElement extends View {
                         }
                         break;
                     case Resize:
-                        if (Math.abs(event.getRawX() - resizeDownRawX) > touchSlop ||
-                                Math.abs(event.getRawY() - resizeDownRawY) > touchSlop) {
+                        if (Math.abs(rawPoint.x - resizeDownRawX) > touchSlop ||
+                                Math.abs(rawPoint.y - resizeDownRawY) > touchSlop) {
                             resizeGestureMoved = true;
                         }
                         resizeConnectedGroup(
-                                event.getRawX(),
-                                event.getRawY(),
+                                rawPoint.x,
+                                rawPoint.y,
                                 (int) event.getX(),
                                 (int) event.getY());
                         break;

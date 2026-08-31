@@ -351,19 +351,21 @@ public class KeyBoardControllerConfigurationLoader {
 
     public static void createDefaultLayout(final KeyBoardController controller, final Context context, final NvConnection conn) {
 
-        DisplayMetrics screen = context.getResources().getDisplayMetrics();
-
         PreferenceConfiguration config = PreferenceConfiguration.readPreferences(context);
 
-        int height = screen.heightPixels;
+        // This controller lives inside the logical stream root. In sideways mode Android's
+        // Resources metrics are physical portrait dimensions, so using them here would build the
+        // actual keys in a different coordinate space from the editor chrome.
+        int logicalWidth = controller.getLayoutWidth();
+        int height = controller.getLayoutHeight();
 
-        int rightDisplacement = screen.widthPixels - screen.heightPixels * 16 / 9;
+        int rightDisplacement = logicalWidth - height * 16 / 9;
 
         int BUTTON_SIZE = 10;
 
         int w = screenScale(BUTTON_SIZE, height);
 
-        int maxW = screen.widthPixels / 18;
+        int maxW = logicalWidth / 18;
 
         if (w > maxW) {
             BUTTON_SIZE = screenScaleSwitch(maxW, height);

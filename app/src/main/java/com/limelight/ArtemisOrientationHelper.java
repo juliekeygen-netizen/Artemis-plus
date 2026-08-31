@@ -38,7 +38,8 @@ public final class ArtemisOrientationHelper {
     }
 
     public static boolean rotate(Game game) {
-        if (game == null || game.isFinishing() || game.isDestroyed() || game.isOnExternalDisplay()) {
+        if (game == null || game.isFinishing() || game.isDestroyed() || game.isOnExternalDisplay() ||
+                game.isSidewaysStreamActive()) {
             return false;
         }
 

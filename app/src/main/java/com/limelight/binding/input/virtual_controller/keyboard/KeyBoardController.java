@@ -28,6 +28,7 @@ import android.widget.Toast;
 import androidx.preference.PreferenceManager;
 
 import com.limelight.Game;
+import com.limelight.SidewaysStreamMode;
 import com.limelight.ui.ArtemisEditorUi;
 import com.limelight.ui.FloatingControlPositionStore;
 import com.limelight.R;
@@ -158,8 +159,9 @@ public class KeyBoardController {
             public boolean onTouch(View view, MotionEvent event) {
                 switch (event.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
-                        downRawX = event.getRawX();
-                        downRawY = event.getRawY();
+                        SidewaysStreamMode.LogicalPoint downPoint = mapRaw(event);
+                        downRawX = downPoint.x;
+                        downRawY = downPoint.y;
                         startViewX = view.getX();
                         startViewY = view.getY();
                         moveArmed = false;
@@ -171,8 +173,9 @@ public class KeyBoardController {
                         return true;
 
                     case MotionEvent.ACTION_MOVE:
-                        float dx = event.getRawX() - downRawX;
-                        float dy = event.getRawY() - downRawY;
+                        SidewaysStreamMode.LogicalPoint movePoint = mapRaw(event);
+                        float dx = movePoint.x - downRawX;
+                        float dy = movePoint.y - downRawY;
                         boolean beyondSlop = Math.hypot(dx, dy) > configureTouchSlop;
                         if (beyondSlop) {
                             handler.removeCallbacks(offerReset);
@@ -584,6 +587,40 @@ public class KeyBoardController {
         }
     }
 
+    private SidewaysStreamMode.LogicalPoint mapRaw(MotionEvent event) {
+        Game game = Game.instance;
+        if (game != null) {
+            return game.mapRawToStreamCoordinates(event.getRawX(), event.getRawY());
+        }
+        return new SidewaysStreamMode.LogicalPoint(event.getRawX(), event.getRawY());
+    }
+
+    private int logicalLayoutWidth() {
+        if (frame_layout.getWidth() > 0) return frame_layout.getWidth();
+        DisplayMetrics screen = context.getResources().getDisplayMetrics();
+        String mode = Game.instance != null
+                ? Game.instance.getActiveSidewaysStreamMode()
+                : SidewaysStreamMode.MODE_OFF;
+        return SidewaysStreamMode.logicalWidth(screen.widthPixels, screen.heightPixels, mode);
+    }
+
+    private int logicalLayoutHeight() {
+        if (frame_layout.getHeight() > 0) return frame_layout.getHeight();
+        DisplayMetrics screen = context.getResources().getDisplayMetrics();
+        String mode = Game.instance != null
+                ? Game.instance.getActiveSidewaysStreamMode()
+                : SidewaysStreamMode.MODE_OFF;
+        return SidewaysStreamMode.logicalHeight(screen.widthPixels, screen.heightPixels, mode);
+    }
+
+    int getLayoutWidth() {
+        return logicalLayoutWidth();
+    }
+
+    int getLayoutHeight() {
+        return logicalLayoutHeight();
+    }
+
     private void resetConfigureButtonPosition() {
         FloatingControlPositionStore.clearCurrentOrientation(context, SETTINGS_POSITION_ID);
         if (buttonConfigure == null) return;
@@ -595,8 +632,9 @@ public class KeyBoardController {
         KeyboardProfilesManager.ensureInitialized(context);
         removeElements();
 
-        DisplayMetrics screen = context.getResources().getDisplayMetrics();
-        int oldButtonSize = (int) (screen.heightPixels * 0.06f);
+        int logicalWidth = logicalLayoutWidth();
+        int logicalHeight = logicalLayoutHeight();
+        int oldButtonSize = (int) (logicalHeight * 0.06f);
         int buttonSize = Math.max(1, Math.round(oldButtonSize * 1.15f));
 
         FrameLayout.LayoutParams configParams = new FrameLayout.LayoutParams(buttonSize, buttonSize);
@@ -618,7 +656,7 @@ public class KeyBoardController {
         int resetWidth = buttonResetAll.getMeasuredWidth();
         int gap = 3;
         int totalWidth = clearWidth + keysWidth + actionsWidth + resetWidth + gap * 3;
-        int startX = Math.max(0, screen.widthPixels / 2 - totalWidth / 2);
+        int startX = Math.max(0, logicalWidth / 2 - totalWidth / 2);
 
         addTopButton(buttonClearAll, startX, 15);
         addTopButton(buttonAddKeys, startX + clearWidth + gap, 15);
@@ -634,9 +672,9 @@ public class KeyBoardController {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT);
         profileParams.leftMargin = Math.max(0,
-                screen.widthPixels / 2 - buttonProfiles.getMeasuredWidth() / 2);
+                logicalWidth / 2 - buttonProfiles.getMeasuredWidth() / 2);
         profileParams.topMargin = Math.max(0,
-                screen.heightPixels - buttonProfiles.getMeasuredHeight() - 20);
+                logicalHeight - buttonProfiles.getMeasuredHeight() - 20);
         frame_layout.addView(buttonProfiles, profileParams);
 
         buttonAcceptGroupMove.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
@@ -644,7 +682,7 @@ public class KeyBoardController {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Math.max(1, Math.round(buttonAcceptGroupMove.getMeasuredHeight() * 0.78f)));
         acceptParams.leftMargin = Math.max(0,
-                screen.widthPixels / 2 - buttonAcceptGroupMove.getMeasuredWidth() / 2);
+                logicalWidth / 2 - buttonAcceptGroupMove.getMeasuredWidth() / 2);
         acceptParams.topMargin = 15;
         frame_layout.addView(buttonAcceptGroupMove, acceptParams);
 

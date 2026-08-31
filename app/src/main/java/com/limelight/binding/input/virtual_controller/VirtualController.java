@@ -17,8 +17,10 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
+import com.limelight.Game;
 import com.limelight.LimeLog;
 import com.limelight.R;
+import com.limelight.SidewaysStreamMode;
 import com.limelight.binding.input.ControllerHandler;
 import com.limelight.preferences.PreferenceConfiguration;
 
@@ -219,11 +221,25 @@ public class VirtualController {
     }
 
     public int getLayoutWidth() {
-        return frame_layout != null ? frame_layout.getWidth() : 0;
+        if (frame_layout != null && frame_layout.getWidth() > 0) {
+            return frame_layout.getWidth();
+        }
+        DisplayMetrics screen = context.getResources().getDisplayMetrics();
+        String mode = Game.instance != null
+                ? Game.instance.getActiveSidewaysStreamMode()
+                : SidewaysStreamMode.MODE_OFF;
+        return SidewaysStreamMode.logicalWidth(screen.widthPixels, screen.heightPixels, mode);
     }
 
     public int getLayoutHeight() {
-        return frame_layout != null ? frame_layout.getHeight() : 0;
+        if (frame_layout != null && frame_layout.getHeight() > 0) {
+            return frame_layout.getHeight();
+        }
+        DisplayMetrics screen = context.getResources().getDisplayMetrics();
+        String mode = Game.instance != null
+                ? Game.instance.getActiveSidewaysStreamMode()
+                : SidewaysStreamMode.MODE_OFF;
+        return SidewaysStreamMode.logicalHeight(screen.widthPixels, screen.heightPixels, mode);
     }
 
     public boolean isSnappingEnabled() {
@@ -270,9 +286,7 @@ public class VirtualController {
     public void refreshLayout() {
         removeElements();
 
-        DisplayMetrics screen = context.getResources().getDisplayMetrics();
-
-        int buttonSize = (int)(screen.heightPixels*0.06f);
+        int buttonSize = (int)(getLayoutHeight()*0.06f);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(buttonSize, buttonSize);
         params.leftMargin = 15;
         params.topMargin = 15;

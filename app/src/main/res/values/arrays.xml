@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string-array name="sideways_stream_mode_names">
+        <item>Off</item>
+        <item>Sideways clockwise (experimental)</item>
+        <item>Sideways counter-clockwise (experimental)</item>
+    </string-array>
+    <string-array name="sideways_stream_mode_values" translatable="false">
+        <item>off</item>
+        <item>sideways_cw</item>
+        <item>sideways_ccw</item>
+    </string-array>
+
     <string-array name="background_streaming_mode_names">
         <item>Disabled</item>
         <item>Fast resume</item>

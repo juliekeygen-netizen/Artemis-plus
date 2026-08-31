@@ -6,9 +6,12 @@ def replace_once(path, old, new):
     data = p.read_bytes()
     nl = b'\r\n' if b'\r\n' in data else b'\n'
     text = data.decode('utf-8').replace('\r\n', '\n')
-    if new in text:
+    if new and new in text:
         return
     if old not in text:
+        # Empty replacements are idempotent when the old text is already gone.
+        if not new:
+            return
         raise SystemExit(f'anchor missing: {path}: {old!r}')
     if text.count(old) != 1:
         raise SystemExit(f'anchor not unique: {path}: count={text.count(old)}')

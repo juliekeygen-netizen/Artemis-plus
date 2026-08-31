@@ -312,6 +312,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     public boolean isInputOnly = true;
     public boolean allowChangeMouseMode = true;
     private boolean onExternelDisplay = false;
+    private DisplayManager externalDisplayManager;
+    private DisplayManager.DisplayListener externalDisplayListener;
     private ImageButton floatingMenuButton;
     private ImageButton overlayToggleButton;
     private float floatingButtonDX, floatingButtonDY;
@@ -1044,8 +1046,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private void listenForExternalDisplayRemoval() {
-        DisplayManager displayManager = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
-        displayManager.registerDisplayListener(new DisplayManager.DisplayListener() {
+        if (externalDisplayListener != null) {
+            return;
+        }
+
+        externalDisplayManager = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
+        externalDisplayListener = new DisplayManager.DisplayListener() {
             @Override
             public void onDisplayAdded(int displayId) {
             }
@@ -1061,7 +1067,20 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             @Override
             public void onDisplayChanged(int displayId) {
             }
-        }, null);
+        };
+        externalDisplayManager.registerDisplayListener(externalDisplayListener, null);
+    }
+
+    private void stopListeningForExternalDisplayRemoval() {
+        if (externalDisplayManager != null && externalDisplayListener != null) {
+            try {
+                externalDisplayManager.unregisterDisplayListener(externalDisplayListener);
+            } catch (IllegalArgumentException ignored) {
+                // Already unregistered by the platform or another teardown path.
+            }
+        }
+        externalDisplayListener = null;
+        externalDisplayManager = null;
     }
 
     private void handleDisplayRemoved() {
@@ -1730,6 +1749,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             bottomEdgeStartGestureDetector.resetRecognizedGestureConsumption();
         }
         timerHandler.removeCallbacksAndMessages(null);
+        stopListeningForExternalDisplayRemoval();
 
         if (prefConfig.enableFullExDisplay) handleDisplayRemoved();
 

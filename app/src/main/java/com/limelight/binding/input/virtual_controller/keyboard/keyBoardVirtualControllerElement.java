@@ -206,14 +206,16 @@ public abstract class keyBoardVirtualControllerElement extends View {
         int releaseThreshold = Math.max(18,
                 Math.round(28 * getResources().getDisplayMetrics().density));
         if (stickyMoveX) {
-            if (Math.abs(newPos_x - stickyMoveAnchorX) < releaseThreshold) {
+            if (LayoutSnappingHelper.shouldRetainAxisLock(
+                    newPos_x, stickyMoveAnchorX, releaseThreshold)) {
                 newPos_x = stickyMoveAnchorX;
             } else {
                 stickyMoveX = false;
             }
         }
         if (stickyMoveY) {
-            if (Math.abs(newPos_y - stickyMoveAnchorY) < releaseThreshold) {
+            if (LayoutSnappingHelper.shouldRetainAxisLock(
+                    newPos_y, stickyMoveAnchorY, releaseThreshold)) {
                 newPos_y = stickyMoveAnchorY;
             } else {
                 stickyMoveY = false;

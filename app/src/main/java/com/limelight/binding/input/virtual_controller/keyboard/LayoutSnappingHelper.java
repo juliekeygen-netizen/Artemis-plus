@@ -28,18 +28,53 @@ public class LayoutSnappingHelper {
         }
     }
 
-    private static final class Candidate {
-        final int value;
-        final int distance;
+    private enum Axis {
+        HORIZONTAL,
+        VERTICAL
+    }
+
+    /**
+     * A possible attachment/alignment on one axis. Candidates are compared independently per
+     * axis, rather than allowing the last inspected neighboring View to overwrite an earlier
+     * match.
+     */
+    private enum Alignment {
+        GAP(0),
+        EDGE(1),
+        CENTER(2);
+
         final int priority;
-        final boolean spacing;
-        Candidate(int value, int distance, int priority, boolean spacing) {
-            this.value = value; this.distance = distance; this.priority = priority; this.spacing = spacing;
+
+        Alignment(int priority) {
+            this.priority = priority;
         }
+    }
+
+    private static final class Candidate {
+        final Axis axis;
+        final int target;
+        final int distance;
+        final Alignment alignment;
+
+        Candidate(Axis axis, int target, int distance, Alignment alignment) {
+            this.axis = axis;
+            this.target = target;
+            this.distance = distance;
+            this.alignment = alignment;
+        }
+
         boolean betterThan(Candidate other) {
             if (other == null) return true;
             if (distance != other.distance) return distance < other.distance;
-            return priority < other.priority;
+            if (alignment.priority != other.alignment.priority) {
+                return alignment.priority < other.alignment.priority;
+            }
+            if (axis != other.axis) return axis.ordinal() < other.axis.ordinal();
+            // A numeric target and alignment kind are stable across View iteration order. This
+            // final tie-break makes two equidistant neighbors choose the same outcome even if
+            // the controller's child ordering changes after a refresh.
+            if (target != other.target) return target < other.target;
+            return alignment.ordinal() < other.alignment.ordinal();
         }
     }
 
@@ -100,33 +135,39 @@ public class LayoutSnappingHelper {
 
             if (parallelY) {
                 bestX = consider(bestX, proposedX, otherRight + SPACING_MIN,
-                        SPACING_THRESHOLD, 0, true);
+                        SPACING_THRESHOLD, Axis.HORIZONTAL, Alignment.GAP);
                 bestX = consider(bestX, proposedX, p.leftMargin - SPACING_MIN - movingWidth,
-                        SPACING_THRESHOLD, 0, true);
+                        SPACING_THRESHOLD, Axis.HORIZONTAL, Alignment.GAP);
             }
-            bestX = consider(bestX, proposedX, p.leftMargin, SNAP_THRESHOLD, 1, false);
-            bestX = consider(bestX, proposedX, otherRight - movingWidth, SNAP_THRESHOLD, 1, false);
+            bestX = consider(bestX, proposedX, p.leftMargin, SNAP_THRESHOLD,
+                    Axis.HORIZONTAL, Alignment.EDGE);
+            bestX = consider(bestX, proposedX, otherRight - movingWidth, SNAP_THRESHOLD,
+                    Axis.HORIZONTAL, Alignment.EDGE);
             bestX = consider(bestX, proposedX,
                     p.leftMargin + otherWidth / 2 - movingWidth / 2,
-                    SNAP_THRESHOLD, 2, false);
+                    SNAP_THRESHOLD, Axis.HORIZONTAL, Alignment.CENTER);
 
             if (parallelX) {
                 bestY = consider(bestY, proposedY, otherBottom + SPACING_MIN,
-                        SPACING_THRESHOLD, 0, true);
+                        SPACING_THRESHOLD, Axis.VERTICAL, Alignment.GAP);
                 bestY = consider(bestY, proposedY, p.topMargin - SPACING_MIN - movingHeight,
-                        SPACING_THRESHOLD, 0, true);
+                        SPACING_THRESHOLD, Axis.VERTICAL, Alignment.GAP);
             }
-            bestY = consider(bestY, proposedY, p.topMargin, SNAP_THRESHOLD, 1, false);
-            bestY = consider(bestY, proposedY, otherBottom - movingHeight, SNAP_THRESHOLD, 1, false);
+            bestY = consider(bestY, proposedY, p.topMargin, SNAP_THRESHOLD,
+                    Axis.VERTICAL, Alignment.EDGE);
+            bestY = consider(bestY, proposedY, otherBottom - movingHeight, SNAP_THRESHOLD,
+                    Axis.VERTICAL, Alignment.EDGE);
             bestY = consider(bestY, proposedY,
                     p.topMargin + otherHeight / 2 - movingHeight / 2,
-                    SNAP_THRESHOLD, 2, false);
+                    SNAP_THRESHOLD, Axis.VERTICAL, Alignment.CENTER);
         }
 
-        int x = bestX == null ? proposedX : bestX.value;
-        int y = bestY == null ? proposedY : bestY.value;
-        boolean spacing = (bestX != null && bestX.spacing) || (bestY != null && bestY.spacing);
-        boolean snap = (bestX != null && !bestX.spacing) || (bestY != null && !bestY.spacing);
+        int x = bestX == null ? proposedX : bestX.target;
+        int y = bestY == null ? proposedY : bestY.target;
+        boolean spacing = (bestX != null && bestX.alignment == Alignment.GAP) ||
+                (bestY != null && bestY.alignment == Alignment.GAP);
+        boolean snap = (bestX != null && bestX.alignment != Alignment.GAP) ||
+                (bestY != null && bestY.alignment != Alignment.GAP);
         SnapResult result = new SnapResult(x, y, movingWidth, movingHeight, snap, false, spacing);
         result.lockX = bestX != null;
         result.lockY = bestY != null;
@@ -134,11 +175,30 @@ public class LayoutSnappingHelper {
     }
 
     private static Candidate consider(Candidate current, int proposed, int target,
-                                      int threshold, int priority, boolean spacing) {
+                                      int threshold, Axis axis, Alignment alignment) {
         int distance = Math.abs(proposed - target);
         if (distance > threshold) return current;
-        Candidate candidate = new Candidate(target, distance, priority, spacing);
+        Candidate candidate = new Candidate(axis, target, distance, alignment);
         return candidate.betterThan(current) ? candidate : current;
+    }
+
+    /** Pure move-lock seam shared with editor gesture handling and its hysteresis tests. */
+    static boolean shouldRetainAxisLock(int proposed, int snappedCoordinate, int releaseThreshold) {
+        return Math.abs(proposed - snappedCoordinate) < Math.max(0, releaseThreshold);
+    }
+
+    /** Whether a connected member belongs to the branch displaced by a wider text button. */
+    static boolean shouldShiftForTextExpansion(int originalRight, int memberLeft) {
+        return memberLeft >= originalRight - 6;
+    }
+
+    /** Clamp a shared group translation so every member remains within its parent axis. */
+    static int clampGroupTranslation(int requestedDelta, int groupStart, int groupEnd,
+                                     int parentExtent) {
+        if (parentExtent <= 0) {
+            return requestedDelta;
+        }
+        return Math.max(-groupStart, Math.min(requestedDelta, parentExtent - groupEnd));
     }
 
     private static int overlap(int aStart, int aEnd, int bStart, int bEnd) {

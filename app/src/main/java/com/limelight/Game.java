@@ -1797,12 +1797,17 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             bottomEdgeStartGestureDetector.resetRecognizedGestureConsumption();
         }
         timerHandler.removeCallbacksAndMessages(null);
-        if ((keepAliveServiceStarted || keepAliveSurface != null || keepAliveBackgrounded ||
-                keepAliveLifecycleArmed || keepAliveReturnPending) && (connecting || connected)) {
+        boolean deferKeepAliveResourceRelease =
+                (keepAliveServiceStarted || keepAliveSurface != null || keepAliveBackgrounded ||
+                        keepAliveLifecycleArmed || keepAliveReturnPending) && (connecting || connected);
+        if (deferKeepAliveResourceRelease) {
             if (decoderRenderer != null) {
                 decoderRenderer.prepareForStop();
             }
-            stopConnection();
+            stopConnection(false, () -> {
+                releaseKeepAliveCpuWakeLock();
+                closeKeepAliveSurface();
+            });
         }
         fastResumeLifecycleArmed = false;
         fastResumeBackgrounded = false;
@@ -1811,9 +1816,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         keepAliveBackgrounded = false;
         keepAliveReturnPending = false;
         timerHandler.removeCallbacks(keepAliveTimeoutRunnable);
-        stopKeepAliveService();
-        releaseKeepAliveCpuWakeLock();
-        closeKeepAliveSurface();
+        if (!deferKeepAliveResourceRelease) {
+            stopKeepAliveService();
+            releaseKeepAliveCpuWakeLock();
+            closeKeepAliveSurface();
+        }
         stopListeningForExternalDisplayRemoval();
 
         if (prefConfig.enableFullExDisplay) handleDisplayRemoved();
@@ -2162,9 +2169,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         } else if (prefConfig != null && BackgroundStreamingPolicy.isKeepAlive(prefConfig.backgroundStreamingMode) &&
                 !isFinishing() && !isChangingConfigurations() && !pipTransitionExpected &&
                 !isOnExternalDisplay() && !multiWindow && !keepAliveBackgrounded) {
-            // Old Android versions, stereo render mode, or a service-start failure use the safe
-            // Fast Resume implementation rather than silently disabling background behavior.
-            keepAliveFallbackToFastResume = true;
+            // Old Android versions, stereo render mode, or a service-start failure use Fast Resume.
+            // If the service start was accepted but foreground promotion is merely still racing,
+            // keep the mode eligible so a later reconnect can try Keep Alive again.
+            if (!isKeepAliveSupportedForSession() || !keepAliveServiceStarted) {
+                keepAliveFallbackToFastResume = true;
+            }
             keepAliveLifecycleArmed = false;
             fastResumeLifecycleArmed = true;
         } else if (prefConfig != null && BackgroundStreamingPolicy.shouldArmFastResumeBeforeSurfaceLoss(
@@ -4035,7 +4045,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private void stopConnection(boolean preserveControllerStateForReconnect, Runnable onStopped) {
-        stopKeepAliveService();
         if (connecting || connected) {
             connecting = connected = false;
             updatePipAutoEnter();
@@ -4074,13 +4083,19 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                             Game.this.runOnUiThread(() -> Toast.makeText(Game.this, e.getMessage(), Toast.LENGTH_LONG).show());
                         }
                     }
-                    if (onStopped != null) {
-                        Game.this.runOnUiThread(onStopped);
-                    }
+                    Game.this.runOnUiThread(() -> {
+                        stopKeepAliveService();
+                        if (onStopped != null) {
+                            onStopped.run();
+                        }
+                    });
                 }
             }.start();
-        } else if (onStopped != null) {
-            runOnUiThread(onStopped);
+        } else {
+            stopKeepAliveService();
+            if (onStopped != null) {
+                runOnUiThread(onStopped);
+            }
         }
     }
 

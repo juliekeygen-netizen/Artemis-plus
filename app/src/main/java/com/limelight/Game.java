@@ -1869,7 +1869,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         // The remote app intentionally stays running. Only the client-side stream is stopped.
         setInputGrabState(false);
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        stopConnection();
+        stopConnection(true);
         releaseStreamingWifiLocks();
 
         if (prefConfig.backgroundStreamingTimeoutMs > 0) {
@@ -3780,11 +3780,19 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private void stopConnection() {
+        stopConnection(false);
+    }
+
+    private void stopConnection(boolean preserveControllerStateForReconnect) {
         if (connecting || connected) {
             connecting = connected = false;
             updatePipAutoEnter();
 
-            controllerHandler.stop();
+            if (preserveControllerStateForReconnect) {
+                controllerHandler.suspendForReconnect();
+            } else {
+                controllerHandler.stop();
+            }
 
             // Stop WiFi monitoring
             if (wifiMonitor != null) {
@@ -4007,6 +4015,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
      * or after all reconnect attempts have failed.
      */
     private void handleConnectionTerminatedFinal(final int errorCode) {
+        if (controllerHandler != null) {
+            controllerHandler.resumeAfterReconnect();
+        }
         // Perform a connection test if the failure could be due to a blocked port
         // This does network I/O, so don't do it on the main thread.
         final int portFlags = MoonBridge.getPortFlagsFromTerminationErrorCode(errorCode);
@@ -4131,6 +4142,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
                 connected = true;
                 connecting = false;
+                if (controllerHandler != null) {
+                    controllerHandler.resumeAfterReconnect();
+                }
                 fastResumeLifecycleArmed = false;
                 fastResumeBackgrounded = false;
                 fastResumeReconnectPending = false;

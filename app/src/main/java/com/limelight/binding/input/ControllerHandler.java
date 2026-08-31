@@ -131,6 +131,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     private final Handler backgroundThreadHandler;
     private boolean hasGameController;
     private boolean stopped = false;
+    private boolean suspendedForReconnect = false;
 
     // Stats overlay toggle: Select+L1 held for 2 seconds
     private boolean selectL1HoldPending;
@@ -282,6 +283,31 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         inputDeviceContexts.put(deviceId, newContext);
     }
 
+    public void suspendForReconnect() {
+        if (stopped || suspendedForReconnect) {
+            return;
+        }
+
+        // Block input packets while the stream transport is intentionally down, but keep
+        // controller contexts intact so a Fast Resume reconnect can restore them immediately.
+        suspendedForReconnect = true;
+        selectL1HoldPending = false;
+        mainThreadHandler.removeCallbacks(statsOverlayToggleRunnable);
+        inputManager.unregisterInputDeviceListener(this);
+        disableSensors();
+        deviceVibrator.cancel();
+    }
+
+    public void resumeAfterReconnect() {
+        if (stopped || !suspendedForReconnect) {
+            return;
+        }
+
+        suspendedForReconnect = false;
+        inputManager.registerInputDeviceListener(this, null);
+        enableSensors();
+    }
+
     public void stop() {
         if (stopped) {
             return;
@@ -294,8 +320,12 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         selectL1HoldPending = false;
         mainThreadHandler.removeCallbacks(statsOverlayToggleRunnable);
 
-        // Unregister our input device callbacks
-        inputManager.unregisterInputDeviceListener(this);
+        // A suspended handler is already unregistered. Final teardown must still destroy all
+        // retained contexts, but must not unregister the same listener twice.
+        if (!suspendedForReconnect) {
+            inputManager.unregisterInputDeviceListener(this);
+        }
+        suspendedForReconnect = false;
 
         for (int i = 0; i < inputDeviceContexts.size(); i++) {
             InputDeviceContext deviceContext = inputDeviceContexts.valueAt(i);
@@ -1034,8 +1064,8 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     }
 
     private InputDeviceContext getContextForEvent(InputEvent event) {
-        // Don't return a context if we're stopped
-        if (stopped) {
+        // Don't return a context if we're stopped or temporarily suspended for reconnect.
+        if (stopped || suspendedForReconnect) {
             return null;
         }
         else if (event.getDeviceId() == 0) {
@@ -1815,6 +1845,9 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     }
 
     public boolean tryHandleTouchpadEvent(MotionEvent event) {
+        if (stopped || suspendedForReconnect) {
+            return false;
+        }
         // Bail if this is not a touchpad or mouse event
         if (event.getSource() != InputDevice.SOURCE_TOUCHPAD &&
                 event.getSource() != InputDevice.SOURCE_MOUSE) {
@@ -3004,6 +3037,9 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
                                       float leftStickX, float leftStickY,
                                       float rightStickX, float rightStickY,
                                       float leftTrigger, float rightTrigger) {
+        if (stopped || suspendedForReconnect) {
+            return;
+        }
         GenericControllerContext context = usbDeviceContexts.get(controllerId);
         if (context == null) {
             return;
@@ -3040,6 +3076,9 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
     @Override
     public void reportControllerMotion(int controllerId, byte motionType, float motionX, float motionY, float motionZ) {
+        if (stopped || suspendedForReconnect) {
+            return;
+        }
         GenericControllerContext context = usbDeviceContexts.get(controllerId);
         if (context == null) {
             return;

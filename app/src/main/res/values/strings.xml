@@ -671,6 +671,131 @@
     <string name="keyboard_add">Add</string>
     <string name="keyboard_key_custom">%s (Custom)</string>
 
+    <!-- Artemis compact editor surfaces -->
+    <string name="artemis_close">Close</string>
+    <string name="artemis_rename">Rename</string>
+    <string name="artemis_duplicate">Duplicate</string>
+    <string name="artemis_delete">Delete</string>
+    <string name="artemis_apply">Apply</string>
+    <string name="artemis_reset">Reset</string>
+    <string name="artemis_create">Create</string>
+    <string name="artemis_keyboard_profiles_title">Keyboard Profiles</string>
+    <string name="artemis_keyboard_profile_add">+ Add profile</string>
+    <string name="artemis_keyboard_profile_add_title">Add Profile</string>
+    <string name="artemis_keyboard_profile_rename_title">Rename Profile</string>
+    <string name="artemis_keyboard_profile_name_hint">Profile name</string>
+    <string name="artemis_keyboard_profile_selected">Keyboard profile selected</string>
+    <string name="artemis_keyboard_profile_name_required">Enter a profile name</string>
+    <string name="artemis_keyboard_profile_reorder_description">Hold and drag profile to reorder</string>
+    <string name="artemis_keyboard_profile_options_description">Profile options</string>
+    <string name="artemis_keyboard_profile_delete_title">Delete Profile?</string>
+    <string name="artemis_keyboard_profile_delete_message">Delete “%1$s”? This cannot be undone.</string>
+
+    <string name="artemis_actions_title">Add Artemis Actions</string>
+    <string name="artemis_actions_updated">Artemis action buttons updated</string>
+
+    <string name="artemis_key_load_error">Unable to load key list: %1$s</string>
+    <string name="artemis_key_intro">Add one key, or build a chord. Modifiers stay held while every selected key is pressed.</string>
+    <string name="artemis_key_display_name">Display name</string>
+    <string name="artemis_key_display_name_hint">Example: Back</string>
+    <string name="artemis_key_hold_modifiers">Hold modifiers (optional)</string>
+    <string name="artemis_key_press_order_label">Keys (pressed top to bottom)</string>
+    <string name="artemis_key_unknown">Key %1$d</string>
+    <string name="artemis_key_add_row">+  Add row</string>
+    <string name="artemis_key_choose_first">Choose a key…</string>
+    <string name="artemis_key_choose_another">Choose another key…</string>
+    <string name="artemis_key_remove_row_description">Remove key row</string>
+    <string name="artemis_key_edit_title">Edit Key</string>
+    <string name="artemis_key_save">Save</string>
+    <string name="artemis_key_display_name_required">Enter a display name</string>
+    <string name="artemis_key_selection_required">Choose a key from the list</string>
+    <string name="artemis_key_delete_title">Delete Key?</string>
+    <string name="artemis_key_delete_message">Delete “%1$s” from this keyboard profile?</string>
+
+    <string name="artemis_quick_menu_title">Customize Quick Menu</string>
+    <string name="artemis_quick_menu_root_title">Quick Menu</string>
+    <string name="artemis_quick_menu_back">‹ Back</string>
+    <string name="artemis_quick_menu_empty">This page is empty. Add an action or subpage below.</string>
+    <string name="artemis_quick_menu_add_action">+ Action</string>
+    <string name="artemis_quick_menu_add_subpage">+ Subpage</string>
+    <string name="artemis_quick_menu_rename_page">Rename page</string>
+    <string name="artemis_quick_menu_reset_defaults">Reset defaults</string>
+    <string name="artemis_quick_menu_item_limit">Quick Menu item limit reached</string>
+    <string name="artemis_quick_menu_depth_limit">Maximum Quick Menu nesting reached</string>
+    <string name="artemis_quick_menu_add_subpage_title">Add Subpage</string>
+    <string name="artemis_quick_menu_rename_page_title">Rename Page</string>
+    <string name="artemis_quick_menu_page_name_hint">Page name</string>
+    <string name="artemis_quick_menu_reset_title">Reset Quick Menu?</string>
+    <string name="artemis_quick_menu_reset_message">Restore the default Quick Menu and Advanced page? Your custom pages and ordering will be removed.</string>
+    <string name="artemis_quick_menu_action_picker_title">Add Quick Menu Action</string>
+    <string name="artemis_quick_menu_search_hint">Search actions</string>
+    <string name="artemis_quick_menu_all_categories">All categories</string>
+    <string name="artemis_quick_menu_no_matches">No matching actions</string>
+    <string name="artemis_quick_menu_page_name_required">Enter a page name</string>
+    <string name="artemis_quick_menu_reorder_description">Hold and drag to reorder</string>
+    <string name="artemis_quick_menu_remove_description">Remove from Quick Menu</string>
+    <string name="artemis_quick_menu_unavailable_action">Unavailable action</string>
+    <plurals name="artemis_quick_menu_subpage_summary">
+        <item quantity="one">Subpage · %1$d item</item>
+        <item quantity="other">Subpage · %1$d items</item>
+    </plurals>
+
+    <string name="artemis_touch_sensitivity_title">Touch Sensitivity</string>
+    <string name="artemis_touch_sensitivity_enabled">Enable touch sensitivity</string>
+    <string name="artemis_touch_sensitivity_global">Apply sensitivity globally</string>
+    <string name="artemis_touch_sensitivity_rotate">Rotate sensitivity axes automatically</string>
+    <string name="artemis_touch_sensitivity_horizontal">Horizontal sensitivity: %1$d%%</string>
+    <string name="artemis_touch_sensitivity_vertical">Vertical sensitivity: %1$d%%</string>
+
+    <string name="artemis_osc_default_name">Default</string>
+    <string name="artemis_osc_this_game">this game</string>
+    <string name="artemis_osc_switch_profile">Switch profile</string>
+    <string name="artemis_osc_new_profile">New profile</string>
+    <string name="artemis_osc_rename_current">Rename current profile</string>
+    <string name="artemis_osc_delete_current">Delete current profile</string>
+    <string name="artemis_osc_save_layout">Save current layout</string>
+    <string name="artemis_osc_layout_saved">OSC layout saved</string>
+    <string name="artemis_osc_not_set">Not set</string>
+    <string name="artemis_osc_auto_profile">Auto profile for %1$s: %2$s</string>
+    <string name="artemis_osc_clear_auto_profile">Clear auto profile for %1$s</string>
+    <string name="artemis_osc_auto_profile_cleared">Auto profile cleared for %1$s</string>
+    <string name="artemis_osc_snapping">Snapping: %1$s</string>
+    <string name="artemis_osc_paired_sizing">Paired sizing: %1$s</string>
+    <string name="artemis_osc_on">On</string>
+    <string name="artemis_osc_off">Off</string>
+    <string name="artemis_osc_snapping_state">OSC snapping %1$s</string>
+    <string name="artemis_osc_paired_sizing_state">Paired sizing %1$s</string>
+    <string name="artemis_osc_enabled">enabled</string>
+    <string name="artemis_osc_disabled">disabled</string>
+    <string name="artemis_osc_profiles_title">OSC Profiles — %1$s</string>
+    <string name="artemis_osc_switch_title">Switch OSC Profile</string>
+    <string name="artemis_osc_profile_selected">OSC profile: %1$s</string>
+    <string name="artemis_osc_auto_title">Auto OSC Profile — %1$s</string>
+    <string name="artemis_osc_save_game_profile_error">Unable to save game profile</string>
+    <string name="artemis_osc_new_title">New OSC Profile</string>
+    <string name="artemis_osc_profile_name_hint">Profile name</string>
+    <string name="artemis_osc_created">Created %1$s</string>
+    <string name="artemis_osc_rename_title">Rename OSC Profile</string>
+    <string name="artemis_osc_renamed">Profile renamed</string>
+    <string name="artemis_osc_default_delete_error">The Default OSC profile cannot be deleted</string>
+    <string name="artemis_osc_delete_title">Delete OSC Profile?</string>
+    <string name="artemis_osc_delete_message">Delete “%1$s”? The saved layout will be removed.</string>
+    <string name="artemis_osc_deleted">OSC profile deleted</string>
+
+    <string name="artemis_settings_quick_menu_title">Customize Quick Menu</string>
+    <string name="artemis_settings_quick_menu_summary">Choose, reorder, remove, and group the actions shown in the in-stream Quick Menu.</string>
+    <string name="artemis_settings_keyboard_profiles_title">Profiles</string>
+    <string name="artemis_settings_keyboard_profiles_summary">Create, switch, rename, duplicate, reorder, and delete special-key layouts.</string>
+    <string name="artemis_settings_import_keyboard_profiles_title">Import Keyboard Profiles</string>
+    <string name="artemis_settings_import_keyboard_profiles_summary">Add profiles from an Artemis Plus profile bundle or legacy layout file.</string>
+    <string name="artemis_settings_export_keyboard_profiles_title">Export Keyboard Profiles</string>
+    <string name="artemis_settings_export_keyboard_profiles_summary">Export all keyboard profiles, custom keys, and Artemis action selections.</string>
+    <string name="artemis_settings_keyboard_profiles_empty">No keyboard profiles found in file</string>
+    <plurals name="artemis_settings_keyboard_profiles_imported">
+        <item quantity="one">Imported %1$d keyboard profile</item>
+        <item quantity="other">Imported %1$d keyboard profiles</item>
+    </plurals>
+
     <!-- Compliance -->
     <string name="category_basic_settings" />
     <string name="title_checkbox_stretch_video" />

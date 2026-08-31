@@ -114,6 +114,7 @@ import android.widget.FrameLayout;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.SeekBar;
+import android.widget.ScrollView;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -5176,9 +5177,14 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         LinearLayout root = new LinearLayout(themedContext);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(padding, Math.round(6 * density), padding, 0);
+        ScrollView contentScroll = new ScrollView(themedContext);
+        contentScroll.setFillViewport(false);
+        contentScroll.setClipToPadding(false);
+        contentScroll.addView(root, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
 
         CheckBox enabled = new CheckBox(themedContext);
-        enabled.setText("Enable touch sensitivity");
+        enabled.setText(R.string.artemis_touch_sensitivity_enabled);
         enabled.setChecked(prefConfig.enableTouchSensitivity);
         root.addView(enabled);
 
@@ -5201,18 +5207,20 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         root.addView(vertical);
 
         CheckBox global = new CheckBox(themedContext);
-        global.setText("Apply sensitivity globally");
+        global.setText(R.string.artemis_touch_sensitivity_global);
         global.setChecked(prefConfig.touchSensitivityGlobal);
         root.addView(global);
 
         CheckBox rotate = new CheckBox(themedContext);
-        rotate.setText("Rotate sensitivity axes automatically");
+        rotate.setText(R.string.artemis_touch_sensitivity_rotate);
         rotate.setChecked(prefConfig.touchSensitivityRotationAuto);
         root.addView(rotate);
 
         Runnable refreshLabels = () -> {
-            horizontalLabel.setText("Horizontal sensitivity: " + ((horizontal.getProgress() + 1) * 10) + "%");
-            verticalLabel.setText("Vertical sensitivity: " + ((vertical.getProgress() + 1) * 10) + "%");
+            horizontalLabel.setText(getString(R.string.artemis_touch_sensitivity_horizontal,
+                    (horizontal.getProgress() + 1) * 10));
+            verticalLabel.setText(getString(R.string.artemis_touch_sensitivity_vertical,
+                    (vertical.getProgress() + 1) * 10));
         };
         SeekBar.OnSeekBarChangeListener listener = new SeekBar.OnSeekBarChangeListener() {
             @Override
@@ -5244,9 +5252,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         enabled.setOnCheckedChangeListener((buttonView, isChecked) -> refreshEnabledState.run());
         refreshEnabledState.run();
 
-        AlertDialog touchDialog = ArtemisEditorUi.builder(themedContext, "Touch Sensitivity")
-                .setView(root)
-                .setPositiveButton("Apply", (dialog, which) -> {
+        AlertDialog touchDialog = ArtemisEditorUi.builder(themedContext,
+                        getString(R.string.artemis_touch_sensitivity_title))
+                .setView(contentScroll)
+                .setPositiveButton(R.string.artemis_apply, (dialog, which) -> {
                     int sensitivityX = (horizontal.getProgress() + 1) * 10;
                     int sensitivityY = (vertical.getProgress() + 1) * 10;
                     prefConfig.enableTouchSensitivity = enabled.isChecked();
@@ -5266,7 +5275,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();
-        touchDialog.setOnShowListener(ignored -> ArtemisEditorUi.styleDialog(touchDialog, this, 520));
+        touchDialog.setOnShowListener(ignored ->
+                ArtemisEditorUi.styleDialog(touchDialog, this, 520, 560, true));
         touchDialog.show();
     }
 

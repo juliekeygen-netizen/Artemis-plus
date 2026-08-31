@@ -21,6 +21,7 @@ import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.limelight.R;
 import com.limelight.ui.ArtemisEditorUi;
 
 import java.util.ArrayList;
@@ -63,16 +64,19 @@ public final class KeyboardProfilesDialog {
             @Override public boolean isLongPressDragEnabled() { return true; }
         }).attachToRecyclerView(list);
 
-        AlertDialog dialog = ArtemisEditorUi.builder(ui, "Keyboard Profiles")
+        AlertDialog dialog = ArtemisEditorUi.builder(ui,
+                        ui.getString(R.string.artemis_keyboard_profiles_title))
                 .setView(root)
-                .setNeutralButton("+ Add profile", null)
-                .setNegativeButton("Close", null)
+                .setNeutralButton(R.string.artemis_keyboard_profile_add, null)
+                .setNegativeButton(R.string.artemis_close, null)
                 .create();
         dialog.setOnShowListener(ignored -> {
             ArtemisEditorUi.styleDialog(dialog, context, 520);
             Button add = dialog.getButton(DialogInterface.BUTTON_NEUTRAL);
             ArtemisEditorUi.styleFooterButton(add, ArtemisEditorUi.ACCENT);
-            add.setOnClickListener(v -> promptForName(ui, "Add Profile", "Profile name", "", name -> {
+            add.setOnClickListener(v -> promptForName(ui,
+                    ui.getString(R.string.artemis_keyboard_profile_add_title),
+                    ui.getString(R.string.artemis_keyboard_profile_name_hint), "", name -> {
                 KeyboardProfilesManager.Profile profile = KeyboardProfilesManager.createProfile(context, name);
                 if (profile != null) {
                     switchProfile(context, controller, profile.id);
@@ -129,7 +133,8 @@ public final class KeyboardProfilesDialog {
 
             TextView drag = new TextView(ui);
             drag.setText("≡"); drag.setTextColor(0xFF94949B); drag.setTextSize(21f);
-            drag.setGravity(Gravity.CENTER); drag.setContentDescription("Hold and drag profile to reorder");
+            drag.setGravity(Gravity.CENTER);
+            drag.setContentDescription(ui.getString(R.string.artemis_keyboard_profile_reorder_description));
             row.addView(drag, new LinearLayout.LayoutParams(
                     ArtemisEditorUi.dp(ui, 48), ArtemisEditorUi.dp(ui, 48)));
 
@@ -146,7 +151,7 @@ public final class KeyboardProfilesDialog {
             FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
                     ArtemisEditorUi.dp(ui, 32), ArtemisEditorUi.dp(ui, 32), Gravity.CENTER);
             moreTouch.addView(moreIcon, iconParams);
-            moreTouch.setContentDescription("Profile options");
+            moreTouch.setContentDescription(ui.getString(R.string.artemis_keyboard_profile_options_description));
             row.addView(moreTouch, new LinearLayout.LayoutParams(
                     ArtemisEditorUi.dp(ui, 48), ArtemisEditorUi.dp(ui, 48)));
 
@@ -197,28 +202,34 @@ public final class KeyboardProfilesDialog {
         popup.setOutsideTouchable(true);
         popup.setElevation(ArtemisEditorUi.dp(ui, 10));
 
-        content.addView(menuItem(ui, "Rename", Color.WHITE, true, itemHeight, () -> {
+        content.addView(menuItem(ui, ui.getString(R.string.artemis_rename), Color.WHITE, true, itemHeight, () -> {
             popup.dismiss();
-            promptForName(ui, "Rename Profile", "Profile name", profile.name, name -> {
+            promptForName(ui, ui.getString(R.string.artemis_keyboard_profile_rename_title),
+                    ui.getString(R.string.artemis_keyboard_profile_name_hint), profile.name, name -> {
                 KeyboardProfilesManager.renameProfile(app, profile.id, name); rebuild.run();
             });
         }));
-        content.addView(menuItem(ui, "Duplicate", Color.WHITE, true, itemHeight, () -> {
+        content.addView(menuItem(ui, ui.getString(R.string.artemis_duplicate), Color.WHITE, true, itemHeight, () -> {
             popup.dismiss(); KeyboardProfilesManager.duplicateProfile(app, profile.id); rebuild.run();
         }));
-        content.addView(menuItem(ui, "Delete", count > 1 ? ArtemisEditorUi.DANGER : 0xFF77777D,
+        content.addView(menuItem(ui, ui.getString(R.string.artemis_delete), count > 1 ? ArtemisEditorUi.DANGER : 0xFF77777D,
                 count > 1, itemHeight, () -> {
                     popup.dismiss();
-                    new AlertDialog.Builder(ui).setTitle("Delete Profile?")
-                            .setMessage("Delete “" + profile.name + "”? This cannot be undone.")
-                            .setPositiveButton("Delete", (d, w) -> {
+                    AlertDialog confirmation = ArtemisEditorUi.builder(ui,
+                                    ui.getString(R.string.artemis_keyboard_profile_delete_title))
+                            .setMessage(ui.getString(R.string.artemis_keyboard_profile_delete_message,
+                                    profile.name))
+                            .setPositiveButton(R.string.artemis_delete, (d, w) -> {
                                 KeyboardProfilesManager.Profile before = KeyboardProfilesManager.getActiveProfile(app);
                                 if (KeyboardProfilesManager.deleteProfile(app, profile.id)) {
                                     if (controller != null && before != null && before.id.equals(profile.id))
                                         controller.reloadCurrentProfile();
                                     rebuild.run();
                                 }
-                            }).setNegativeButton(android.R.string.cancel, null).show();
+                            }).setNegativeButton(android.R.string.cancel, null).create();
+                    confirmation.setOnShowListener(ignored ->
+                            ArtemisEditorUi.styleDialog(confirmation, app, 420));
+                    confirmation.show();
                 }));
 
         int xOffset = -popupWidth + anchor.getWidth();
@@ -250,7 +261,7 @@ public final class KeyboardProfilesDialog {
         if (controller != null) controller.switchKeyboardProfile(id);
         else {
             KeyboardProfilesManager.setActiveProfile(context, id);
-            Toast.makeText(context, "Keyboard profile selected", Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, R.string.artemis_keyboard_profile_selected, Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -270,7 +281,10 @@ public final class KeyboardProfilesDialog {
             ArtemisEditorUi.styleDialog(dialog, context, 420);
             dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v -> {
                 String value = input.getText().toString().trim();
-                if (value.isEmpty()) { input.setError("Enter a profile name"); return; }
+                if (value.isEmpty()) {
+                    input.setError(context.getString(R.string.artemis_keyboard_profile_name_required));
+                    return;
+                }
                 callback.onName(value); dialog.dismiss();
             });
         });

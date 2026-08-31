@@ -6,6 +6,9 @@ import android.text.InputType;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import com.limelight.R;
+import com.limelight.ui.ArtemisEditorUi;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -16,9 +19,10 @@ public final class OscProfileDialog {
 
     public static void show(VirtualController controller, Context context) {
         OscProfile active = OscProfilesManager.getActiveProfile(context);
-        String activeName = active != null ? active.getName() : "Default";
+        String activeName = active != null ? active.getName()
+                : context.getString(R.string.artemis_osc_default_name);
         String gameKey = controller.getGameProfileKey();
-        String gameName = gameLabel(controller.getGameDisplayName());
+        String gameName = gameLabel(context, controller.getGameDisplayName());
         String mappedProfileId = gameKey != null
                 ? OscProfilesManager.getProfileForGame(context, gameKey)
                 : null;
@@ -27,29 +31,31 @@ public final class OscProfileDialog {
         ArrayList<String> items = new ArrayList<>();
         ArrayList<Runnable> actions = new ArrayList<>();
 
-        addItem(items, actions, "Switch profile",
+        addItem(items, actions, context.getString(R.string.artemis_osc_switch_profile),
                 () -> showProfilePicker(controller, context));
-        addItem(items, actions, "New profile",
+        addItem(items, actions, context.getString(R.string.artemis_osc_new_profile),
                 () -> showCreateDialog(controller, context));
-        addItem(items, actions, "Rename current profile",
+        addItem(items, actions, context.getString(R.string.artemis_osc_rename_current),
                 () -> showRenameDialog(controller, context));
-        addItem(items, actions, "Delete current profile",
+        addItem(items, actions, context.getString(R.string.artemis_osc_delete_current),
                 () -> showDeleteDialog(controller, context));
-        addItem(items, actions, "Save current layout", () -> {
+        addItem(items, actions, context.getString(R.string.artemis_osc_save_layout), () -> {
             VirtualControllerConfigurationLoader.saveProfile(controller, context);
-            Toast.makeText(context, "OSC layout saved", Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, R.string.artemis_osc_layout_saved, Toast.LENGTH_SHORT).show();
         });
 
         if (gameKey != null) {
-            String mappingLabel = mappedProfileName == null ? "Not set" : mappedProfileName;
+            String mappingLabel = mappedProfileName == null
+                    ? context.getString(R.string.artemis_osc_not_set) : mappedProfileName;
             addItem(items, actions,
-                    "Auto profile for " + gameName + ": " + mappingLabel,
+                    context.getString(R.string.artemis_osc_auto_profile, gameName, mappingLabel),
                     () -> showGameProfilePicker(controller, context, gameKey, gameName));
             if (mappedProfileId != null) {
-                addItem(items, actions, "Clear auto profile for " + gameName, () -> {
+                addItem(items, actions,
+                        context.getString(R.string.artemis_osc_clear_auto_profile, gameName), () -> {
                     if (OscProfilesManager.clearProfileForGame(context, gameKey)) {
-                        Toast.makeText(context,
-                                "Auto profile cleared for " + gameName,
+                        Toast.makeText(context, context.getString(
+                                R.string.artemis_osc_auto_profile_cleared, gameName),
                                 Toast.LENGTH_SHORT).show();
                     }
                 });
@@ -57,29 +63,32 @@ public final class OscProfileDialog {
         }
 
         addItem(items, actions,
-                "Snapping: " + (controller.isSnappingEnabled() ? "On" : "Off"), () -> {
+                context.getString(R.string.artemis_osc_snapping,
+                        toggleLabel(context, controller.isSnappingEnabled())), () -> {
                     boolean snapping = controller.toggleSnapping();
-                    Toast.makeText(context,
-                            "OSC snapping " + (snapping ? "enabled" : "disabled"),
+                    Toast.makeText(context, context.getString(R.string.artemis_osc_snapping_state,
+                            enabledLabel(context, snapping)),
                             Toast.LENGTH_SHORT).show();
                 });
         addItem(items, actions,
-                "Paired sizing: " + (controller.isPairedSizingEnabled() ? "On" : "Off"), () -> {
+                context.getString(R.string.artemis_osc_paired_sizing,
+                        toggleLabel(context, controller.isPairedSizingEnabled())), () -> {
                     boolean paired = controller.togglePairedSizing();
-                    Toast.makeText(context,
-                            "Paired sizing " + (paired ? "enabled" : "disabled"),
+                    Toast.makeText(context, context.getString(R.string.artemis_osc_paired_sizing_state,
+                            enabledLabel(context, paired)),
                             Toast.LENGTH_SHORT).show();
                 });
 
-        new AlertDialog.Builder(context)
-                .setTitle("OSC Profiles — " + activeName)
-                .setItems(items.toArray(new String[0]), (dialog, which) -> {
+        AlertDialog dialog = ArtemisEditorUi.builder(context,
+                        context.getString(R.string.artemis_osc_profiles_title, activeName))
+                .setItems(items.toArray(new String[0]), (selectionDialog, which) -> {
                     if (which >= 0 && which < actions.size()) {
                         actions.get(which).run();
                     }
                 })
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .create();
+        showStyled(context, dialog, 460);
     }
 
     private static void addItem(List<String> items,
@@ -100,18 +109,19 @@ public final class OscProfileDialog {
             names[i] = (profile.getId().equals(activeId) ? "✓ " : "") + profile.getName();
         }
 
-        new AlertDialog.Builder(context)
-                .setTitle("Switch OSC Profile")
-                .setItems(names, (dialog, which) -> {
+        AlertDialog dialog = ArtemisEditorUi.builder(context,
+                        context.getString(R.string.artemis_osc_switch_title))
+                .setItems(names, (selectionDialog, which) -> {
                     OscProfile selected = profiles.get(which);
                     if (OscProfilesManager.switchProfile(context, controller, selected.getId())) {
-                        Toast.makeText(context,
-                                "OSC profile: " + selected.getName(),
+                        Toast.makeText(context, context.getString(
+                                R.string.artemis_osc_profile_selected, selected.getName()),
                                 Toast.LENGTH_SHORT).show();
                     }
                 })
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .create();
+        showStyled(context, dialog, 440);
     }
 
     private static void showGameProfilePicker(VirtualController controller,
@@ -127,14 +137,13 @@ public final class OscProfileDialog {
             names[i] = (profile.getId().equals(mappedId) ? "✓ " : "") + profile.getName();
         }
 
-        new AlertDialog.Builder(context)
-                .setTitle("Auto OSC Profile — " + gameName)
-                .setItems(names, (dialog, which) -> {
+        AlertDialog dialog = ArtemisEditorUi.builder(context,
+                        context.getString(R.string.artemis_osc_auto_title, gameName))
+                .setItems(names, (selectionDialog, which) -> {
                     OscProfile selected = profiles.get(which);
                     if (!OscProfilesManager.setProfileForGame(
                             context, gameKey, selected.getId())) {
-                        Toast.makeText(context,
-                                "Unable to save game profile",
+                        Toast.makeText(context, R.string.artemis_osc_save_game_profile_error,
                                 Toast.LENGTH_SHORT).show();
                         return;
                     }
@@ -142,32 +151,34 @@ public final class OscProfileDialog {
                     // Apply the newly selected mapping immediately so the current stream matches
                     // what will be chosen automatically on future launches.
                     OscProfilesManager.switchProfile(context, controller, selected.getId());
-                    Toast.makeText(context,
-                            "Auto profile for " + gameName + ": " + selected.getName(),
+                    Toast.makeText(context, context.getString(R.string.artemis_osc_auto_profile,
+                            gameName, selected.getName()),
                             Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .create();
+        showStyled(context, dialog, 440);
     }
 
     private static void showCreateDialog(VirtualController controller, Context context) {
-        EditText input = buildNameInput(context);
-        input.setHint("Profile name");
+        EditText input = buildNameInput(ArtemisEditorUi.context(context));
+        input.setHint(R.string.artemis_osc_profile_name_hint);
 
-        new AlertDialog.Builder(context)
-                .setTitle("New OSC Profile")
+        AlertDialog dialog = ArtemisEditorUi.builder(context,
+                        context.getString(R.string.artemis_osc_new_title))
                 .setView(input)
-                .setPositiveButton("Create", (dialog, which) -> {
+                .setPositiveButton(R.string.artemis_create, (confirmation, which) -> {
                     OscProfile profile = OscProfilesManager.createProfile(
                             context,
                             input.getText().toString());
                     OscProfilesManager.switchProfile(context, controller, profile.getId());
-                    Toast.makeText(context,
-                            "Created " + profile.getName(),
+                    Toast.makeText(context, context.getString(R.string.artemis_osc_created,
+                            profile.getName()),
                             Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .create();
+        showStyled(context, dialog, 420);
     }
 
     private static void showRenameDialog(VirtualController controller, Context context) {
@@ -176,22 +187,23 @@ public final class OscProfileDialog {
             return;
         }
 
-        EditText input = buildNameInput(context);
+        EditText input = buildNameInput(ArtemisEditorUi.context(context));
         input.setText(active.getName());
         input.setSelection(input.getText().length());
 
-        new AlertDialog.Builder(context)
-                .setTitle("Rename OSC Profile")
+        AlertDialog dialog = ArtemisEditorUi.builder(context,
+                        context.getString(R.string.artemis_osc_rename_title))
                 .setView(input)
-                .setPositiveButton("Rename", (dialog, which) -> {
+                .setPositiveButton(R.string.artemis_rename, (confirmation, which) -> {
                     OscProfilesManager.renameProfile(
                             context,
                             active.getId(),
                             input.getText().toString());
-                    Toast.makeText(context, "Profile renamed", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(context, R.string.artemis_osc_renamed, Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .create();
+        showStyled(context, dialog, 420);
     }
 
     private static void showDeleteDialog(VirtualController controller, Context context) {
@@ -200,16 +212,15 @@ public final class OscProfileDialog {
             return;
         }
         if (active.isDefault()) {
-            Toast.makeText(context,
-                    "The Default OSC profile cannot be deleted",
+            Toast.makeText(context, R.string.artemis_osc_default_delete_error,
                     Toast.LENGTH_SHORT).show();
             return;
         }
 
-        new AlertDialog.Builder(context)
-                .setTitle("Delete OSC Profile?")
-                .setMessage("Delete \"" + active.getName() + "\"? The saved layout will be removed.")
-                .setPositiveButton("Delete", (dialog, which) -> {
+        AlertDialog dialog = ArtemisEditorUi.builder(context,
+                        context.getString(R.string.artemis_osc_delete_title))
+                .setMessage(context.getString(R.string.artemis_osc_delete_message, active.getName()))
+                .setPositiveButton(R.string.artemis_delete, (confirmation, which) -> {
                     String deletedId = active.getId();
                     // Switch first so the working OSC set is restored to a valid profile.
                     OscProfilesManager.switchProfile(
@@ -217,10 +228,11 @@ public final class OscProfileDialog {
                             controller,
                             OscProfile.DEFAULT_ID);
                     OscProfilesManager.deleteProfile(context, deletedId);
-                    Toast.makeText(context, "OSC profile deleted", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(context, R.string.artemis_osc_deleted, Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .create();
+        showStyled(context, dialog, 420);
     }
 
     private static String findProfileName(Context context, String profileId) {
@@ -235,8 +247,23 @@ public final class OscProfileDialog {
         return null;
     }
 
-    private static String gameLabel(String value) {
-        return value == null || value.trim().isEmpty() ? "this game" : value.trim();
+    private static String gameLabel(Context context, String value) {
+        return value == null || value.trim().isEmpty()
+                ? context.getString(R.string.artemis_osc_this_game) : value.trim();
+    }
+
+    private static String toggleLabel(Context context, boolean enabled) {
+        return context.getString(enabled ? R.string.artemis_osc_on : R.string.artemis_osc_off);
+    }
+
+    private static String enabledLabel(Context context, boolean enabled) {
+        return context.getString(enabled ? R.string.artemis_osc_enabled
+                : R.string.artemis_osc_disabled);
+    }
+
+    private static void showStyled(Context context, AlertDialog dialog, int widthDp) {
+        dialog.setOnShowListener(ignored -> ArtemisEditorUi.styleDialog(dialog, context, widthDp));
+        dialog.show();
     }
 
     private static EditText buildNameInput(Context context) {

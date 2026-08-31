@@ -578,8 +578,8 @@
             app:iconSpaceReserved="false" />
         <com.limelight.preferences.QuickMenuPreference
             android:key="customize_quick_menu"
-            android:title="Customize Quick Menu"
-            android:summary="Choose, reorder, remove, and group the actions shown in the in-stream Quick Menu."
+            android:title="@string/artemis_settings_quick_menu_title"
+            android:summary="@string/artemis_settings_quick_menu_summary"
             app:iconSpaceReserved="false" />
         <ListPreference
             android:defaultValue="follow_system"
@@ -820,8 +820,8 @@
         <com.limelight.preferences.KeyboardProfilesPreference
             android:dependency="checkbox_enable_keyboard"
             android:key="manage_keyboard_profiles"
-            android:summary="Create, switch, rename, duplicate, reorder, and delete special-key layouts."
-            android:title="Profiles"
+            android:summary="@string/artemis_settings_keyboard_profiles_summary"
+            android:title="@string/artemis_settings_keyboard_profiles_title"
             app:iconSpaceReserved="false" />
 
         <CheckBoxPreference
@@ -845,14 +845,14 @@
 
         <Preference
             android:key="import_keyboard_file"
-            android:summary="Add profiles from an Artemis Plus profile bundle or legacy layout file."
-            android:title="Import Keyboard Profiles"
+            android:summary="@string/artemis_settings_import_keyboard_profiles_summary"
+            android:title="@string/artemis_settings_import_keyboard_profiles_title"
             app:iconSpaceReserved="false" />
 
         <Preference
             android:key="export_keyboard_file"
-            android:summary="Export all keyboard profiles, custom keys, and Artemis action selections."
-            android:title="Export Keyboard Profiles"
+            android:summary="@string/artemis_settings_export_keyboard_profiles_summary"
+            android:title="@string/artemis_settings_export_keyboard_profiles_title"
             app:iconSpaceReserved="false" />
 
     </PreferenceCategory>

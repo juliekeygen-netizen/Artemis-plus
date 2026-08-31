@@ -524,11 +524,7 @@ Still not ported:
 
 Before implementation:
 
-- the read-only audit is documented in `DIANA_FOLDABLE_FEASIBILITY.md` (in review on the
-  documentation branch). It found no reusable Diana cover-screen controller, virtual
-  analog-trigger implementation, or cover-screen profile-overlay subsystem. The relevant Diana
-  history is generic upstream foldable compatibility work already retained/superseded in the newer
-  Artemis base;
+- audit the exact Diana code/dependencies against the newer Artemis base;
 - separate generally useful controller behavior from device/foldable-only hooks;
 - avoid pulling broad old-branch dependencies merely to get one feature;
 - determine sensor/display/fold-state APIs and device support;

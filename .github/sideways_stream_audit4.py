@@ -21,13 +21,21 @@ def replace_once(text, old, new, label):
     return text.replace(old, new, 1)
 
 
-def replace_exact_count(text, old, new, expected, label):
-    count = text.count(old)
-    if count == 0 and text.count(new) == expected:
+def patch_method_once(text, method_start, method_end, old, new, label):
+    start = text.find(method_start)
+    if start < 0:
+        raise SystemExit(f'{label}: method start missing')
+    end = text.find(method_end, start + len(method_start))
+    if end < 0:
+        raise SystemExit(f'{label}: method end missing')
+    segment = text[start:end]
+    if new in segment:
         return text
-    if count != expected:
-        raise SystemExit(f'{label}: expected {expected} anchors, found {count}')
-    return text.replace(old, new)
+    count = segment.count(old)
+    if count != 1:
+        raise SystemExit(f'{label}: expected one bounds block, found {count}')
+    segment = segment.replace(old, new, 1)
+    return text[:start] + segment + text[end:]
 
 
 # --- SidewaysStreamMode.java: share/test logical drag clamping policy ---
@@ -44,8 +52,16 @@ save(p, text, nl)
 p, text, nl = load('app/src/main/java/com/limelight/Game.java')
 old_bounds = '''                            // Ensure the button stays within screen bounds\n                            if (newX < 0) newX = 0;\n                            if (newY < 0) newY = 0;\n\n                            int maxOffsetX = getWindow().getDecorView().getWidth() - view.getWidth();\n                            if (newX > maxOffsetX) {\n                                newX = maxOffsetX;\n                            }\n\n                            int maxOffsetY = getWindow().getDecorView().getHeight() - view.getHeight();\n                            if (newY > maxOffsetY) {\n                                newY = maxOffsetY;\n                            }\n\n                            view.setX(newX);\n                            view.setY(newY);\n'''
 new_bounds = '''                            // Drag coordinates are logical stream-root coordinates in sideways mode.\n                            // Clamp against the View's actual parent rather than the physical portrait\n                            // DecorView, otherwise the long and short axes are swapped.\n                            ViewParent dragParent = view.getParent();\n                            int parentWidth = dragParent instanceof View\n                                    ? ((View) dragParent).getWidth()\n                                    : getWindow().getDecorView().getWidth();\n                            int parentHeight = dragParent instanceof View\n                                    ? ((View) dragParent).getHeight()\n                                    : getWindow().getDecorView().getHeight();\n                            newX = SidewaysStreamMode.clampChildPosition(\n                                    newX, parentWidth, view.getWidth());\n                            newY = SidewaysStreamMode.clampChildPosition(\n                                    newY, parentHeight, view.getHeight());\n\n                            view.setX(newX);\n                            view.setY(newY);\n'''
-text = replace_exact_count(text, old_bounds, new_bounds, 2,
-                           'Game floating control logical bounds')
+text = patch_method_once(
+    text,
+    '    private void setupOverlayToggleButton() {',
+    '    private void updateZoomButtonAppearance() {',
+    old_bounds, new_bounds, 'Game Zoom logical bounds')
+text = patch_method_once(
+    text,
+    '    private void initFloatingButton() {',
+    '    private void initKeyboardController(){',
+    old_bounds, new_bounds, 'Game floating-menu logical bounds')
 save(p, text, nl)
 
 

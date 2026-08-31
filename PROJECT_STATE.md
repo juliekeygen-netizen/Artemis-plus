@@ -249,9 +249,6 @@ Current architecture includes:
 - malformed/unsupported config fallback;
 - global Settings editor while avoiding misleading profile-scoped configuration.
 
-The pure regression suite protects both the global node cap and the maximum nested-page depth when
-loading persisted JSON, so corrupt/external input cannot build an unbounded menu tree.
-
 Do not redesign the old hard-coded Quick/Advanced menus as if this phase never happened.
 
 ### 3.13 Experimental sideways / fake-portrait streaming
@@ -291,9 +288,6 @@ Key architecture:
 - current game can assign/change/clear its automatic profile from the OSC Profiles menu;
 - stale mappings self-repair if the mapped profile no longer exists;
 - profile deletion removes its mappings.
-
-Blank OSC profile names recover to a stable generated fallback, and user-supplied profile names
-are capped at 80 characters; both normalization rules have direct regression coverage.
 
 The final PR head passed Android CI before merge, and post-merge Android CI + rolling debug APK publication were verified on `cc136900...`.
 

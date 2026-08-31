@@ -14,44 +14,44 @@ Git history preserves old versions of this file; keep the working copy focused o
 
 Set up durable repository context and a Codex-to-reviewer workflow.
 
-### Branch
+### Repository state
 
-`docs/codex-project-handoff`
+- Setup PR: `#10` — **merged**
+- Merged repository head after setup: `badd0c2158730c705eb1a3be6c7d7a14af43dfb7`
+- Last product-code baseline before documentation setup: `cc136900b15e00df3a62cf2f6d0d70d7c365d3bf`
+- Product baseline feature: `Add automatic per-game OSC profile selection (#9)`
 
-### Base
+The documentation merge changes no Android application/build/signing code. Future agents must still inspect the live `main` head rather than assuming either SHA remains current.
 
-`main` at `cc136900b15e00df3a62cf2f6d0d70d7c365d3bf`
+### Intent completed
 
-### Intent
+Future local Codex work is now self-contained and reviewable through three durable repository files:
 
-Make future local Codex work self-contained and reviewable by storing:
-
-- stable agent operating rules in `AGENTS.md`;
-- current completed phases, architecture decisions, active investigation, known limitations, and prioritized roadmap in `PROJECT_STATE.md`;
-- a mandatory rolling review packet in this file.
-
-### Files changed
-
-- `AGENTS.md`
-- `PROJECT_STATE.md`
-- `CODEX_HANDOFF.md`
+- `AGENTS.md` — stable operating rules, Git workflow, validation expectations, Android lifecycle/build/signing safety, UI direction, and autonomy expectations;
+- `PROJECT_STATE.md` — current completed phases, architectural decisions, known limitations, active investigation, and prioritized roadmap;
+- `CODEX_HANDOFF.md` — this rolling mandatory review packet.
 
 ### Important workflow decision
 
-Future coding tasks should normally be completed on a pushed feature/fix/audit branch and exposed through a pull request targeting `main`, but **left unmerged by default**. This gives the user a durable exact diff to hand to ChatGPT for an independent audit before promotion.
+Future implementation tasks should normally be completed on a pushed feature/fix/audit branch and exposed through a pull request targeting `main`, but **left unmerged by default**. This gives the user a durable exact diff to hand to ChatGPT for an independent audit before promotion.
 
 A task is not considered fully handed off if the only copy exists as uncommitted local changes.
 
-### Validation
+### Next recommended task
 
-Documentation-only setup. Review should verify that the docs accurately reflect current `main` and do not accidentally describe already-completed phases as future work.
+Resume the active Artemis Action/custom-key import-export investigation described in `PROJECT_STATE.md`.
 
-### Reviewer focus
+Do not immediately add a new serialization format. Current source already shows that `KeyboardProfilesManager` exports/imports an `actions` array in the modern `artemis-plus-keyboard-profiles` bundle. The next task must trace the actual user-facing import/export callers and related tests first, then choose between:
 
-- Does `PROJECT_STATE.md` match current source/history through PR #9?
-- Does the active import/export investigation correctly recognize that modern keyboard-profile bundles already contain an `actions` array?
-- Are future Codex tasks required to leave a durable remote branch/PR and an explicit audit packet?
-- Are signing/lifecycle/Apollo diagnostic invariants preserved?
+- a small tests/docs correction if the feature is effectively already implemented; or
+- a backward-compatible legacy-format extension only if a separate exposed legacy path genuinely requires it.
+
+### Reviewer focus for the setup itself
+
+- `PROJECT_STATE.md` should reflect source/history through merged PR #9 rather than the older pre-implementation roadmap.
+- `AGENTS.md` must require durable branch/PR publication and a review handoff after every coherent task.
+- Signing/lifecycle/Apollo diagnostic invariants must remain documented.
+- Future Codex tasks should leave PRs unmerged by default so an external audit can happen first.
 
 ---
 

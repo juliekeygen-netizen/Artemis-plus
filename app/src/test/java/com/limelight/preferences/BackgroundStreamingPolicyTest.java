@@ -4,6 +4,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import android.os.Build;
+
 import org.junit.Test;
 
 public class BackgroundStreamingPolicyTest {
@@ -23,6 +25,28 @@ public class BackgroundStreamingPolicyTest {
                 BackgroundStreamingPolicy.parseTimeoutMillis("garbage"));
         assertEquals(BackgroundStreamingPolicy.DEFAULT_TIMEOUT_MS,
                 BackgroundStreamingPolicy.parseTimeoutMillis("-1"));
+    }
+
+    @Test
+    public void bothBackgroundModesUseTimeoutPreference() {
+        assertTrue(BackgroundStreamingPolicy.usesBackgroundTimeout(
+                BackgroundStreamingPolicy.MODE_FAST_RESUME));
+        assertTrue(BackgroundStreamingPolicy.usesBackgroundTimeout(
+                BackgroundStreamingPolicy.MODE_KEEP_ALIVE));
+        assertFalse(BackgroundStreamingPolicy.usesBackgroundTimeout(
+                BackgroundStreamingPolicy.MODE_DISABLED));
+    }
+
+    @Test
+    public void keepAliveRequiresAndroidMAndNormal2dRenderer() {
+        assertFalse(BackgroundStreamingPolicy.isKeepAlivePlatformSupported(
+                Build.VERSION_CODES.LOLLIPOP_MR1, 0));
+        assertTrue(BackgroundStreamingPolicy.isKeepAlivePlatformSupported(
+                Build.VERSION_CODES.M, 0));
+        assertFalse(BackgroundStreamingPolicy.isKeepAlivePlatformSupported(
+                Build.VERSION_CODES.M, 1));
+        assertFalse(BackgroundStreamingPolicy.isKeepAlivePlatformSupported(
+                Build.VERSION_CODES.VANILLA_ICE_CREAM, 2));
     }
 
     @Test
@@ -51,6 +75,25 @@ public class BackgroundStreamingPolicyTest {
     }
 
     @Test
+    public void keepAliveArmingHasSameLifecycleExclusions() {
+        assertTrue(BackgroundStreamingPolicy.shouldArmKeepAliveBeforeSurfaceLoss(
+                BackgroundStreamingPolicy.MODE_KEEP_ALIVE, true,
+                false, false, false, false, false));
+        assertFalse(BackgroundStreamingPolicy.shouldArmKeepAliveBeforeSurfaceLoss(
+                BackgroundStreamingPolicy.MODE_KEEP_ALIVE, false,
+                false, false, false, false, false));
+        assertFalse(BackgroundStreamingPolicy.shouldArmKeepAliveBeforeSurfaceLoss(
+                BackgroundStreamingPolicy.MODE_KEEP_ALIVE, true,
+                false, false, true, false, false));
+        assertFalse(BackgroundStreamingPolicy.shouldArmKeepAliveBeforeSurfaceLoss(
+                BackgroundStreamingPolicy.MODE_KEEP_ALIVE, true,
+                false, false, false, false, true));
+        assertFalse(BackgroundStreamingPolicy.shouldArmKeepAliveBeforeSurfaceLoss(
+                BackgroundStreamingPolicy.MODE_FAST_RESUME, true,
+                false, false, false, false, false));
+    }
+
+    @Test
     public void fastResumeOnlyOwnsOrdinaryBackgroundStop() {
         assertTrue(BackgroundStreamingPolicy.shouldUseFastResume(
                 BackgroundStreamingPolicy.MODE_FAST_RESUME, false, false, false, false));
@@ -66,5 +109,24 @@ public class BackgroundStreamingPolicyTest {
                 BackgroundStreamingPolicy.MODE_FAST_RESUME, false, false, false, true));
         assertFalse(BackgroundStreamingPolicy.shouldUseFastResume(
                 BackgroundStreamingPolicy.MODE_KEEP_ALIVE, false, false, false, false));
+    }
+
+    @Test
+    public void keepAliveOnlyOwnsSupportedOrdinaryBackgroundStop() {
+        assertTrue(BackgroundStreamingPolicy.shouldUseKeepAlive(
+                BackgroundStreamingPolicy.MODE_KEEP_ALIVE, true,
+                false, false, false, false));
+        assertFalse(BackgroundStreamingPolicy.shouldUseKeepAlive(
+                BackgroundStreamingPolicy.MODE_KEEP_ALIVE, false,
+                false, false, false, false));
+        assertFalse(BackgroundStreamingPolicy.shouldUseKeepAlive(
+                BackgroundStreamingPolicy.MODE_FAST_RESUME, true,
+                false, false, false, false));
+        assertFalse(BackgroundStreamingPolicy.shouldUseKeepAlive(
+                BackgroundStreamingPolicy.MODE_KEEP_ALIVE, true,
+                true, false, false, false));
+        assertFalse(BackgroundStreamingPolicy.shouldUseKeepAlive(
+                BackgroundStreamingPolicy.MODE_KEEP_ALIVE, true,
+                false, false, true, false));
     }
 }

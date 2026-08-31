@@ -1299,8 +1299,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     @TargetApi(Build.VERSION_CODES.O)
     private void updatePipOverlayState(boolean inPip) {
         if (inPip) {
-            // PiP is still an active stream, not a Fast Resume background stop.
+            // PiP is still an active stream, not a background-streaming stop.
             fastResumeLifecycleArmed = false;
+            keepAliveLifecycleArmed = false;
             boolean entered = pipOverlayState.enter(
                     floatingMenuButton != null && floatingMenuButton.isShown(),
                     overlayToggleButton != null && overlayToggleButton.isShown(),
@@ -1352,8 +1353,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
         if (isInPictureInPictureMode) {
             // PiP owns this transition. Do not let an earlier pause callback reinterpret it as
-            // Fast Resume if the platform changes lifecycle ordering on a particular device.
+            // background streaming if the platform changes lifecycle ordering on a device.
             fastResumeLifecycleArmed = false;
+            keepAliveLifecycleArmed = false;
         }
         updatePipOverlayState(isInPictureInPictureMode);
         if (!isInPictureInPictureMode) {
@@ -1768,8 +1770,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         // that case here too.
         if (isInMultiWindowMode) {
             // A visible multi-window/PiP transition owns this lifecycle change. Revoke any
-            // speculative Fast Resume arm created by an earlier onPause() ordering.
+            // speculative background arm created by an earlier onPause() ordering.
             fastResumeLifecycleArmed = false;
+            keepAliveLifecycleArmed = false;
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
             decoderRenderer.notifyVideoBackground();
         }
@@ -1792,6 +1795,13 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             bottomEdgeStartGestureDetector.resetRecognizedGestureConsumption();
         }
         timerHandler.removeCallbacksAndMessages(null);
+        if ((keepAliveServiceStarted || keepAliveSurface != null || keepAliveBackgrounded ||
+                keepAliveLifecycleArmed || keepAliveReturnPending) && (connecting || connected)) {
+            if (decoderRenderer != null) {
+                decoderRenderer.prepareForStop();
+            }
+            stopConnection();
+        }
         fastResumeLifecycleArmed = false;
         fastResumeBackgrounded = false;
         fastResumeReconnectPending = false;
@@ -1853,9 +1863,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         // onPause() is the authoritative transition gate because Surface loss may happen before
         // onStop(). If PiP/multi-window revoked the arm, onStop() must not reinterpret the same
         // transition as Fast Resume after a terminal Surface path has already begun.
+        if (prefConfig == null) {
+            return false;
+        }
         String effectiveMode = keepAliveFallbackToFastResume ?
                 BackgroundStreamingPolicy.MODE_FAST_RESUME : prefConfig.backgroundStreamingMode;
-        return fastResumeLifecycleArmed && prefConfig != null &&
+        return fastResumeLifecycleArmed &&
                 BackgroundStreamingPolicy.shouldUseFastResume(
                         effectiveMode,
                         isFinishing(),
@@ -1930,8 +1943,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         keepAliveLifecycleArmed = false;
         keepAliveBackgrounded = false;
         keepAliveReturnPending = false;
-        closeKeepAliveSurface();
+        if (decoderRenderer != null && (connecting || connected)) {
+            decoderRenderer.prepareForStop();
+        }
         stopConnection();
+        closeKeepAliveSurface();
         stopKeepAliveService();
         finish();
     }
@@ -2079,6 +2095,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             startFastResumeReconnectIfReady();
         } else {
             fastResumeLifecycleArmed = false;
+            keepAliveLifecycleArmed = false;
         }
     }
 
@@ -2089,7 +2106,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         boolean ordinaryKeepAliveTransition = prefConfig != null &&
                 BackgroundStreamingPolicy.shouldArmKeepAliveBeforeSurfaceLoss(
                         prefConfig.backgroundStreamingMode,
-                        isKeepAliveSupportedForSession() && keepAliveServiceStarted,
+                        isKeepAliveSupportedForSession() && keepAliveServiceStarted &&
+                                StreamKeepAliveService.isForegroundActive(),
                         isFinishing(), isChangingConfigurations(), pipTransitionExpected,
                         isOnExternalDisplay(), multiWindow);
         if (ordinaryKeepAliveTransition) {
@@ -4220,6 +4238,18 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             public void run() {
                 // Let the display go to sleep now
                 getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+                if (keepAliveBackgrounded || keepAliveLifecycleArmed || keepAliveReturnPending) {
+                    timerHandler.removeCallbacks(keepAliveTimeoutRunnable);
+                    keepAliveLifecycleArmed = false;
+                    keepAliveBackgrounded = false;
+                    keepAliveReturnPending = false;
+                    stopKeepAliveService();
+                    if (decoderRenderer != null) {
+                        decoderRenderer.prepareForStop();
+                    }
+                    closeKeepAliveSurface();
+                }
 
                 // Stop processing controller input
                 controllerHandler.stop();

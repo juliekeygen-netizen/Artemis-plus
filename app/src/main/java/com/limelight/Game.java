@@ -330,6 +330,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private FrameLayout gamePhysicalRoot;
     private FrameLayout gameVisualRoot;
     private boolean sidewaysStreamActive;
+    private int sidewaysTransformGeneration;
     private ClipboardManager clipboardManager;
     private boolean clipboardSyncRunning = false;
 
@@ -1272,8 +1273,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     private void applySidewaysVisualTransform() {
         if (gamePhysicalRoot == null || gameVisualRoot == null) return;
+        final int generation = ++sidewaysTransformGeneration;
         gamePhysicalRoot.post(() -> {
-            if (isFinishing() || gamePhysicalRoot == null || gameVisualRoot == null) return;
+            if (generation != sidewaysTransformGeneration || isFinishing() ||
+                    gamePhysicalRoot == null || gameVisualRoot == null) return;
             int physicalWidth = gamePhysicalRoot.getWidth();
             int physicalHeight = gamePhysicalRoot.getHeight();
             if (physicalWidth <= 0 || physicalHeight <= 0) return;
@@ -1294,7 +1297,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                     ? SidewaysStreamPolicy.rotationDegrees(prefConfig.sidewaysStreamMode)
                     : 0f);
             gameVisualRoot.post(() -> {
-                if (gameVisualRoot == null) return;
+                if (generation != sidewaysTransformGeneration || isFinishing() ||
+                        gameVisualRoot == null) return;
                 gameVisualRoot.setPivotX(gameVisualRoot.getWidth() / 2f);
                 gameVisualRoot.setPivotY(gameVisualRoot.getHeight() / 2f);
                 refreshSidewaysDependentLayouts();
@@ -1359,17 +1363,19 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         setPreferredOrientationForActivity();
         applySidewaysVisualTransform();
 
-        if (virtualController != null) {
-            // Refresh layout of OSC for possible new screen size
-            virtualController.refreshLayout();
-        }
+        if (!sidewaysStreamActive) {
+            if (virtualController != null) {
+                // Refresh layout of OSC for possible new screen size
+                virtualController.refreshLayout();
+            }
 
-        if(keyBoardController != null){
-            keyBoardController.refreshLayout();
-        }
+            if (keyBoardController != null) {
+                keyBoardController.refreshLayout();
+            }
 
-        if(keyBoardLayoutController != null){
-            keyBoardLayoutController.refreshLayout();
+            if (keyBoardLayoutController != null) {
+                keyBoardLayoutController.refreshLayout();
+            }
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

@@ -31,13 +31,14 @@ General design principle: preserve the newer streaming base and extend it carefu
 
 At the time of this refresh, the latest verified `main` commit is:
 
-`cc136900b15e00df3a62cf2f6d0d70d7c365d3bf`
+`de32c77770346c7029dcde8011157b3ab302ed13`
 
 Commit:
 
-`Add automatic per-game OSC profile selection (#9)`
+`-.`
 
-This baseline has post-merge Android CI and rolling debug-release verification from the previous work session.
+This is a documentation/tooling-only commit after the verified PR #9 baseline. It does not alter
+Android application, signing, or release behavior.
 
 Always check the actual remote/local `main` before starting a new task. This SHA is a recovery marker, not a forever-pinned base.
 
@@ -60,7 +61,9 @@ Always check the actual remote/local `main` before starting a new task. This SHA
 8. **PR #8 — Experimental sideways/fake-portrait stream orientation**
    - merged baseline commit: `6847e800264f47a8d7b2462876f07f4a4882a3c6`
 9. **PR #9 — Automatic per-game OSC profile selection**
-   - current main: `cc136900b15e00df3a62cf2f6d0d70d7c365d3bf`
+   - merged feature baseline: `cc136900b15e00df3a62cf2f6d0d70d7c365d3bf`
+10. **Post-PR documentation/tooling commit**
+   - current main: `de32c77770346c7029dcde8011157b3ab302ed13`
 
 Do not resurrect the older 2026-08-30 handoff's feature ordering blindly. Several items that were future plans there are now complete and merged.
 
@@ -291,6 +294,28 @@ Key architecture:
 
 The final PR head passed Android CI before merge, and post-merge Android CI + rolling debug APK publication were verified on `cc136900...`.
 
+### 3.15 Compact editor UI/localization audit
+
+The current editor UI direction is now applied consistently across the newly added profile,
+custom-key, Quick Menu, touch-sensitivity, and OSC-profile surfaces.
+
+Important behavior and presentation decisions:
+
+- profile/key/Quick Menu destructive confirmations and OSC profile selectors use the shared
+  `ArtemisEditorUi` dark dialog surface and compact footer treatment rather than inheriting the
+  stream Activity's raw alert styling;
+- user-facing labels, validation text, accessibility descriptions, Settings titles/summaries,
+  import feedback, and dynamic count text for these surfaces live in default string resources;
+- Quick Menu subpage and keyboard-profile import counts use Android plurals;
+- Quick Menu and touch-sensitivity dialogs use bounded scroll containers and height caps so the
+  action rows/Apply control remain reachable on short or portrait displays;
+- existing Quick Menu tree, keyboard-profile bundle format, OSC profile ownership, and
+  touch-sensitivity preference keys are unchanged.
+
+Locale-specific translations intentionally fall back to the default values until translators add
+the new resource keys. Real-device checks are still needed for translated text expansion, nested
+Quick Menu scrolling, and OEM dialog/IME behavior.
+
 ---
 
 ## 4. Build, CI, signing, and release invariants
@@ -481,22 +506,19 @@ Recommended implementation approach:
 6. add mixed-size, competing-neighbor, tie, scaled-group, and detach/re-attach regressions;
 7. verify group outline/UX on real layouts.
 
-### Priority 3 — Final localization/menu/UI polish
+### Priority 3 — Editor UI/localization follow-up and device verification
 
-The shared UI direction exists, but some surfaces still contain hard-coded English strings or isolated raw `AlertDialog` styling.
+The shared editor surfaces have received a focused localization/dialog-consistency pass. Keep the
+current compact dark system as the source of truth, and do not reintroduce raw activity-themed
+dialogs in profile, key, Quick Menu, touch-sensitivity, or OSC flows.
 
-Audit for:
+Remaining follow-up:
 
-- hard-coded strings in Artemis Plus additions;
-- profile delete/rename dialogs and related menu consistency;
-- Quick Menu/editor action labels;
-- Settings strings/summaries;
-- consistent typography, row heights, widths, spacing;
-- popup behavior on small/portrait layouts;
-- action/key editor text hierarchy;
-- accessibility/content descriptions where custom controls were introduced.
-
-Avoid mixing this with unrelated streaming architecture changes unless a UI fix genuinely requires them.
+- test short/portrait screens and translated text expansion on real devices;
+- add locale-specific translations for the new default-resource keys as translation work becomes
+  available;
+- audit older unrelated settings/dialog surfaces separately rather than mixing them into a
+  keyboard/Quick Menu behavior change.
 
 ### Priority 4 — Strengthen sideways-stream integration coverage
 

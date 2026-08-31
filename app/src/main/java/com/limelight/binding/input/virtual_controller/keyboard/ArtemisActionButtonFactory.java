@@ -61,9 +61,10 @@ public final class ArtemisActionButtonFactory {
         }
         ScrollView scroll = new ScrollView(ui);
         scroll.addView(list);
-        AlertDialog dialog = ArtemisEditorUi.builder(ui, "Add Artemis Actions")
+        AlertDialog dialog = ArtemisEditorUi.builder(ui,
+                        ui.getString(R.string.artemis_actions_title))
                 .setView(scroll)
-                .setPositiveButton("Apply", (d, which) -> {
+                .setPositiveButton(R.string.artemis_apply, (d, which) -> {
                     HashSet<String> requested = new HashSet<>();
                     for (int i = 0; i < actions.length; i++) {
                         if (boxes[i].isChecked()) {
@@ -77,7 +78,7 @@ public final class ArtemisActionButtonFactory {
                     } else applyCollapsedState(controller);
                     saveSelectedActionIds(context, requested);
                     KeyBoardControllerConfigurationLoader.saveProfile(controller, context);
-                    Toast.makeText(context, "Artemis action buttons updated", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(context, R.string.artemis_actions_updated, Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();

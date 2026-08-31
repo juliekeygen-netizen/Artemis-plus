@@ -24,6 +24,7 @@ import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.limelight.R;
 import com.limelight.ui.ArtemisEditorUi;
 
 import java.util.ArrayList;
@@ -63,13 +64,20 @@ public final class QuickMenuEditorDialog {
             root.setOrientation(LinearLayout.VERTICAL);
             root.setPadding(pad, ArtemisEditorUi.dp(ui, 6), pad, ArtemisEditorUi.dp(ui, 8));
             root.setBackgroundColor(ArtemisEditorUi.SURFACE);
+            ScrollView editorScroll = new ScrollView(ui);
+            editorScroll.setFillViewport(false);
+            editorScroll.setClipToPadding(false);
+            editorScroll.addView(root, new ScrollView.LayoutParams(
+                    ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
 
             LinearLayout nav = new LinearLayout(ui);
             nav.setGravity(Gravity.CENTER_VERTICAL);
-            backButton = compactButton("‹ Back", false);
+            backButton = compactButton(ui.getString(R.string.artemis_quick_menu_back), false);
             nav.addView(backButton, new LinearLayout.LayoutParams(
                     ArtemisEditorUi.dp(ui, 78), ArtemisEditorUi.dp(ui, 42)));
-            titleView = ArtemisEditorUi.label(ui, "Quick Menu", 15.5f, ArtemisEditorUi.TEXT_PRIMARY);
+            titleView = ArtemisEditorUi.label(ui,
+                    ui.getString(R.string.artemis_quick_menu_root_title), 15.5f,
+                    ArtemisEditorUi.TEXT_PRIMARY);
             titleView.setGravity(Gravity.CENTER_VERTICAL);
             titleView.setMaxLines(1);
             nav.addView(titleView, new LinearLayout.LayoutParams(0,
@@ -78,7 +86,7 @@ public final class QuickMenuEditorDialog {
                     LinearLayout.LayoutParams.MATCH_PARENT, ArtemisEditorUi.dp(ui, 42)));
 
             emptyState = ArtemisEditorUi.label(ui,
-                    "This page is empty. Add an action or subpage below.",
+                    ui.getString(R.string.artemis_quick_menu_empty),
                     13.5f, ArtemisEditorUi.TEXT_SECONDARY);
             emptyState.setGravity(Gravity.CENTER);
             emptyState.setPadding(pad, pad, pad, pad);
@@ -121,8 +129,8 @@ public final class QuickMenuEditorDialog {
 
             LinearLayout firstActions = new LinearLayout(ui);
             firstActions.setGravity(Gravity.CENTER);
-            TextView addAction = compactButton("+ Action", true);
-            TextView addPage = compactButton("+ Subpage", true);
+            TextView addAction = compactButton(ui.getString(R.string.artemis_quick_menu_add_action), true);
+            TextView addPage = compactButton(ui.getString(R.string.artemis_quick_menu_add_subpage), true);
             firstActions.addView(addAction, weightedButtonParams());
             firstActions.addView(addPage, weightedButtonParams());
             root.addView(firstActions, new LinearLayout.LayoutParams(
@@ -130,8 +138,8 @@ public final class QuickMenuEditorDialog {
 
             LinearLayout secondActions = new LinearLayout(ui);
             secondActions.setGravity(Gravity.CENTER);
-            TextView rename = compactButton("Rename page", false);
-            TextView reset = compactButton("Reset defaults", false);
+            TextView rename = compactButton(ui.getString(R.string.artemis_quick_menu_rename_page), false);
+            TextView reset = compactButton(ui.getString(R.string.artemis_quick_menu_reset_defaults), false);
             secondActions.addView(rename, weightedButtonParams());
             secondActions.addView(reset, weightedButtonParams());
             root.addView(secondActions, new LinearLayout.LayoutParams(
@@ -140,14 +148,15 @@ public final class QuickMenuEditorDialog {
             addAction.setOnClickListener(v -> showActionPicker());
             addPage.setOnClickListener(v -> {
                 if (QuickMenuConfig.countNodes(config.root) >= QuickMenuConfig.MAX_TOTAL_NODES) {
-                    Toast.makeText(app, "Quick Menu item limit reached", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(app, R.string.artemis_quick_menu_item_limit, Toast.LENGTH_SHORT).show();
                     return;
                 }
                 if (pageStack.size() - 1 >= QuickMenuConfig.MAX_PAGE_DEPTH) {
-                    Toast.makeText(app, "Maximum Quick Menu nesting reached", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(app, R.string.artemis_quick_menu_depth_limit, Toast.LENGTH_SHORT).show();
                     return;
                 }
-                promptForName("Add Subpage", "Page name", "", name -> {
+                promptForName(ui.getString(R.string.artemis_quick_menu_add_subpage_title),
+                        ui.getString(R.string.artemis_quick_menu_page_name_hint), "", name -> {
                     QuickMenuConfig.Page child = QuickMenuConfig.addPage(currentPage(), name);
                     if (child != null) {
                         save();
@@ -157,15 +166,17 @@ public final class QuickMenuEditorDialog {
                 });
             });
             rename.setOnClickListener(v -> promptForName(
-                    "Rename Page", "Page name", currentPage().title, name -> {
+                    ui.getString(R.string.artemis_quick_menu_rename_page_title),
+                    ui.getString(R.string.artemis_quick_menu_page_name_hint), currentPage().title, name -> {
                         QuickMenuConfig.rename(currentPage(), name);
                         save();
                         refresh();
                     }));
-            reset.setOnClickListener(v -> new AlertDialog.Builder(ui)
-                    .setTitle("Reset Quick Menu?")
-                    .setMessage("Restore the default Quick Menu and Advanced page? Your custom pages and ordering will be removed.")
-                    .setPositiveButton("Reset", (d, which) -> {
+            reset.setOnClickListener(v -> {
+                AlertDialog confirmation = ArtemisEditorUi.builder(ui,
+                                ui.getString(R.string.artemis_quick_menu_reset_title))
+                    .setMessage(R.string.artemis_quick_menu_reset_message)
+                    .setPositiveButton(R.string.artemis_reset, (d, which) -> {
                         QuickMenuConfig.reset(app);
                         config = QuickMenuConfig.createDefault();
                         pageStack.clear();
@@ -174,7 +185,11 @@ public final class QuickMenuEditorDialog {
                         refresh();
                     })
                     .setNegativeButton(android.R.string.cancel, null)
-                    .show());
+                    .create();
+                confirmation.setOnShowListener(ignored ->
+                        ArtemisEditorUi.styleDialog(confirmation, app, 440));
+                confirmation.show();
+            });
             backButton.setOnClickListener(v -> {
                 if (pageStack.size() > 1) {
                     pageStack.remove(pageStack.size() - 1);
@@ -182,14 +197,13 @@ public final class QuickMenuEditorDialog {
                 }
             });
 
-            TextView dialogHeader = ArtemisEditorUi.header(ui, "Customize Quick Menu");
-            dialog = new AlertDialog.Builder(ui)
-                    .setCustomTitle(dialogHeader)
-                    .setView(root)
-                    .setNegativeButton("Close", null)
+            dialog = ArtemisEditorUi.builder(ui,
+                            ui.getString(R.string.artemis_quick_menu_title))
+                    .setView(editorScroll)
+                    .setNegativeButton(R.string.artemis_close, null)
                     .create();
             dialog.setOnShowListener(ignored -> {
-                ArtemisEditorUi.styleDialog(dialog, app, 560, 620, false);
+                ArtemisEditorUi.styleDialog(dialog, app, 560, 620, true);
                 refresh();
             });
             dialog.show();
@@ -252,7 +266,7 @@ public final class QuickMenuEditorDialog {
 
             EditText search = new EditText(ui);
             search.setSingleLine(true);
-            search.setHint("Search actions");
+            search.setHint(R.string.artemis_quick_menu_search_hint);
             search.setTextColor(Color.WHITE);
             search.setHintTextColor(0xFF8E8E93);
             search.setBackground(ArtemisEditorUi.rounded(ui,
@@ -262,7 +276,7 @@ public final class QuickMenuEditorDialog {
                     LinearLayout.LayoutParams.MATCH_PARENT, ArtemisEditorUi.dp(ui, 44)));
 
             List<String> categories = new ArrayList<>();
-            categories.add("All categories");
+            categories.add(ui.getString(R.string.artemis_quick_menu_all_categories));
             categories.addAll(StreamActionRegistry.getCategories());
             Spinner category = new Spinner(ui);
             ArrayAdapter<String> categoryAdapter = new ArrayAdapter<String>(
@@ -295,7 +309,8 @@ public final class QuickMenuEditorDialog {
             root.addView(scroll, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, ArtemisEditorUi.dp(ui, 330)));
 
-            AlertDialog picker = ArtemisEditorUi.builder(ui, "Add Quick Menu Action")
+            AlertDialog picker = ArtemisEditorUi.builder(ui,
+                            ui.getString(R.string.artemis_quick_menu_action_picker_title))
                     .setView(root)
                     .setNegativeButton(android.R.string.cancel, null)
                     .create();
@@ -305,7 +320,7 @@ public final class QuickMenuEditorDialog {
                 String selectedCategory = String.valueOf(category.getSelectedItem());
                 rows.removeAllViews();
                 for (StreamActionRegistry.ActionDefinition action : StreamActionRegistry.getAll()) {
-                    if (!"All categories".equals(selectedCategory) &&
+                    if (!ui.getString(R.string.artemis_quick_menu_all_categories).equals(selectedCategory) &&
                             !action.category.equals(selectedCategory)) continue;
                     String haystack = (action.label + " " + action.category + " " + action.description)
                             .toLowerCase(Locale.ROOT);
@@ -314,7 +329,8 @@ public final class QuickMenuEditorDialog {
                             LinearLayout.LayoutParams.MATCH_PARENT, ArtemisEditorUi.dp(ui, 64)));
                 }
                 if (rows.getChildCount() == 0) {
-                    TextView none = ArtemisEditorUi.label(ui, "No matching actions", 13.5f,
+                    TextView none = ArtemisEditorUi.label(ui,
+                            ui.getString(R.string.artemis_quick_menu_no_matches), 13.5f,
                             ArtemisEditorUi.TEXT_SECONDARY);
                     none.setGravity(Gravity.CENTER);
                     rows.addView(none, new LinearLayout.LayoutParams(
@@ -358,7 +374,7 @@ public final class QuickMenuEditorDialog {
             row.setLayoutParams(params);
             row.setOnClickListener(v -> {
                 if (QuickMenuConfig.countNodes(config.root) >= QuickMenuConfig.MAX_TOTAL_NODES) {
-                    Toast.makeText(app, "Quick Menu item limit reached", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(app, R.string.artemis_quick_menu_item_limit, Toast.LENGTH_SHORT).show();
                     return;
                 }
                 if (QuickMenuConfig.addAction(currentPage(), action.id)) {
@@ -390,7 +406,7 @@ public final class QuickMenuEditorDialog {
                 prompt.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v -> {
                     String value = input.getText().toString().trim();
                     if (value.isEmpty()) {
-                        input.setError("Enter a page name");
+                        input.setError(ui.getString(R.string.artemis_quick_menu_page_name_required));
                         return;
                     }
                     callback.onName(value);
@@ -426,7 +442,7 @@ public final class QuickMenuEditorDialog {
                 drag.setTextColor(0xFF94949B);
                 drag.setTextSize(21f);
                 drag.setGravity(Gravity.CENTER);
-                drag.setContentDescription("Hold and drag to reorder");
+                drag.setContentDescription(ui.getString(R.string.artemis_quick_menu_reorder_description));
                 row.addView(drag, new LinearLayout.LayoutParams(
                         ArtemisEditorUi.dp(ui, 44), ArtemisEditorUi.dp(ui, 52)));
 
@@ -455,7 +471,7 @@ public final class QuickMenuEditorDialog {
                 remove.setTextColor(ArtemisEditorUi.DANGER);
                 remove.setTextSize(21f);
                 remove.setGravity(Gravity.CENTER);
-                remove.setContentDescription("Remove from Quick Menu");
+                remove.setContentDescription(ui.getString(R.string.artemis_quick_menu_remove_description));
                 remove.setBackground(ArtemisEditorUi.rounded(ui, 0x12FFFFFF, 8, 0, 0));
                 row.addView(remove, new LinearLayout.LayoutParams(
                         ArtemisEditorUi.dp(ui, 44), ArtemisEditorUi.dp(ui, 44)));
@@ -472,13 +488,17 @@ public final class QuickMenuEditorDialog {
                 QuickMenuConfig.Node node = currentPage().items.get(position);
                 if (node.isPage()) {
                     holder.name.setText(node.page.title);
-                    holder.type.setText("Subpage · " + node.page.items.size() + " items");
+                    holder.type.setText(ui.getResources().getQuantityString(
+                            R.plurals.artemis_quick_menu_subpage_summary, node.page.items.size(),
+                            node.page.items.size()));
                     holder.open.setVisibility(View.VISIBLE);
                     holder.itemView.setOnClickListener(v -> openPage(node.page));
                 } else {
                     StreamActionRegistry.ActionDefinition action = StreamActionRegistry.find(node.actionId);
                     holder.name.setText(action == null ? node.actionId : action.label);
-                    holder.type.setText(action == null ? "Unavailable action" : action.category);
+                    holder.type.setText(action == null
+                            ? ui.getString(R.string.artemis_quick_menu_unavailable_action)
+                            : action.category);
                     holder.open.setVisibility(View.INVISIBLE);
                     holder.itemView.setOnClickListener(null);
                 }

@@ -1148,10 +1148,12 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
                     }
                     int importedProfiles = KeyboardProfilesManager.importProfiles(requireActivity(), json);
                     if (importedProfiles <= 0) {
-                        Toast.makeText(getActivity(), "No keyboard profiles found in file", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(getActivity(), R.string.artemis_settings_keyboard_profiles_empty,
+                                Toast.LENGTH_SHORT).show();
                     } else {
-                        Toast.makeText(getActivity(),
-                                "Imported " + importedProfiles + (importedProfiles == 1 ? " keyboard profile" : " keyboard profiles"),
+                        Toast.makeText(getActivity(), getResources().getQuantityString(
+                                R.plurals.artemis_settings_keyboard_profiles_imported,
+                                importedProfiles, importedProfiles),
                                 Toast.LENGTH_SHORT).show();
                     }
                 } catch (Exception e) {

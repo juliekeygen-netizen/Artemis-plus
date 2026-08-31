@@ -284,7 +284,8 @@ final class KeyComboManager {
         try {
             availableKeys = loadAvailableKeys(context);
         } catch (Exception e) {
-            Toast.makeText(context, "Unable to load key list: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            Toast.makeText(context, context.getString(R.string.artemis_key_load_error,
+                    String.valueOf(e.getMessage())), Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -303,19 +304,19 @@ final class KeyComboManager {
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
 
-        TextView intro = label(dialogContext,
-                "Add one key, or build a chord. Modifiers stay held while every selected key is pressed.",
+        TextView intro = label(dialogContext, dialogContext.getString(R.string.artemis_key_intro),
                 12.5f, ArtemisEditorUi.TEXT_SECONDARY);
         intro.setPadding(0, 0, 0, Math.round(8 * density));
         content.addView(intro);
 
-        TextView nameLabel = label(dialogContext, "Display name", 13f, Color.WHITE);
+        TextView nameLabel = label(dialogContext,
+                dialogContext.getString(R.string.artemis_key_display_name), 13f, Color.WHITE);
         content.addView(nameLabel);
 
         EditText nameInput = new EditText(dialogContext);
         nameInput.setSingleLine(true);
         nameInput.setInputType(InputType.TYPE_CLASS_TEXT);
-        nameInput.setHint("Example: Back");
+        nameInput.setHint(R.string.artemis_key_display_name_hint);
         nameInput.setTextColor(Color.WHITE);
         nameInput.setHintTextColor(0xFF8E8E93);
         if (existing != null) {
@@ -324,7 +325,8 @@ final class KeyComboManager {
         }
         content.addView(nameInput);
 
-        TextView modifiersLabel = label(dialogContext, "Hold modifiers (optional)", 13f, Color.WHITE);
+        TextView modifiersLabel = label(dialogContext,
+                dialogContext.getString(R.string.artemis_key_hold_modifiers), 13f, Color.WHITE);
         modifiersLabel.setPadding(0, Math.round(10 * density), 0, 0);
         content.addView(modifiersLabel);
 
@@ -340,7 +342,8 @@ final class KeyComboManager {
         modifierRow.addView(meta);
         content.addView(modifierRow);
 
-        TextView keysLabel = label(dialogContext, "Keys (pressed top to bottom)", 13f, Color.WHITE);
+        TextView keysLabel = label(dialogContext,
+                dialogContext.getString(R.string.artemis_key_press_order_label), 13f, Color.WHITE);
         keysLabel.setPadding(0, Math.round(10 * density), 0, Math.round(4 * density));
         content.addView(keysLabel);
 
@@ -348,7 +351,8 @@ final class KeyComboManager {
         if (existing != null && existing.keys.length > 0) {
             for (int code : existing.keys) {
                 KeyOption option = findOptionByCode(availableKeys, code);
-                keyRows.add(new KeyRowModel(option != null ? option : new KeyOption("Key " + code, code)));
+                keyRows.add(new KeyRowModel(option != null ? option : new KeyOption(
+                        dialogContext.getString(R.string.artemis_key_unknown, code), code)));
             }
         }
         if (keyRows.isEmpty()) {
@@ -362,7 +366,7 @@ final class KeyComboManager {
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
         Button addRow = new Button(dialogContext);
-        addRow.setText("+  Add row");
+        addRow.setText(R.string.artemis_key_add_row);
         addRow.setAllCaps(false);
         addRow.setTextColor(Color.WHITE);
         GradientDrawable addRowBackground = new GradientDrawable();
@@ -414,13 +418,15 @@ final class KeyComboManager {
         meta.setOnCheckedChangeListener((buttonView, isChecked) -> updateSummary.run());
         updateSummary.run();
 
-        AlertDialog.Builder builder = ArtemisEditorUi.builder(
-                        dialogContext, existing == null ? "Add Keys" : "Edit Key")
+        AlertDialog.Builder builder = ArtemisEditorUi.builder(dialogContext,
+                        dialogContext.getString(existing == null ? R.string.keyboard_add_keys
+                                : R.string.artemis_key_edit_title))
                 .setView(scrollView)
-                .setPositiveButton(existing == null ? "Add" : "Save", null)
+                .setPositiveButton(existing == null ? R.string.keyboard_add
+                        : R.string.artemis_key_save, null)
                 .setNegativeButton(android.R.string.cancel, null);
         if (existing != null) {
-            builder.setNeutralButton("Delete", null);
+            builder.setNeutralButton(R.string.artemis_delete, null);
         }
         AlertDialog dialog = builder.create();
 
@@ -430,14 +436,14 @@ final class KeyComboManager {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
                 String name = nameInput.getText().toString().trim();
                 if (name.isEmpty()) {
-                    nameInput.setError("Enter a display name");
+                    nameInput.setError(context.getString(R.string.artemis_key_display_name_required));
                     return;
                 }
 
                 for (KeyRowModel row : keyRows) {
                     if (row.selected == null) {
                         if (row.field != null) {
-                            row.field.setError("Choose a key from the list");
+                            row.field.setError(context.getString(R.string.artemis_key_selection_required));
                             row.field.requestFocus();
                             row.field.showDropDown();
                         }
@@ -483,12 +489,13 @@ final class KeyComboManager {
             });
 
             if (existing != null) {
-                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setTextColor(0xFFFF6B6B);
-                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v ->
-                        new AlertDialog.Builder(dialogContext)
-                                .setTitle("Delete Key?")
-                                .setMessage("Delete “" + existing.name + "” from this keyboard profile?")
-                                .setPositiveButton("Delete", (confirm, which) -> {
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setTextColor(ArtemisEditorUi.DANGER);
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+                    AlertDialog confirmation = ArtemisEditorUi.builder(dialogContext,
+                                    dialogContext.getString(R.string.artemis_key_delete_title))
+                            .setMessage(dialogContext.getString(R.string.artemis_key_delete_message,
+                                    existing.name))
+                            .setPositiveButton(R.string.artemis_delete, (confirm, which) -> {
                                     deleteDefinition(context, existing.id);
                                     KeyComboButton button = findButton(controller, existing.id);
                                     if (button != null) {
@@ -498,7 +505,11 @@ final class KeyComboManager {
                                     dialog.dismiss();
                                 })
                                 .setNegativeButton(android.R.string.cancel, null)
-                                .show());
+                                .create();
+                    confirmation.setOnShowListener(shown ->
+                            ArtemisEditorUi.styleDialog(confirmation, context, 420));
+                    confirmation.show();
+                });
             }
         });
         dialog.show();
@@ -586,7 +597,8 @@ final class KeyComboManager {
 
             AutoCompleteTextView field = new AutoCompleteTextView(context);
             model.field = field;
-            field.setHint(rowIndex == 0 ? "Choose a key…" : "Choose another key…");
+            field.setHint(rowIndex == 0 ? R.string.artemis_key_choose_first
+                    : R.string.artemis_key_choose_another);
             field.setSingleLine(true);
             field.setThreshold(0);
             field.setDropDownHeight(Math.round(264 * density));
@@ -661,7 +673,8 @@ final class KeyComboManager {
             if (rowIndex > 0) {
                 TextView remove = label(context, "×", 25f, 0xFFFF8A80);
                 remove.setGravity(Gravity.CENTER);
-                remove.setContentDescription("Remove key row");
+                remove.setContentDescription(context.getString(
+                        R.string.artemis_key_remove_row_description));
                 LinearLayout.LayoutParams removeParams = new LinearLayout.LayoutParams(
                         Math.round(44 * density),
                         Math.round(44 * density));

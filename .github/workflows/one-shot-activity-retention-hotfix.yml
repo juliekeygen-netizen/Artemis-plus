@@ -54,7 +54,7 @@ jobs:
         run: |
           git config user.name "juliekeygen-netizen"
           git config user.email "julie.keygen@gmail.com"
-          git add app/src/main/AndroidManifest.xml app/src/test/java/com/limelight/GameActivityManifestTest.java .github/workflows/android-ci.yml
+          git add app/src/main/AndroidManifest.xml app/src/test/java/com/limelight/GameActivityManifestTest.java
           if ! git diff --cached --quiet; then
             git commit -m "Fix background stream Activity retention"
             git push origin HEAD:fix/background-stream-activity-retention

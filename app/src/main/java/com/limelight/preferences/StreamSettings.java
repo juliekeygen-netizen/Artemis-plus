@@ -379,10 +379,11 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
             ListPreference backgroundTimeout = findPreference(
                     PreferenceConfiguration.BACKGROUND_STREAMING_TIMEOUT_PREF_STRING);
             if (backgroundMode != null && backgroundTimeout != null) {
-                backgroundTimeout.setEnabled(BackgroundStreamingPolicy.isFastResume(backgroundMode.getValue()));
+                backgroundTimeout.setEnabled(
+                        BackgroundStreamingPolicy.usesBackgroundTimeout(backgroundMode.getValue()));
                 backgroundMode.setOnPreferenceChangeListener((preference, newValue) -> {
                     backgroundTimeout.setEnabled(
-                            BackgroundStreamingPolicy.isFastResume(String.valueOf(newValue)));
+                            BackgroundStreamingPolicy.usesBackgroundTimeout(String.valueOf(newValue)));
                     return true;
                 });
             }

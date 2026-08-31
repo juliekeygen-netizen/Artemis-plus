@@ -20,8 +20,8 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Apply fourth sideways stream audit patch
-        run: python3 .github/sideways_stream_audit4.py
+      - name: Apply fifth sideways stream audit patch
+        run: python3 .github/sideways_stream_audit5.py
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -56,19 +56,14 @@ jobs:
           --tests "com.limelight.binding.input.virtual_controller.keyboard.LayoutSnappingHelperTest"
           --stacktrace
 
-      - name: Commit validated fourth-audit product patch
+      - name: Commit validated fifth-audit product patch
         run: |
           if git diff --quiet; then
-            echo "No fourth-audit product patch to commit"
+            echo "No fifth-audit product patch to commit"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            app/src/main/java/com/limelight/Game.java \
-            app/src/main/java/com/limelight/SidewaysStreamMode.java \
-            app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardController.java \
-            app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardControllerConfigurationLoader.java \
-            app/src/test/java/com/limelight/SidewaysStreamModeTest.java
-          git commit -m "Fix sideways logical control bounds"
+          git add app/src/main/java/com/limelight/Game.java
+          git commit -m "Use in-stream keyboard for sideways mode"
           git push

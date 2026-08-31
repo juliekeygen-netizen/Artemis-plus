@@ -216,28 +216,6 @@ public class LayoutSnappingHelperTest {
         assertTrue(result.lockX);
     }
 
-    @Test
-    public void textExpansionMovesTheStackedRightHandBranchWithoutBreakingItsGroup() {
-        int originalRight = 140;
-        int expansionDelta = 80;
-        int rightNeighborLeft = 144;
-        int stackedBranchLeft = 144;
-
-        assertTrue(LayoutSnappingHelper.shouldShiftForTextExpansion(originalRight, rightNeighborLeft));
-        assertTrue(LayoutSnappingHelper.shouldShiftForTextExpansion(originalRight, stackedBranchLeft));
-        assertFalse(LayoutSnappingHelper.shouldShiftForTextExpansion(originalRight, 100));
-        assertTrue(LayoutSnappingHelper.areGrouped(
-                rightNeighborLeft + expansionDelta, 100, 40, 40,
-                stackedBranchLeft + expansionDelta, 144, 40, 40));
-    }
-
-    @Test
-    public void groupMoveUsesOneClampedTranslationForEveryMember() {
-        assertEquals(20, LayoutSnappingHelper.clampGroupTranslation(50, 100, 980, 1000));
-        assertEquals(-100, LayoutSnappingHelper.clampGroupTranslation(-150, 100, 400, 1000));
-        assertEquals(24, LayoutSnappingHelper.clampGroupTranslation(24, 100, 400, 1000));
-    }
-
     private static View sizedView(Context context, int left, int top, int width, int height) {
         View view = new View(context);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);

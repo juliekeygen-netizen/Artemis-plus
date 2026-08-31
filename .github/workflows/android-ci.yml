@@ -48,6 +48,7 @@ jobs:
         run: >-
           ./gradlew :app:testNonRoot_gameDebugUnitTest
           --tests "com.limelight.ArtemisOrientationHelperTest"
+          --tests "com.limelight.SidewaysStreamModeTest"
           --tests "com.limelight.OutsideStreamOrientationPolicyTest"
           --tests "com.limelight.BottomEdgeStartGestureDetectorTest"
           --tests "com.limelight.PipOverlayTransitionStateTest"

@@ -25,6 +25,7 @@ jobs:
         run: |
           python3 .github/fast_resume_patch.py
           python3 .github/fast_resume_audit_patch.py
+          python3 .github/fast_resume_surface_patch.py
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -64,5 +65,5 @@ jobs:
             echo "No product changes to commit"
             exit 0
           fi
-          git commit -m "fix: harden Fast Resume controller and decoder lifecycle"
+          git commit -m "fix: harden Fast Resume surface and input lifecycle"
           git push origin feature/background-streaming-fast-resume

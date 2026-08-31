@@ -33,17 +33,44 @@ save(p, text, nl)
 
 # --- Game.java: floating controls are in logical-root coordinates, so clamp to that parent ---
 p, text, nl = load('app/src/main/java/com/limelight/Game.java')
-old_core = '''                            int maxOffsetX = getWindow().getDecorView().getWidth() - view.getWidth();\n                            if (newX > maxOffsetX) {\n                                newX = maxOffsetX;\n                            }\n\n                            int maxOffsetY = getWindow().getDecorView().getHeight() - view.getHeight();\n                            if (newY > maxOffsetY) {\n                                newY = maxOffsetY;\n                            }\n'''
-new_core = '''                            ViewParent dragParent = view.getParent();\n                            int parentWidth = dragParent instanceof View\n                                    ? ((View) dragParent).getWidth()\n                                    : getWindow().getDecorView().getWidth();\n                            int parentHeight = dragParent instanceof View\n                                    ? ((View) dragParent).getHeight()\n                                    : getWindow().getDecorView().getHeight();\n                            newX = SidewaysStreamMode.clampChildPosition(\n                                    newX, parentWidth, view.getWidth());\n                            newY = SidewaysStreamMode.clampChildPosition(\n                                    newY, parentHeight, view.getHeight());\n'''
-count = text.count(old_core)
-if count == 0 and text.count(new_core) == 2:
+needle = 'int maxOffsetX = getWindow().getDecorView().getWidth() - view.getWidth();'
+if needle not in text and text.count('SidewaysStreamMode.clampChildPosition(') >= 4:
     pass
-elif count != 2:
-    raise SystemExit(f'Game floating logical bounds: expected 2 clamp cores, found {count}')
 else:
-    text = text.replace(old_core, new_core)
-if 'getWindow().getDecorView().getWidth() - view.getWidth()' in text or \
-        'getWindow().getDecorView().getHeight() - view.getHeight()' in text:
+    positions = []
+    cursor = 0
+    while True:
+        pos = text.find(needle, cursor)
+        if pos < 0:
+            break
+        positions.append(pos)
+        cursor = pos + len(needle)
+    if len(positions) != 2:
+        raise SystemExit(f'Game floating logical bounds: expected 2 physical clamps, found {len(positions)}')
+
+    # Work backwards so replacing the later block cannot invalidate the earlier index.
+    for pos in reversed(positions):
+        line_start = text.rfind('\n', 0, pos) + 1
+        view_set = text.find('view.setX(newX);', pos)
+        if view_set < 0:
+            raise SystemExit('Game floating logical bounds: view.setX terminator missing')
+        indent = text[line_start:pos]
+        replacement = (
+            indent + 'ViewParent dragParent = view.getParent();\n' +
+            indent + 'int parentWidth = dragParent instanceof View\n' +
+            indent + '        ? ((View) dragParent).getWidth()\n' +
+            indent + '        : getWindow().getDecorView().getWidth();\n' +
+            indent + 'int parentHeight = dragParent instanceof View\n' +
+            indent + '        ? ((View) dragParent).getHeight()\n' +
+            indent + '        : getWindow().getDecorView().getHeight();\n' +
+            indent + 'newX = SidewaysStreamMode.clampChildPosition(\n' +
+            indent + '        newX, parentWidth, view.getWidth());\n' +
+            indent + 'newY = SidewaysStreamMode.clampChildPosition(\n' +
+            indent + '        newY, parentHeight, view.getHeight());\n\n' + indent
+        )
+        text = text[:line_start] + replacement + text[view_set:]
+
+if needle in text or 'getWindow().getDecorView().getHeight() - view.getHeight()' in text:
     raise SystemExit('Game floating logical bounds: physical DecorView clamp remains')
 save(p, text, nl)
 

@@ -27,8 +27,8 @@ feature merely to increase test count.
 - Task branch: `audit/sideways-stream-regressions`
 - Product commit: `0e1018583f84e06205746ce5575a8dac5102c420`
 - Current handoff commit: this commit (the PR tip includes this packet)
-- Pull request: pending publication
-- PR state: local validation complete; ready to push and open for review
+- Pull request: [#16 — Cover sideways stream layout invariants](https://github.com/juliekeygen-netizen/Artemis-plus/pull/16)
+- PR state: open; `build` and `verify` GitHub Actions checks are in progress at the time of update
 
 ### Scope completed
 
@@ -82,7 +82,7 @@ No runtime data changes. The existing four position slots remain `portrait`, `la
 
 ### GitHub Actions / release
 
-- CI result: not yet run; branch has not been pushed at handoff creation.
+- CI result: `build` and two `verify` checks are in progress at the time of this update.
 - APK/release publication: not requested and not performed.
 - Signing material/configuration: untouched.
 

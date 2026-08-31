@@ -21,8 +21,8 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Apply incremental Keep Alive hardening
-        run: python3 .github/keep_alive_audit3_patch.py
+      - name: Apply final Keep Alive audit pass
+        run: python3 .github/keep_alive_audit4_patch.py
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -62,5 +62,5 @@ jobs:
             echo "No product changes to commit"
             exit 0
           fi
-          git commit -m "feat: harden experimental Keep Connection Alive"
+          git commit -m "feat: finalize Keep Connection Alive lifecycle hardening"
           git push origin feature/background-keep-alive-poc

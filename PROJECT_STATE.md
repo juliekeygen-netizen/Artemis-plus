@@ -455,19 +455,31 @@ See section 6. This should likely be a relatively contained audit/fix/docs phase
 
 ### Priority 2 — Mixed-size snapping / deterministic best-candidate behavior
 
-The snapping path now uses explicit per-axis candidates with an alignment kind, target coordinate, error distance, and priority. The winner is selected by error, priority, target coordinate, and alignment kind, so an equal-score result is independent of `View` iteration order rather than being whichever neighboring control was inspected first.
+This is the strongest known editor-quality weak spot after current feature phases.
 
-Current expected behavior:
+Desired behavior:
 
-- standard 4 px inter-control gap candidates win over equally close edge/center alignment;
-- edge and center alignment work on either axis with different-sized controls;
-- move locks use a larger release threshold than the initial attachment range, allowing deliberate detach and later reattachment;
-- snapping does not resize a control; group scaling stays in the separate resize path;
-- connected group movement uses a single bounded translation for all members;
-- widening a long text label shifts the entire rightward connected branch, including stacked downstream controls, preserving group topology;
-- existing group outlines remain the feedback surface while snapping, moving, or resizing.
+- standard ~4 px inter-control group gap;
+- reliable left/right/top/bottom edge alignment;
+- center alignment where useful;
+- mixed-size control support;
+- nearest/best candidate wins instead of whichever neighbor is processed last;
+- deterministic candidate scoring/tie-breaking;
+- hysteresis so tiny finger movement does not immediately tear a control from a group;
+- no surprise resizing merely because controls overlap;
+- group feedback outline while snapping/transforming;
+- preserve connected-group movement semantics;
+- avoid making long-label auto-expansion collide with its neighbors.
 
-Regression coverage includes equal-size and mixed-size candidates, nearest and deterministic tie behavior, horizontal/vertical centering, gap preservation, overlap-without-resize, hysteresis/reattachment, scaled group spacing, branch-preserving label expansion, and bounded group movement. Real-device editor validation remains valuable for finger feel, group-outline clarity, and layouts with many irregular controls.
+Recommended implementation approach:
+
+1. audit `LayoutSnappingHelper` and `LayoutSnappingHelperTest` as they exist now;
+2. represent snap candidates explicitly with axis, target coordinate, distance/error, alignment type, and source/target control context;
+3. score/select the best candidate per axis deterministically;
+4. separate snapping from resizing/overlap correction;
+5. introduce hysteresis/attachment tolerance consciously rather than through accidental broad tolerance;
+6. add mixed-size, competing-neighbor, tie, scaled-group, and detach/re-attach regressions;
+7. verify group outline/UX on real layouts.
 
 ### Priority 3 — Final localization/menu/UI polish
 
@@ -544,7 +556,7 @@ Historically unreliable on real OxygenOS even after compatibility/retry work. It
 
 ### Snapping
 
-The deterministic candidate and long-label connected-branch fixes have targeted the known mixed-size weakness, but real-device validation is still needed for finger-feel hysteresis and densely packed irregular layouts.
+Mixed-size layouts remain the most credible known editor UX weak spot despite existing tests and helper improvements.
 
 ---
 

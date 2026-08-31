@@ -10,104 +10,48 @@ Git history preserves old versions of this file; keep the working copy focused o
 
 ## Current handoff
 
-## Task
+### Task
 
-Harden mixed-size keyboard editor snapping and connected-group geometry.
+Set up durable repository context and a Codex-to-reviewer workflow.
 
-## User goal
+### Repository state
 
-Replace residual order-dependent snapping with deterministic best-candidate behavior, keep snapping separate from resize behavior, preserve groups while controls/labels change size, and publish the result independently from the Action-bundle audit.
+- Setup PR: `#10` — **merged**
+- Merged repository head after setup: `badd0c2158730c705eb1a3be6c7d7a14af43dfb7`
+- Last product-code baseline before documentation setup: `cc136900b15e00df3a62cf2f6d0d70d7c365d3bf`
+- Product baseline feature: `Add automatic per-game OSC profile selection (#9)`
 
-## Repository state
+The documentation merge changes no Android application/build/signing code. Future agents must still inspect the live `main` head rather than assuming either SHA remains current.
 
-- Base branch: `main`
-- Base commit: `de32c77770346c7029dcde8011157b3ab302ed13`
-- Task branch: `audit/deterministic-layout-snapping`
-- Current product/code commit: `56bba14dcfef2f01e9313342e7ef73bb353b1b1d` (`Harden deterministic keyboard layout snapping`)
-- Review-packet metadata is committed immediately after that product/code commit; the PR tip is authoritative.
-- Pull request: [#13](https://github.com/juliekeygen-netizen/Artemis-plus/pull/13)
-- PR state: open, unmerged; GitHub Actions status was not yet observed when this packet was written.
-- Independent prerequisite context: Action-bundle audit [#12](https://github.com/juliekeygen-netizen/Artemis-plus/pull/12) is also unmerged, but this branch starts from clean `main` and does not depend on it.
+### Intent completed
 
-## Scope completed
+Future local Codex work is now self-contained and reviewable through three durable repository files:
 
-- Reworked `LayoutSnappingHelper` candidates into explicit axis/alignment objects. Horizontal and vertical candidates are selected independently by distance, alignment priority (gap/edge/center), then stable target-coordinate and alignment ties.
-- Eliminated the remaining same-score dependency on `View` iteration order; a reordered set of equally eligible neighbors now produces the same snap coordinate.
-- Kept the existing ~4 px spacing candidate priority and preserved position-only snapping: overlap does not change width or height, while group resize remains a separate path.
-- Made the editor's lock-release hysteresis testable through the same helper used by the touch path.
-- Fixed long-label expansion so an entire rightward connected branch, including stacked downstream members, moves with the newly widened button instead of losing its group connection.
-- Centralized shared group-translation bounds in a pure helper used by `KeyBoardController`.
-- Extended the permanent `LayoutSnappingHelperTest` selector already listed in Android CI; no CI configuration change was needed.
+- `AGENTS.md` — stable operating rules, Git workflow, validation expectations, Android lifecycle/build/signing safety, UI direction, and autonomy expectations;
+- `PROJECT_STATE.md` — current completed phases, architectural decisions, known limitations, active investigation, and prioritized roadmap;
+- `CODEX_HANDOFF.md` — this rolling mandatory review packet.
 
-## Key implementation decisions
+### Important workflow decision
 
-- Candidate scoring does not use child iteration position as a tie-break. Numeric target coordinates are stable across layout refresh/reordering, while explicit alignment priority maintains intentional gap-before-edge-before-center behavior.
-- The helper remains geometry-only. It does not resize controls or infer a resize operation from overlap; `keyBoardVirtualControllerElement` retains resize/group-scale ownership.
-- The new pure seams are called from the production move/label-expansion paths. This avoids an invalid Robolectric test that constructs `KeyBoardController`, a path that necessarily initializes native Moonlight code.
-- No persisted format or grouping tolerance changed. Existing layouts, scaled group membership, and group-outline feedback continue to use their existing state ownership.
+Future implementation tasks should normally be completed on a pushed feature/fix/audit branch and exposed through a pull request targeting `main`, but **left unmerged by default**. This gives the user a durable exact diff to hand to ChatGPT for an independent audit before promotion.
 
-## Files changed
+A task is not considered fully handed off if the only copy exists as uncommitted local changes.
 
-- `app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/LayoutSnappingHelper.java`
-- `app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/keyBoardVirtualControllerElement.java`
-- `app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardController.java`
-- `app/src/test/java/com/limelight/binding/input/virtual_controller/keyboard/LayoutSnappingHelperTest.java`
-- `PROJECT_STATE.md`
-- `CODEX_HANDOFF.md`
+### Next recommended task
 
-## Persistence / compatibility
+Resume the active Artemis Action/custom-key import-export investigation described in `PROJECT_STATE.md`.
 
-- No preferences or serialized layout schema changed.
-- Existing persisted geometry and scaled connected groups use the same `areGrouped()` rules as before.
-- The behavioral change only chooses a stable position where pre-existing candidates tie and shifts previously stranded downstream connected controls during a text-width expansion.
+Do not immediately add a new serialization format. Current source already shows that `KeyboardProfilesManager` exports/imports an `actions` array in the modern `artemis-plus-keyboard-profiles` bundle. The next task must trace the actual user-facing import/export callers and related tests first, then choose between:
 
-## Lifecycle / race / safety review
+- a small tests/docs correction if the feature is effectively already implemented; or
+- a backward-compatible legacy-format extension only if a separate exposed legacy path genuinely requires it.
 
-- No `Game`, stream, Surface/TextureView, input suspension, background, PiP, or orientation code changed.
-- Editor touch handling still owns sticky locks and group mode. The extracted hysteresis predicate is called from the same move path, preserving thresholds and teardown behavior.
-- Group translation remains bounded to the parent frame before every member is updated, avoiding partial out-of-bounds movement.
-- The group outline/view ordering logic remains unchanged and is still refreshed after group move/resize.
+### Reviewer focus for the setup itself
 
-## Tests actually run
-
-- `./gradlew.bat :app:testNonRoot_gameDebugUnitTest --tests "com.limelight.binding.input.virtual_controller.keyboard.LayoutSnappingHelperTest"` — PASS (20 tests).
-- `./gradlew.bat :app:testNonRoot_gameDebugUnitTest --tests "com.limelight.binding.input.virtual_controller.keyboard.ArtemisActionButtonFactoryTest" --tests "com.limelight.binding.input.virtual_controller.keyboard.KeyComboManagerTest" --tests "com.limelight.binding.input.virtual_controller.keyboard.KeyboardProfilesManagerTest" --tests "com.limelight.binding.input.virtual_controller.keyboard.LayoutSnappingHelperTest" --tests "com.limelight.binding.input.virtual_controller.keyboard.LongPressMoveGestureGuardTest"` — PASS.
-- `./gradlew.bat :app:assembleNonRoot_gameDebug` — PASS.
-- `git diff --check` — PASS.
-- An initial transient `KeyBoardControllerTest` attempt — FAILED because constructing the controller invokes `PreferenceConfiguration.readPreferences()` and native `moonlight-core` loading under Robolectric. The invalid test was removed and replaced by runnable pure regression seams used directly in production; the failure is not retained or hidden.
-- Full inherited Robolectric suite — NOT RUN; it includes documented baseline native/startup failures outside this focused patch.
-
-## GitHub Actions / release
-
-- PR: [#13](https://github.com/juliekeygen-netizen/Artemis-plus/pull/13)
-- CI: pending/not yet observed at packet creation.
-- Release/APK publication: not expected from this unmerged branch.
-- Signing: unchanged; no signing material or build/release configuration changed.
-
-## Known limitations / real-device validation
-
-- Test the editor on a physical device with irregular mixed-size groups: drag around an equal-distance tie, deliberately detach/re-attach, move a group to each parent boundary, resize a scaled group, and edit a long custom-key label next to a stacked/rightward branch.
-- Unit tests cannot validate finger feel, exact group-outline rendering, or all OEM coordinate behavior; no stream decoder behavior changed.
-
-## Audit hotspots
-
-- Check `Candidate.betterThan()` ordering against the intended UX for symmetric neighbors and gap-versus-edge/center ties.
-- Check `KeyBoardController.ensureTextButtonWidth()` for any unusual group topology where a rightward member should not travel with the expanded branch.
-- Check the touch path's sticky lock cleanup and group-mode exit behavior after a snap, cancel, configuration change, and profile switch.
-- Verify legacy/scaled group tolerance has not unintentionally expanded; this patch intentionally leaves it unchanged.
-
-## Deferred work
-
-- Artemis Action profile-bundle audit remains on independent [#12](https://github.com/juliekeygen-netizen/Artemis-plus/pull/12), although its CI has passed.
-- UI/localization polish, sideways-stream coverage, and foldable feasibility remain separate future phases.
-
-## PROJECT_STATE update
-
-`PROJECT_STATE.md` records the deterministic candidate, branch-preserving text expansion, and device-validation status for the snapping priority. It deliberately retains the unmerged Action-bundle investigation as Priority 1 because this independent branch started from clean `main`.
-
-## Suggested reviewer action
-
-Audit with special attention to symmetric-candidate tie behavior and real-device mixed-size editor interactions before merge.
+- `PROJECT_STATE.md` should reflect source/history through merged PR #9 rather than the older pre-implementation roadmap.
+- `AGENTS.md` must require durable branch/PR publication and a review handoff after every coherent task.
+- Signing/lifecycle/Apollo diagnostic invariants must remain documented.
+- Future Codex tasks should leave PRs unmerged by default so an external audit can happen first.
 
 ---
 

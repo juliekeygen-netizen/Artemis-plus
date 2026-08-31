@@ -541,6 +541,11 @@
         android:title="@string/category_ui_settings"
         app:initialExpandedChildrenCount="3"
         app:iconSpaceReserved="false">
+        <com.limelight.preferences.QuickMenuPreference
+            android:key="customize_quick_menu"
+            android:title="Customize Quick Menu"
+            android:summary="Choose, reorder, remove, and group the actions shown in the in-stream Quick Menu."
+            app:iconSpaceReserved="false" />
         <CheckBoxPreference
             android:defaultValue="false"
             android:key="checkbox_resume_without_confirm"

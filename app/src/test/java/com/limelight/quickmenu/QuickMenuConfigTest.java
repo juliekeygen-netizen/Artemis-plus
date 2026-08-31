@@ -141,6 +141,34 @@ public class QuickMenuConfigTest {
     }
 
     @Test
+    public void parserCapsNestedPagesAtMaximumDepth() throws Exception {
+        JSONObject root = new JSONObject()
+                .put("id", "root")
+                .put("title", "Root");
+        JSONObject current = root;
+        for (int depth = 1; depth <= QuickMenuConfig.MAX_PAGE_DEPTH + 3; depth++) {
+            JSONObject child = new JSONObject()
+                    .put("id", "page-" + depth)
+                    .put("title", "Page " + depth);
+            current.put("items", new JSONArray().put(new JSONObject()
+                    .put("type", QuickMenuConfig.TYPE_PAGE)
+                    .put("page", child)));
+            current = child;
+        }
+        current.put("items", new JSONArray().put(new JSONObject()
+                .put("type", QuickMenuConfig.TYPE_ACTION)
+                .put("actionId", StreamActionRegistry.TASK_MANAGER)));
+
+        QuickMenuConfig parsed = QuickMenuConfig.fromJson(new JSONObject()
+                .put("version", QuickMenuConfig.CURRENT_VERSION)
+                .put("root", root));
+
+        assertNotNull(parsed);
+        assertEquals(QuickMenuConfig.MAX_PAGE_DEPTH, deepestPageDepth(parsed.root));
+        assertEquals(QuickMenuConfig.MAX_PAGE_DEPTH, QuickMenuConfig.countNodes(parsed.root));
+    }
+
+    @Test
     public void registryIdsAreUniqueAndResolvable() {
         Set<String> ids = new HashSet<>();
         for (StreamActionRegistry.ActionDefinition action : StreamActionRegistry.getAll()) {
@@ -149,5 +177,15 @@ public class QuickMenuConfigTest {
             assertFalse(action.label.trim().isEmpty());
             assertFalse(action.category.trim().isEmpty());
         }
+    }
+
+    private static int deepestPageDepth(QuickMenuConfig.Page page) {
+        int depth = 0;
+        for (QuickMenuConfig.Node node : page.items) {
+            if (node != null && node.isPage()) {
+                depth = Math.max(depth, 1 + deepestPageDepth(node.page));
+            }
+        }
+        return depth;
     }
 }

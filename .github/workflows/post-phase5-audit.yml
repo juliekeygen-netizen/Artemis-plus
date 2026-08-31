@@ -1,0 +1,57 @@
+name: Post Phase 5 Integration Audit
+
+on:
+  push:
+    branches:
+      - audit/post-phase5-integration
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Audit render-target assumptions
+        shell: bash
+        run: |
+          set +e
+          echo '=== getSurfaceView call sites ==='
+          git grep -n 'getSurfaceView(' -- app/src/main/java || true
+          echo '=== direct SurfaceHolder assumptions ==='
+          git grep -n -E 'SurfaceHolder|holder\.getSurface\(' -- app/src/main/java/com/limelight app/src/main/java/com/limelight/ui || true
+          echo '=== streamContainer getSurface call sites ==='
+          git grep -n 'streamContainer.getSurface()' -- app/src/main/java || true
+
+      - name: Audit raw coordinate and physical display assumptions
+        shell: bash
+        run: |
+          set +e
+          echo '=== raw coordinates ==='
+          git grep -n -E 'getRawX\(|getRawY\(' -- app/src/main/java/com/limelight || true
+          echo '=== direct display metric dimensions ==='
+          git grep -n -E 'getDisplayMetrics\(\).*widthPixels|getDisplayMetrics\(\).*heightPixels|\.widthPixels|\.heightPixels' -- app/src/main/java/com/limelight/binding/input/virtual_controller app/src/main/java/com/limelight/ui app/src/main/java/com/limelight/Game.java || true
+
+      - name: Audit orientation and separate-window UI
+        shell: bash
+        run: |
+          set +e
+          echo '=== orientation requests ==='
+          git grep -n 'setRequestedOrientation' -- app/src/main/java/com/limelight || true
+          echo '=== dialogs and popup windows reachable from Game/menu ==='
+          git grep -n -E 'new AlertDialog|AlertDialog\.Builder|Dialog\.displayDialog|PopupWindow' -- app/src/main/java/com/limelight/Game.java app/src/main/java/com/limelight/GameMenu.java app/src/main/java/com/limelight/binding/input/virtual_controller || true
+
+      - name: Audit static Activity ownership and delayed callbacks
+        shell: bash
+        run: |
+          set +e
+          echo '=== Game.instance references ==='
+          git grep -n 'Game\.instance' -- app/src/main/java || true
+          echo '=== broad callback cancellation ==='
+          git grep -n 'removeCallbacksAndMessages(null)' -- app/src/main/java/com/limelight || true

@@ -142,7 +142,8 @@ public class KeyBoardLayoutController {
                     }
 
                     // Key popup
-                    if (!TextUtils.equals("hide", tag) && !_isSpecialKey) {
+                    if (!TextUtils.equals("hide", tag) && !_isSpecialKey &&
+                            (Game.instance == null || !Game.instance.isSidewaysStreamActive())) {
                         String popupText;
                         KeyEvent tempEvent = new KeyEvent(KeyEvent.ACTION_DOWN, keyCode);
                         int unicodeChar = tempEvent.getUnicodeChar(0);
@@ -342,9 +343,8 @@ public class KeyBoardLayoutController {
             widthPreference = prefConfig.onscreenKeyboardWidth;
             width = widthPreference == 1000 ? ViewGroup.LayoutParams.MATCH_PARENT : dip2px(context, widthPreference);
         } else {
-            DisplayMetrics screen = context.getResources().getDisplayMetrics();
-            width = screen.widthPixels;
-            height = (int) (screen.heightPixels * 0.5);
+            width = logicalLayoutWidth();
+            height = (int) (logicalLayoutHeight() * 0.5f);
         }
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
         params.gravity = Gravity.BOTTOM;
@@ -367,6 +367,24 @@ public class KeyBoardLayoutController {
         // params.topMargin = 15;
         keyboardView.setAlpha(prefConfig.oscKeyboardOpacity / 100f);
         frame_layout.addView(keyboardView, params);
+    }
+
+    private int logicalLayoutWidth() {
+        if (frame_layout != null && frame_layout.getWidth() > 0) return frame_layout.getWidth();
+        DisplayMetrics screen = context.getResources().getDisplayMetrics();
+        if (Game.instance != null && Game.instance.isSidewaysStreamActive()) {
+            return screen.heightPixels;
+        }
+        return screen.widthPixels;
+    }
+
+    private int logicalLayoutHeight() {
+        if (frame_layout != null && frame_layout.getHeight() > 0) return frame_layout.getHeight();
+        DisplayMetrics screen = context.getResources().getDisplayMetrics();
+        if (Game.instance != null && Game.instance.isSidewaysStreamActive()) {
+            return screen.widthPixels;
+        }
+        return screen.heightPixels;
     }
 
     public int dip2px(Context context, float dpValue) {

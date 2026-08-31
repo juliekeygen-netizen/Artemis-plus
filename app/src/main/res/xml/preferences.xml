@@ -589,6 +589,14 @@
             android:title="Outside stream orientation"
             android:summary="Controls Artemis screens when no stream is open. Follow system respects Android rotation lock; Portrait keeps Artemis menus upright."
             app:iconSpaceReserved="false" />
+        <ListPreference
+            android:defaultValue="off"
+            android:entries="@array/sideways_stream_mode_names"
+            android:entryValues="@array/sideways_stream_mode_values"
+            android:key="list_sideways_stream_mode"
+            android:title="Sideways stream orientation (experimental)"
+            android:summary="Keeps the Android stream Activity physically portrait so system bars stay on a short edge, while rotating the 2D stream and in-stream controls into landscape. Ignored for 3D and external displays; PiP and manual stream rotation are disabled while active."
+            app:iconSpaceReserved="false" />
         <CheckBoxPreference
             android:defaultValue="false"
             android:key="checkbox_reset_floating_controls_between_sessions"

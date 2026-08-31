@@ -1,9 +1,19 @@
-<merge xmlns:android="http://schemas.android.com/apk/res/android"
+<com.limelight.ui.SidewaysStreamLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/gamePhysicalRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".Game" >
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    tools:context=".Game">
+
+    <FrameLayout
+        android:id="@+id/streamVisualRoot"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipChildren="false"
+        android:clipToPadding="false">
 
     <View
         android:id="@+id/backgroundTouchView"
@@ -128,4 +138,5 @@
         android:layout_height="match_parent"
         android:visibility="gone" />
 
-</merge>
+    </FrameLayout>
+</com.limelight.ui.SidewaysStreamLayout>

@@ -8,6 +8,9 @@ import android.view.ViewParent;
 
 import androidx.preference.PreferenceManager;
 
+import com.limelight.Game;
+import com.limelight.SidewaysStreamMode;
+
 /** Shared portrait/landscape normalized-position persistence for Artemis floating controls. */
 public final class FloatingControlPositionStore {
     public static final String PREFS = "ArtemisPlusFloatingControlPositions";
@@ -74,7 +77,8 @@ public final class FloatingControlPositionStore {
 
     public static void clearAllOrientations(Context context, String identity) {
         SharedPreferences.Editor editor = prefs(context).edit();
-        for (String orientation : new String[]{"portrait", "landscape"}) {
+        for (String orientation : new String[]{"portrait", "landscape",
+                SidewaysStreamMode.MODE_CW, SidewaysStreamMode.MODE_CCW}) {
             editor.remove(identity + "_" + orientation + "_saved");
             editor.remove(identity + "_" + orientation + "_x");
             editor.remove(identity + "_" + orientation + "_y");
@@ -96,8 +100,10 @@ public final class FloatingControlPositionStore {
 
     private static String key(Context context, String identity, String axis) {
         int orientation = context.getResources().getConfiguration().orientation;
-        String orientationName = orientation == Configuration.ORIENTATION_PORTRAIT
-                ? "portrait" : "landscape";
+        String mode = Game.instance != null
+                ? Game.instance.getActiveSidewaysStreamMode()
+                : SidewaysStreamMode.MODE_OFF;
+        String orientationName = SidewaysStreamMode.positionSlot(mode, orientation);
         return identity + "_" + orientationName + "_" + axis;
     }
 

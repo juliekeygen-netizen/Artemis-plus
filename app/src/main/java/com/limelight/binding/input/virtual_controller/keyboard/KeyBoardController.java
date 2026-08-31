@@ -453,19 +453,20 @@ public class KeyBoardController {
         }
         int oldRight = params.leftMargin + params.width;
         int delta = targetWidth - params.width;
+        int elementTop = params.topMargin;
+        int elementBottom = params.topMargin + params.height;
         params.width = targetWidth;
         element.requestLayout();
 
-        // Shift the complete rightward branch, including controls stacked from a direct
-        // neighbor. Limiting this to controls vertically overlapping the expanded button leaves
-        // a stacked branch behind and silently breaks its connected-group topology.
         for (keyBoardVirtualControllerElement other : group) {
             if (other == element || !(other.getLayoutParams() instanceof FrameLayout.LayoutParams)) {
                 continue;
             }
             FrameLayout.LayoutParams otherParams = (FrameLayout.LayoutParams) other.getLayoutParams();
-            if (LayoutSnappingHelper.shouldShiftForTextExpansion(oldRight,
-                    otherParams.leftMargin)) {
+            int overlap = Math.min(elementBottom, otherParams.topMargin + otherParams.height) -
+                    Math.max(elementTop, otherParams.topMargin);
+            int minHeight = Math.min(params.height, otherParams.height);
+            if (otherParams.leftMargin >= oldRight - 6 && overlap >= minHeight * 0.35f) {
                 otherParams.leftMargin += delta;
                 other.requestLayout();
             }
@@ -937,12 +938,10 @@ public class KeyBoardController {
         int parentWidth = frame_layout.getWidth();
         int parentHeight = frame_layout.getHeight();
         if (parentWidth > 0) {
-            dx = LayoutSnappingHelper.clampGroupTranslation(
-                    dx, bounds.left, bounds.right, parentWidth);
+            dx = Math.max(-bounds.left, Math.min(dx, parentWidth - bounds.right));
         }
         if (parentHeight > 0) {
-            dy = LayoutSnappingHelper.clampGroupTranslation(
-                    dy, bounds.top, bounds.bottom, parentHeight);
+            dy = Math.max(-bounds.top, Math.min(dy, parentHeight - bounds.bottom));
         }
 
         for (keyBoardVirtualControllerElement element : activeMoveGroup) {

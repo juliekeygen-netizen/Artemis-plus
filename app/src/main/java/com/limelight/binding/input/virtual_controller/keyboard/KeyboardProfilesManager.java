@@ -289,8 +289,19 @@ public final class KeyboardProfilesManager {
         ensureInitialized(context);
         JSONObject root = new JSONObject(json);
         JSONArray importedProfiles;
+        boolean modernBundle = root.has("format");
 
-        if (EXPORT_FORMAT.equals(root.optString("format"))) {
+        if (modernBundle) {
+            String format = root.optString("format", "");
+            if (!EXPORT_FORMAT.equals(format)) {
+                throw new JSONException("Unsupported keyboard profile bundle format: " + format);
+            }
+            int version = root.has("version")
+                    ? root.optInt("version", -1)
+                    : EXPORT_VERSION;
+            if (version != EXPORT_VERSION) {
+                throw new JSONException("Unsupported keyboard profile bundle version: " + version);
+            }
             importedProfiles = root.optJSONArray("profiles");
             if (importedProfiles == null) {
                 throw new JSONException("Missing profiles array");
@@ -306,15 +317,32 @@ public final class KeyboardProfilesManager {
             importedProfiles.put(legacy);
         }
 
-        List<Profile> existing = readProfiles(context);
-        int added = 0;
+        // Validate the complete structure before writing any new preference files. This keeps a
+        // malformed later profile from leaving orphaned geometry/key/action state behind after an
+        // otherwise failed import.
+        List<JSONObject> validatedProfiles = new ArrayList<>();
         for (int i = 0; i < importedProfiles.length(); i++) {
-            JSONObject imported = importedProfiles.getJSONObject(i);
+            Object value = importedProfiles.opt(i);
+            if (!(value instanceof JSONObject)) {
+                throw new JSONException("Invalid profile entry at index " + i);
+            }
+            JSONObject imported = (JSONObject) value;
             JSONObject layout = imported.optJSONObject("layout");
             if (layout == null) {
+                if (modernBundle) {
+                    throw new JSONException("Missing layout object for profile at index " + i);
+                }
                 continue;
             }
+            validateOptionalArray(imported, "keys", i);
+            validateOptionalArray(imported, "actions", i);
+            validatedProfiles.add(imported);
+        }
 
+        List<Profile> existing = readProfiles(context);
+        int added = 0;
+        for (JSONObject imported : validatedProfiles) {
+            JSONObject layout = imported.getJSONObject("layout");
             String requestedName = imported.optString("name", "Imported Profile");
             Profile profile = new Profile(
                     newId(),
@@ -343,6 +371,17 @@ public final class KeyboardProfilesManager {
             writeProfiles(context, existing, meta(context).getString(KEY_ACTIVE, existing.get(0).id));
         }
         return added;
+    }
+
+    private static void validateOptionalArray(JSONObject object, String key, int profileIndex)
+            throws JSONException {
+        if (!object.has(key)) {
+            return;
+        }
+        Object value = object.opt(key);
+        if (value != null && value != JSONObject.NULL && !(value instanceof JSONArray)) {
+            throw new JSONException("Invalid " + key + " array for profile at index " + profileIndex);
+        }
     }
 
     private static SharedPreferences meta(Context context) {

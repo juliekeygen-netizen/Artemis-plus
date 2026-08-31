@@ -138,6 +138,8 @@ public class PreferenceConfiguration {
 
     private static final String CHECKBOX_ENABLE_COMMIT_TEXT = "checkbox_enable_commit_text";
     private static final String BOTTOM_EDGE_START_GESTURE_PREF_STRING = "list_bottom_edge_start_gesture";
+    static final String BACKGROUND_STREAMING_MODE_PREF_STRING = "list_background_streaming_mode";
+    static final String BACKGROUND_STREAMING_TIMEOUT_PREF_STRING = "list_background_streaming_timeout";
 
     static final String DEFAULT_RESOLUTION = "1280x720";
     static final String DEFAULT_FPS = "60";
@@ -208,6 +210,8 @@ public class PreferenceConfiguration {
     private static final boolean DEFAULT_TRACKPAD_SWAP_AXIS = false;
     private static final boolean DEFAULT_ENABLE_COMMIT_TEXT = false;
     private static final String DEFAULT_BOTTOM_EDGE_START_GESTURE = "native";
+    private static final String DEFAULT_BACKGROUND_STREAMING_MODE = BackgroundStreamingPolicy.MODE_DISABLED;
+    private static final String DEFAULT_BACKGROUND_STREAMING_TIMEOUT = "120000";
     private static final String DEFAULT_ONSCREEN_KEYBOARD_ALIGN_MODE = "center";
     private static final boolean DEFAULT_SHOW_OVERLAY_TOGGLE_BUTTON = false;
 
@@ -267,6 +271,8 @@ public class PreferenceConfiguration {
     public boolean enableHdr;
     public boolean enablePip;
     public String bottomEdgeStartGestureMode;
+    public String backgroundStreamingMode;
+    public long backgroundStreamingTimeoutMs;
 
     public float parallax_depth;
 
@@ -1006,6 +1012,11 @@ private static int getFramePacingValue(Context context) {
         config.trackpadSwapAxis = prefs.getBoolean(CHECKBOX_TRACKPAD_SWAP_AXIS, DEFAULT_TRACKPAD_SWAP_AXIS);
         config.bottomEdgeStartGestureMode = prefs.getString(
                 BOTTOM_EDGE_START_GESTURE_PREF_STRING, DEFAULT_BOTTOM_EDGE_START_GESTURE);
+        config.backgroundStreamingMode = prefs.getString(
+                BACKGROUND_STREAMING_MODE_PREF_STRING, DEFAULT_BACKGROUND_STREAMING_MODE);
+        config.backgroundStreamingTimeoutMs = BackgroundStreamingPolicy.parseTimeoutMillis(
+                prefs.getString(BACKGROUND_STREAMING_TIMEOUT_PREF_STRING,
+                        DEFAULT_BACKGROUND_STREAMING_TIMEOUT));
 
         config.absoluteMouseMode = prefs.getBoolean(ABSOLUTE_MOUSE_MODE_PREF_STRING, DEFAULT_ABSOLUTE_MOUSE_MODE);
         config.enableBatteryReport = prefs.getBoolean(CHECKBOX_ENABLE_BATTERY_REPORT, DEFAULT_GAMEPAD_ENABLE_BATTERY_REPORT);

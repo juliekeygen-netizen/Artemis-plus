@@ -1876,7 +1876,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         if (prefConfig == null) {
             return false;
         }
-        String effectiveMode = keepAliveFallbackToFastResume ?
+        String effectiveMode = (keepAliveFallbackToFastResume ||
+                (fastResumeLifecycleArmed &&
+                        BackgroundStreamingPolicy.isKeepAlive(prefConfig.backgroundStreamingMode))) ?
                 BackgroundStreamingPolicy.MODE_FAST_RESUME : prefConfig.backgroundStreamingMode;
         return fastResumeLifecycleArmed &&
                 BackgroundStreamingPolicy.shouldUseFastResume(
@@ -1956,8 +1958,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         keepAliveBackgrounded = false;
         keepAliveReturnPending = false;
         timerHandler.removeCallbacks(keepAliveTimeoutRunnable);
-        releaseKeepAliveCpuWakeLock();
-        stopKeepAliveService();
         fastResumeLifecycleArmed = true;
     }
 
@@ -2020,6 +2020,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             displayedFailureDialog = true;
             stopConnection(true, () -> {
                 closeKeepAliveSurface();
+                releaseKeepAliveCpuWakeLock();
                 displayedFailureDialog = false;
                 decoderRenderer.setRenderTarget(visibleSurface);
                 startFastResumeReconnectIfReady();

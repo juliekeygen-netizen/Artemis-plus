@@ -271,7 +271,11 @@ Current durable design:
 
 Known POC limitation: Android dialogs/windows/system UI that are separate from the rotated in-stream root may remain physically portrait. Final system-bar and OEM MediaCodec/TextureView behavior still needs real-device validation. The feature is experimental and off by default.
 
-Permanent pure-policy/math regression coverage exists, but full lifecycle/visual integration coverage is lighter than ideal.
+Permanent pure-policy/math coverage now includes the physical-root layout contract: sideways
+canvases swap dimensions, center beyond the physical portrait bounds, rotate correctly for CW/CCW,
+and restore the ordinary canvas when disabled. Floating-position reset coverage also verifies both
+sideways persistence slots are cleared. Full TextureView/MediaCodec lifecycle integration coverage
+is still intentionally lighter than ideal.
 
 ### 3.14 Automatic per-game gamepad OSC profile selection
 

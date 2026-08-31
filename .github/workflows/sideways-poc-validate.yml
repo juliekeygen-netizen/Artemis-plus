@@ -21,7 +21,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply sideways integration patch
-        run: python3 .github/sideways_patch.py
+        run: |
+          python3 .github/sideways_patch.py
+          python3 .github/sideways_audit_patch.py
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -74,5 +76,5 @@ jobs:
             app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardLayoutController.java \
             app/src/main/res/values/arrays.xml \
             app/src/main/res/xml/preferences.xml
-          git commit -m "Implement experimental sideways stream transform"
+          git commit -m "Harden sideways transform lifecycle"
           git push

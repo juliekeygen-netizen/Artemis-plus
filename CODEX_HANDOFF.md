@@ -10,48 +10,97 @@ Git history preserves old versions of this file; keep the working copy focused o
 
 ## Current handoff
 
-### Task
+## Task
 
-Set up durable repository context and a Codex-to-reviewer workflow.
+Audit and harden Artemis Action selections in keyboard-profile import/export.
 
-### Repository state
+## User goal
 
-- Setup PR: `#10` — **merged**
-- Merged repository head after setup: `badd0c2158730c705eb1a3be6c7d7a14af43dfb7`
-- Last product-code baseline before documentation setup: `cc136900b15e00df3a62cf2f6d0d70d7c365d3bf`
-- Product baseline feature: `Add automatic per-game OSC profile selection (#9)`
+Establish whether the exposed custom-key/profile transfer flow already supports Artemis-local Actions, avoid a redundant format if it does, and provide durable regression coverage and accurate documentation.
 
-The documentation merge changes no Android application/build/signing code. Future agents must still inspect the live `main` head rather than assuming either SHA remains current.
+## Repository state
 
-### Intent completed
+- Base branch: `main`
+- Base commit: `de32c77770346c7029dcde8011157b3ab302ed13`
+- Task branch: `audit/action-profile-bundle-regressions`
+- Current product/code commit: `d59fa43f3c6b73303a03af9bf9e72b64866ee451` (`Audit keyboard profile action bundles`)
+- Review-packet metadata is committed immediately after that product/code commit; the PR tip is authoritative.
+- Pull request: [#12](https://github.com/juliekeygen-netizen/Artemis-plus/pull/12)
+- PR state: open, unmerged; GitHub Actions status was not yet observed when this packet was written.
 
-Future local Codex work is now self-contained and reviewable through three durable repository files:
+## Scope completed
 
-- `AGENTS.md` — stable operating rules, Git workflow, validation expectations, Android lifecycle/build/signing safety, UI direction, and autonomy expectations;
-- `PROJECT_STATE.md` — current completed phases, architectural decisions, known limitations, active investigation, and prioritized roadmap;
-- `CODEX_HANDOFF.md` — this rolling mandatory review packet.
+- Traced all direct keyboard profile transfer callers. Settings' JSON file picker and sharing path both use `KeyboardProfilesManager`; it exports/imports the versioned `artemis-plus-keyboard-profiles` bundle with per-profile `layout`, `keys`, and `actions` fields.
+- Confirmed that `KeyboardProfilesDialog` operates on the same profile metadata and that controller refresh/switch uses the active profile storage selected by `KeyboardProfilesManager`.
+- Confirmed that `KeyComboManager` remains intentionally key/chord-only within the bundle's `keys` field. The older `import_special_button_file` path is independent, import-only legacy data held in `GameMenu.KEY_NAME`, not a competing profile export format.
+- Added direct modern-bundle round-trip coverage for profile-scoped layout geometry, custom key definitions, and Action IDs; it also proves import appends profiles and preserves the pre-existing active profile.
+- Hardened Action selection import to discard unknown/stale Action IDs, and export to emit known IDs in stable enum order rather than preserving stale metadata or depending on `HashSet` iteration.
+- Corrected README wording and advanced the durable roadmap to the snapping work.
 
-### Important workflow decision
+## Key implementation decisions
 
-Future implementation tasks should normally be completed on a pushed feature/fix/audit branch and exposed through a pull request targeting `main`, but **left unmerged by default**. This gives the user a durable exact diff to hand to ChatGPT for an independent audit before promotion.
+- Existing `KeyboardProfilesManager` ownership is retained. No second serialization system or fake PC-key representation for local Actions was introduced.
+- Action selections remain a per-layout `SharedPreferences` string set, represented in bundles by stable `ArtemisAction` IDs only.
+- Unknown Action IDs are intentionally dropped when importing into this client. Valid IDs remain forward-safe and stale IDs from older metadata are not propagated through an export.
+- Legacy plain-layout JSON remains compatible as an additional geometry-only profile with empty custom-key and Action selections; import never replaces the active profile or current profile list.
 
-A task is not considered fully handed off if the only copy exists as uncommitted local changes.
+## Files changed
 
-### Next recommended task
+- `app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/ArtemisActionButtonFactory.java`
+- `app/src/test/java/com/limelight/binding/input/virtual_controller/keyboard/KeyboardProfilesManagerTest.java`
+- `README.md`
+- `PROJECT_STATE.md`
+- `CODEX_HANDOFF.md`
 
-Resume the active Artemis Action/custom-key import-export investigation described in `PROJECT_STATE.md`.
+## Persistence / compatibility
 
-Do not immediately add a new serialization format. Current source already shows that `KeyboardProfilesManager` exports/imports an `actions` array in the modern `artemis-plus-keyboard-profiles` bundle. The next task must trace the actual user-facing import/export callers and related tests first, then choose between:
+- Existing profile storage, legacy layout migration, plain Artemis/Diana layout imports, custom key definitions, and selected Action IDs remain compatible.
+- Imported modern bundles add new profiles with fresh storage names; their geometry, keys, and Actions do not overwrite the existing active profile.
+- Missing `actions` continues to import as no Action selections. Unknown Action IDs are safely ignored; duplicate known IDs naturally collapse in the set.
 
-- a small tests/docs correction if the feature is effectively already implemented; or
-- a backward-compatible legacy-format extension only if a separate exposed legacy path genuinely requires it.
+## Lifecycle / race / safety review
 
-### Reviewer focus for the setup itself
+- This patch does not touch `Game`, stream lifecycle, decoder/Surface handling, controller suspension, PiP, orientation, delayed callbacks, or UI view ownership.
+- The only runtime persistence change is bounded to the profile Action-selection set. A small fixed enum iteration replaces non-deterministic set iteration during export, with no meaningful performance/GC impact.
+- Existing Settings error handling remains responsible for malformed root JSON; the added regression specifically covers stale individual Action IDs without corrupting profile selection metadata.
 
-- `PROJECT_STATE.md` should reflect source/history through merged PR #9 rather than the older pre-implementation roadmap.
-- `AGENTS.md` must require durable branch/PR publication and a review handoff after every coherent task.
-- Signing/lifecycle/Apollo diagnostic invariants must remain documented.
-- Future Codex tasks should leave PRs unmerged by default so an external audit can happen first.
+## Tests actually run
+
+- `./gradlew.bat :app:testNonRoot_gameDebugUnitTest --tests "com.limelight.binding.input.virtual_controller.keyboard.ArtemisActionButtonFactoryTest" --tests "com.limelight.binding.input.virtual_controller.keyboard.KeyComboManagerTest" --tests "com.limelight.binding.input.virtual_controller.keyboard.KeyboardProfilesManagerTest" --tests "com.limelight.binding.input.virtual_controller.keyboard.LayoutSnappingHelperTest" --tests "com.limelight.binding.input.virtual_controller.keyboard.LongPressMoveGestureGuardTest"` — PASS.
+- `./gradlew.bat :app:assembleNonRoot_gameDebug` — PASS.
+- `git diff --check` — PASS.
+- Full inherited Robolectric suite — NOT RUN; this focused patch exercised the permanent keyboard regression selectors, while the documented baseline failures remain outside scope.
+
+## GitHub Actions / release
+
+- PR: [#12](https://github.com/juliekeygen-netizen/Artemis-plus/pull/12)
+- CI: pending/not yet observed at packet creation.
+- Release/APK publication: not expected from this unmerged branch.
+- Signing: unchanged; no signing material or build/release configuration changed.
+
+## Known limitations / real-device validation
+
+- No physical-device validation is needed for the pure JSON/profile persistence change before code review.
+- Standard device validation after merge can confirm Settings import/share UX with a bundle containing actions, custom keys, and a legacy layout file; no stream/MediaCodec behavior changed.
+
+## Audit hotspots
+
+- Review `KeyboardProfilesManager.importProfiles()` alongside `ArtemisActionButtonFactory.importSelectionForLayout()` to confirm that actions are assigned only to the fresh imported storage name and that unknown ID dropping matches the compatibility policy.
+- Review the new test's state reset to ensure it models an existing active profile without relying on internal profile IDs.
+- Verify README’s distinction between the profile bundle and legacy geometry-only payload against any future Settings transfer UI changes.
+
+## Deferred work
+
+- Deterministic mixed-size snapping, group hysteresis, and long-label neighbor handling are intentionally deferred to the next independent phase.
+- Broader UI/localization polish, sideways-mode coverage, and foldable feasibility are not mixed into this serialization audit.
+
+## PROJECT_STATE update
+
+`PROJECT_STATE.md` now records the completed audit, the actual profile-bundle and legacy-path ownership, the new stale-ID behavior, and moves deterministic snapping to the first recommended remaining priority. The durable `main` baseline SHA was intentionally not changed because this PR is unmerged.
+
+## Suggested reviewer action
+
+Audit and, if clean, merge.
 
 ---
 

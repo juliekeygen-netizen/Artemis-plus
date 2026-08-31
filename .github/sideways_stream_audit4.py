@@ -21,23 +21,6 @@ def replace_once(text, old, new, label):
     return text.replace(old, new, 1)
 
 
-def patch_method_once(text, method_start, method_end, old, new, label):
-    start = text.find(method_start)
-    if start < 0:
-        raise SystemExit(f'{label}: method start missing')
-    end = text.find(method_end, start + len(method_start))
-    if end < 0:
-        raise SystemExit(f'{label}: method end missing')
-    segment = text[start:end]
-    if new in segment:
-        return text
-    count = segment.count(old)
-    if count != 1:
-        raise SystemExit(f'{label}: expected one bounds block, found {count}')
-    segment = segment.replace(old, new, 1)
-    return text[:start] + segment + text[end:]
-
-
 # --- SidewaysStreamMode.java: share/test logical drag clamping policy ---
 p, text, nl = load('app/src/main/java/com/limelight/SidewaysStreamMode.java')
 text = replace_once(
@@ -50,18 +33,18 @@ save(p, text, nl)
 
 # --- Game.java: floating controls are in logical-root coordinates, so clamp to that parent ---
 p, text, nl = load('app/src/main/java/com/limelight/Game.java')
-old_bounds = '''                            // Ensure the button stays within screen bounds\n                            if (newX < 0) newX = 0;\n                            if (newY < 0) newY = 0;\n\n                            int maxOffsetX = getWindow().getDecorView().getWidth() - view.getWidth();\n                            if (newX > maxOffsetX) {\n                                newX = maxOffsetX;\n                            }\n\n                            int maxOffsetY = getWindow().getDecorView().getHeight() - view.getHeight();\n                            if (newY > maxOffsetY) {\n                                newY = maxOffsetY;\n                            }\n\n                            view.setX(newX);\n                            view.setY(newY);\n'''
-new_bounds = '''                            // Drag coordinates are logical stream-root coordinates in sideways mode.\n                            // Clamp against the View's actual parent rather than the physical portrait\n                            // DecorView, otherwise the long and short axes are swapped.\n                            ViewParent dragParent = view.getParent();\n                            int parentWidth = dragParent instanceof View\n                                    ? ((View) dragParent).getWidth()\n                                    : getWindow().getDecorView().getWidth();\n                            int parentHeight = dragParent instanceof View\n                                    ? ((View) dragParent).getHeight()\n                                    : getWindow().getDecorView().getHeight();\n                            newX = SidewaysStreamMode.clampChildPosition(\n                                    newX, parentWidth, view.getWidth());\n                            newY = SidewaysStreamMode.clampChildPosition(\n                                    newY, parentHeight, view.getHeight());\n\n                            view.setX(newX);\n                            view.setY(newY);\n'''
-text = patch_method_once(
-    text,
-    '    private void setupOverlayToggleButton() {',
-    '    private void updateZoomButtonAppearance() {',
-    old_bounds, new_bounds, 'Game Zoom logical bounds')
-text = patch_method_once(
-    text,
-    '    private void initFloatingButton() {',
-    '    private void initKeyboardController(){',
-    old_bounds, new_bounds, 'Game floating-menu logical bounds')
+old_core = '''                            int maxOffsetX = getWindow().getDecorView().getWidth() - view.getWidth();\n                            if (newX > maxOffsetX) {\n                                newX = maxOffsetX;\n                            }\n\n                            int maxOffsetY = getWindow().getDecorView().getHeight() - view.getHeight();\n                            if (newY > maxOffsetY) {\n                                newY = maxOffsetY;\n                            }\n'''
+new_core = '''                            ViewParent dragParent = view.getParent();\n                            int parentWidth = dragParent instanceof View\n                                    ? ((View) dragParent).getWidth()\n                                    : getWindow().getDecorView().getWidth();\n                            int parentHeight = dragParent instanceof View\n                                    ? ((View) dragParent).getHeight()\n                                    : getWindow().getDecorView().getHeight();\n                            newX = SidewaysStreamMode.clampChildPosition(\n                                    newX, parentWidth, view.getWidth());\n                            newY = SidewaysStreamMode.clampChildPosition(\n                                    newY, parentHeight, view.getHeight());\n'''
+count = text.count(old_core)
+if count == 0 and text.count(new_core) == 2:
+    pass
+elif count != 2:
+    raise SystemExit(f'Game floating logical bounds: expected 2 clamp cores, found {count}')
+else:
+    text = text.replace(old_core, new_core)
+if 'getWindow().getDecorView().getWidth() - view.getWidth()' in text or \
+        'getWindow().getDecorView().getHeight() - view.getHeight()' in text:
+    raise SystemExit('Game floating logical bounds: physical DecorView clamp remains')
 save(p, text, nl)
 
 

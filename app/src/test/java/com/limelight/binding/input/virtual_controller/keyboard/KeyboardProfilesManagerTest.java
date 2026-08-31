@@ -185,13 +185,14 @@ public class KeyboardProfilesManagerTest {
     }
 
     @Test
-    public void bundleImportIgnoresUnknownActionIds() throws Exception {
+    public void bundleImportPreservesUnknownActionIdsForForwardCompatibility() throws Exception {
+        String futureId = "future.action.from.newer.client";
         JSONObject profile = new JSONObject()
-                .put("name", "Stale actions")
+                .put("name", "Future actions")
                 .put("layout", new JSONObject().put("key_111", "{\"LEFT\":4}"))
                 .put("actions", new JSONArray()
+                        .put(futureId)
                         .put(ArtemisAction.QUICK_MENU.getId())
-                        .put("removed.future.action")
                         .put(ArtemisAction.QUICK_MENU.getId()));
         JSONObject bundle = new JSONObject()
                 .put("format", "artemis-plus-keyboard-profiles")
@@ -199,15 +200,62 @@ public class KeyboardProfilesManagerTest {
                 .put("profiles", new JSONArray().put(profile));
 
         assertEquals(1, KeyboardProfilesManager.importProfiles(context, bundle.toString()));
-        KeyboardProfilesManager.Profile imported = profileNamed("Stale actions");
+        KeyboardProfilesManager.Profile imported = profileNamed("Future actions");
         assertNotNull(imported);
 
-        assertEquals(Collections.singleton(ArtemisAction.QUICK_MENU.getId()),
-                actionIds(ArtemisActionButtonFactory.exportSelectionForLayout(context,
-                        imported.storageName)));
+        JSONArray exported = ArtemisActionButtonFactory.exportSelectionForLayout(
+                context, imported.storageName);
+        assertEquals(2, exported.length());
+        assertEquals(ArtemisAction.QUICK_MENU.getId(), exported.getString(0));
+        assertEquals(futureId, exported.getString(1));
         Set<String> stored = context.getSharedPreferences("ArtemisPlusActionButtons", Context.MODE_PRIVATE)
                 .getStringSet("selected_actions_" + imported.storageName, Collections.emptySet());
-        assertFalse(stored.contains("removed.future.action"));
+        assertTrue(stored.contains(futureId));
+    }
+
+    @Test
+    public void unsupportedBundleMetadataIsRejectedWithoutMutation() throws Exception {
+        JSONObject profile = new JSONObject()
+                .put("name", "Should not import")
+                .put("layout", new JSONObject().put("key_111", "geometry"));
+
+        assertImportRejectedWithoutMutation(new JSONObject()
+                .put("format", "some-other-profile-format")
+                .put("version", 1)
+                .put("profiles", new JSONArray().put(profile)));
+
+        assertImportRejectedWithoutMutation(new JSONObject()
+                .put("format", "artemis-plus-keyboard-profiles")
+                .put("version", 2)
+                .put("profiles", new JSONArray().put(profile)));
+    }
+
+    @Test
+    public void malformedLaterProfileIsRejectedBeforeAnyImportWrites() throws Exception {
+        JSONObject valid = new JSONObject()
+                .put("name", "First but invalid transaction")
+                .put("layout", new JSONObject().put("key_111", "geometry"));
+        JSONObject bundle = new JSONObject()
+                .put("format", "artemis-plus-keyboard-profiles")
+                .put("version", 1)
+                .put("profiles", new JSONArray().put(valid).put("not-an-object"));
+
+        assertImportRejectedWithoutMutation(bundle);
+        assertEquals(null, profileNamed("First but invalid transaction"));
+    }
+
+    private void assertImportRejectedWithoutMutation(JSONObject bundle) throws Exception {
+        KeyboardProfilesManager.Profile active = KeyboardProfilesManager.getActiveProfile(context);
+        int before = KeyboardProfilesManager.getProfiles(context).size();
+        boolean rejected = false;
+        try {
+            KeyboardProfilesManager.importProfiles(context, bundle.toString());
+        } catch (Exception expected) {
+            rejected = true;
+        }
+        assertTrue(rejected);
+        assertEquals(before, KeyboardProfilesManager.getProfiles(context).size());
+        assertEquals(active.id, KeyboardProfilesManager.getActiveProfile(context).id);
     }
 
     private KeyboardProfilesManager.Profile profileNamed(String name) {

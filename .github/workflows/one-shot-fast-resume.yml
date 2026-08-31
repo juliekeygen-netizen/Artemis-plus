@@ -21,11 +21,8 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Apply Fast Resume patches
-        run: |
-          python3 .github/fast_resume_patch.py
-          python3 .github/fast_resume_audit_patch.py
-          python3 .github/fast_resume_surface_patch.py
+      - name: Apply pending Fast Resume surface patch
+        run: python3 .github/fast_resume_surface_patch.py
 
       - name: Set up Java
         uses: actions/setup-java@v4

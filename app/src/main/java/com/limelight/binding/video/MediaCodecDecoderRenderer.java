@@ -362,6 +362,27 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         this.renderTarget = renderTarget;
     }
 
+    /**
+     * Switch a running decoder between the visible Activity Surface and the drained headless
+     * Surface used by Keep Connection Alive. Some vendor codecs reject a replacement Surface;
+     * callers must treat false as a signal to fall back to Fast Resume.
+     */
+    @TargetApi(Build.VERSION_CODES.M)
+    public boolean switchOutputSurface(Surface newSurface) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || stopping || videoDecoder == null ||
+                newSurface == null || !newSurface.isValid()) {
+            return false;
+        }
+        try {
+            videoDecoder.setOutputSurface(newSurface);
+            renderTarget = newSurface;
+            return true;
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            LimeLog.warning("Decoder rejected output Surface switch: " + e.getMessage());
+            return false;
+        }
+    }
+
     public MediaCodecDecoderRenderer(Activity activity, PreferenceConfiguration prefs,
                                      CrashListener crashListener, int consecutiveCrashCount,
                                      boolean meteredData, boolean requestedHdr, boolean invertResolution,

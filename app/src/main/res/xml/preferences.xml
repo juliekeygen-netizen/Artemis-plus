@@ -553,7 +553,7 @@
             android:entryValues="@array/background_streaming_mode_values"
             android:key="list_background_streaming_mode"
             android:title="Background streaming"
-            android:summary="Fast resume closes the client stream while Artemis is in the background, leaves the host app running, and reconnects when you return."
+            android:summary="Fast resume disconnects only the client and reconnects on return. Keep connection alive (experimental) keeps the network stream and decoder running with a foreground service; unsupported Surface handoff falls back to Fast Resume."
             app:iconSpaceReserved="false" />
         <ListPreference
             android:defaultValue="120000"
@@ -561,7 +561,7 @@
             android:entryValues="@array/background_streaming_timeout_values"
             android:key="list_background_streaming_timeout"
             android:title="Background timeout"
-            android:summary="How long Fast Resume keeps this stream screen ready to reconnect before Artemis fully closes it."
+            android:summary="How long Fast Resume or Keep Connection Alive may remain in the background before Artemis fully closes the stream. Choose Until manually disconnected for no timeout."
             app:iconSpaceReserved="false" />
         <CheckBoxPreference
             android:defaultValue="true"

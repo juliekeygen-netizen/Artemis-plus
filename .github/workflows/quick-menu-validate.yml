@@ -20,7 +20,7 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Apply Settings entry
+      - name: Apply Quick Menu audit patch
         run: python3 .github/quick_menu_patch.py
 
       - name: Set up Java
@@ -50,7 +50,7 @@ jobs:
           --tests "com.limelight.preferences.BackgroundStreamingPolicyTest"
           --stacktrace
 
-      - name: Commit validated Settings entry
+      - name: Commit validated product patch
         run: |
           if git diff --quiet; then
             echo "No product patch to commit"
@@ -58,6 +58,10 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/src/main/res/xml/preferences.xml
-          git commit -m "Expose customizable Quick Menu in Settings"
+          git add \
+            app/src/main/java/com/limelight/GameMenu.java \
+            app/src/main/java/com/limelight/quickmenu/QuickMenuConfig.java \
+            app/src/main/java/com/limelight/quickmenu/QuickMenuEditorDialog.java \
+            app/src/main/res/xml/preferences.xml
+          git commit -m "Harden Quick Menu navigation and limits"
           git push

@@ -359,8 +359,8 @@ public class KeyBoardController {
 
     public void removeElements() {
         if (configureGestureCancelCallback != null) {
+            // The configure button/listener survives refreshLayout(), so retain this cancellation hook.
             configureGestureCancelCallback.run();
-            configureGestureCancelCallback = null;
         }
         activeMoveGroup.clear();
         outlinedGroup.clear();
@@ -377,6 +377,14 @@ public class KeyBoardController {
         frame_layout.removeView(buttonProfiles);
         frame_layout.removeView(buttonAcceptGroupMove);
         frame_layout.removeView(groupOutline);
+    }
+
+    public void destroy() {
+        if (configureGestureCancelCallback != null) {
+            configureGestureCancelCallback.run();
+        }
+        handler.removeCallbacksAndMessages(null);
+        removeElements();
     }
 
     public void setOpacity(int opacity) {
@@ -668,6 +676,11 @@ public class KeyBoardController {
             showControlButtons(false);
         } else {
             showControlButtons(false);
+        }
+
+        // Newly rebuilt Views default visible; preserve a user-hidden controller across refreshes.
+        if (!shown) {
+            hide(true);
         }
     }
 

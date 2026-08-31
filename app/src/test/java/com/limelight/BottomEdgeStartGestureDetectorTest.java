@@ -34,6 +34,18 @@ public class BottomEdgeStartGestureDetectorTest {
     }
 
     @Test
+    public void freshGestureCanClearStaleConsumptionAfterSystemStealsTerminalEvent() {
+        BottomEdgeStartGestureDetector detector = new BottomEdgeStartGestureDetector(1f);
+        detector.consumeRecognizedGestureUntilTerminal();
+        assertTrue(detector.shouldConsumeRecognizedGestureEvent(false));
+
+        // Game calls this on a brand-new ACTION_DOWN when Android/OEM never delivered the
+        // previous gesture's terminal event. The new gesture must no longer be swallowed.
+        detector.resetRecognizedGestureConsumption();
+        assertFalse(detector.shouldConsumeRecognizedGestureEvent(false));
+    }
+
+    @Test
     public void ordinaryTapFallsBackAndAndroidCancelIsDiscarded() {
         assertEquals(BottomEdgeStartGestureDetector.Decision.FALLBACK,
                 detector.decide(0f, 2f, 90, 1, true, false));

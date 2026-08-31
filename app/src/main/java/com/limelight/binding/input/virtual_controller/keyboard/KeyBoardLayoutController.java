@@ -79,7 +79,8 @@ public class KeyBoardLayoutController {
         SPECIAL_KEY_CODES.add(KeyEvent.KEYCODE_MOVE_END);
     }
 
-    private static final HashMap<Integer, Runnable> longClickRunnables = new HashMap<>();
+    // Instance-scoped: callbacks capture Views and must not retain prior stream Activities.
+    private final HashMap<Integer, Runnable> longClickRunnables = new HashMap<>();
 
     private final BitSet modifierKeyStates = new BitSet();
 
@@ -315,6 +316,18 @@ public class KeyBoardLayoutController {
             hide();
         } else {
             show();
+        }
+    }
+
+    public void destroy() {
+        handler.removeCallbacksAndMessages(null);
+        if (keyPopup != null) {
+            keyPopup.dismiss();
+        }
+        longClickRunnables.clear();
+        modifierKeyStates.clear();
+        if (frame_layout != null) {
+            frame_layout.removeView(keyboardView);
         }
     }
 

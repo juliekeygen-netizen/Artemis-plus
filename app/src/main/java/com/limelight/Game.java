@@ -312,6 +312,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     public boolean isInputOnly = true;
     public boolean allowChangeMouseMode = true;
     private boolean onExternelDisplay = false;
+    private DisplayManager externalDisplayManager;
+    private DisplayManager.DisplayListener externalDisplayListener;
     private ImageButton floatingMenuButton;
     private ImageButton overlayToggleButton;
     private float floatingButtonDX, floatingButtonDY;
@@ -1044,8 +1046,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private void listenForExternalDisplayRemoval() {
-        DisplayManager displayManager = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
-        displayManager.registerDisplayListener(new DisplayManager.DisplayListener() {
+        if (externalDisplayListener != null) {
+            return;
+        }
+
+        externalDisplayManager = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
+        externalDisplayListener = new DisplayManager.DisplayListener() {
             @Override
             public void onDisplayAdded(int displayId) {
             }
@@ -1061,7 +1067,20 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             @Override
             public void onDisplayChanged(int displayId) {
             }
-        }, null);
+        };
+        externalDisplayManager.registerDisplayListener(externalDisplayListener, null);
+    }
+
+    private void stopListeningForExternalDisplayRemoval() {
+        if (externalDisplayManager != null && externalDisplayListener != null) {
+            try {
+                externalDisplayManager.unregisterDisplayListener(externalDisplayListener);
+            } catch (IllegalArgumentException ignored) {
+                // Already unregistered by the platform or another teardown path.
+            }
+        }
+        externalDisplayListener = null;
+        externalDisplayManager = null;
     }
 
     private void handleDisplayRemoved() {
@@ -1256,22 +1275,23 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                     performanceOverlayView != null && performanceOverlayView.getVisibility() == View.VISIBLE,
                     notificationOverlayView != null ? notificationOverlayView.getVisibility() : View.GONE,
                     statsOverlay != null && statsOverlay.getVisibility() == View.VISIBLE);
-            if (!entered) {
-                return;
-            }
-
+            // Snapshot only once, but enforce PiP visibility on every callback. Layout refreshes
+            // can recreate overlay child Views while PiP is already active. Returning early here would
+            // allow those freshly rebuilt controls to become visible inside the PiP window.
             isHidingOverlays = true;
-            if (pipOverlayState.floatingButtonShown) floatingMenuButton.setVisibility(View.GONE);
-            if (pipOverlayState.zoomButtonShown) overlayToggleButton.setVisibility(View.GONE);
+            if (floatingMenuButton != null) floatingMenuButton.setVisibility(View.GONE);
+            if (overlayToggleButton != null) overlayToggleButton.setVisibility(View.GONE);
             if (virtualController != null) virtualController.hide();
-            if (keyBoardController != null && pipOverlayState.keyboardControllerShown) keyBoardController.hide(true);
-            if (keyBoardLayoutController != null && pipOverlayState.keyboardLayoutShown) keyBoardLayoutController.hide(true);
+            if (keyBoardController != null) keyBoardController.hide(true);
+            if (keyBoardLayoutController != null) keyBoardLayoutController.hide(true);
             hideGameMenu();
             if (performanceOverlayView != null) performanceOverlayView.setVisibility(View.GONE);
             if (notificationOverlayView != null) notificationOverlayView.setVisibility(View.GONE);
             if (statsOverlay != null) statsOverlay.setVisibility(View.GONE);
-            if (controllerHandler != null) controllerHandler.disableSensors();
-            UiHelper.notifyStreamEnteringPiP(this);
+            if (entered) {
+                if (controllerHandler != null) controllerHandler.disableSensors();
+                UiHelper.notifyStreamEnteringPiP(this);
+            }
         } else {
             if (!pipOverlayState.exit()) {
                 return;
@@ -1729,9 +1749,20 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             bottomEdgeStartGestureDetector.resetRecognizedGestureConsumption();
         }
         timerHandler.removeCallbacksAndMessages(null);
+        stopListeningForExternalDisplayRemoval();
 
         if (prefConfig.enableFullExDisplay) handleDisplayRemoved();
 
+        // Tear down overlay-owned delayed callbacks before the core input owner.
+        if (virtualController != null) {
+            virtualController.destroy();
+        }
+        if (keyBoardController != null) {
+            keyBoardController.destroy();
+        }
+        if (keyBoardLayoutController != null) {
+            keyBoardLayoutController.destroy();
+        }
         if (controllerHandler != null) {
             controllerHandler.destroy();
         }
@@ -3461,6 +3492,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
 
         int action = event.getActionMasked();
+        // Android/OEM edge handling can steal a gesture without delivering its final UP/CANCEL.
+        // A brand-new DOWN cannot belong to the old sequence, so clear stale consumption first.
+        if (action == MotionEvent.ACTION_DOWN && !bottomEdgeGesturePending) {
+            bottomEdgeStartGestureDetector.resetRecognizedGestureConsumption();
+        }
         boolean terminalEvent = action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL;
         if (bottomEdgeStartGestureDetector.shouldConsumeRecognizedGestureEvent(terminalEvent)) {
             return true;

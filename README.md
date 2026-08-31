@@ -128,7 +128,7 @@ The icon set is adapted from user-selected [Lucide](https://lucide.dev/) and [Ta
 5. Continue tapping the settings gear to enter Move and Resize modes and place the buttons where you want them.
 6. Exit configuration mode to save the layout.
 
-The action selection is stored per existing keyboard OSC layout/profile. Hidden action state survives layout restoration, while explicitly re-adding an action makes it visible again. Support for putting Artemis actions directly into the existing custom-key import/export JSON format is still planned.
+The action selection is stored per existing keyboard OSC layout/profile. Hidden action state survives layout restoration, while explicitly re-adding an action makes it visible again. **Export Keyboard Profiles** creates an Artemis Plus profile bundle that preserves each profile's layout, custom-key definitions, and Artemis Action selections. The legacy single-layout JSON import remains geometry-only compatibility; it intentionally has no profile-scoped key or Action metadata.
 
 ### Native floating-control position memory
 
@@ -147,7 +147,6 @@ The Marssvoodoo base already contained much of Diana's useful keyboard-OSC work,
 
 The current pass intentionally does **not** include everything from Diana or every planned Artemis Plus UI refinement:
 
-- Artemis Action entries in custom-key import/export files
 - Final localization/menu polish
 - Diana's foldable cover-screen trigger controller and analog trigger emulation
 - Diana's full profile-overlay/cover-screen UX

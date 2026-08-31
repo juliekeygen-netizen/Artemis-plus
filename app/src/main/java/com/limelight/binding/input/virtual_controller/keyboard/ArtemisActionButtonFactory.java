@@ -293,8 +293,13 @@ public final class ArtemisActionButtonFactory {
 
     static JSONArray exportSelectionForLayout(Context context, String layout) {
         JSONArray array = new JSONArray();
-        for (String id : getSelectedActionIdsForLayout(context, layout)) {
-            array.put(id);
+        Set<String> selected = getSelectedActionIdsForLayout(context, layout);
+        // Keep bundles deterministic and never propagate stale IDs that an older import may
+        // have left in preferences. Enum order is the stable action-selection order.
+        for (ArtemisAction action : ArtemisAction.values()) {
+            if (selected.contains(action.getId())) {
+                array.put(action.getId());
+            }
         }
         return array;
     }
@@ -304,7 +309,7 @@ public final class ArtemisActionButtonFactory {
         if (array != null) {
             for (int i = 0; i < array.length(); i++) {
                 String value = array.optString(i, "");
-                if (!value.isEmpty()) {
+                if (ArtemisAction.fromId(value) != null) {
                     values.add(value);
                 }
             }

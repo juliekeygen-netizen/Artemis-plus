@@ -349,15 +349,9 @@ The older detailed project handoff was useful for original requirements, but it 
 
 ---
 
-## 6. CURRENT ACTIVE INVESTIGATION — Artemis Actions in custom-key import/export
+## 6. RESOLVED — Artemis Actions in keyboard-profile import/export
 
-This is the immediate next work item, but **begin with an audit, not implementation**.
-
-README still says support for putting Artemis Action entries directly into custom-key import/export JSON is planned. Current source indicates that statement may now be partially or fully stale.
-
-### Verified current source behavior
-
-`KeyboardProfilesManager` currently exports a versioned profile bundle with format:
+The current Settings **Import Keyboard Profiles** / **Export Keyboard Profiles** surface is the modern keyboard-transfer path. It already exports a versioned profile bundle with format:
 
 `artemis-plus-keyboard-profiles`
 
@@ -382,78 +376,25 @@ Profile duplication also copies Artemis Action selections, and profile deletion 
 
 `ArtemisActionButtonFactory` uses stable action IDs and filters unknown action IDs during import rather than blindly restoring invalid entries.
 
-Therefore the **modern keyboard-profile bundle already appears capable of round-tripping Artemis Action selections**.
+Therefore the **modern keyboard-profile bundle round-trips Artemis Action selections**. It is the only user-facing keyboard profile import/export pair: `StreamSettings` calls `KeyboardProfilesManager` for both file selection and sharing, while the profile dialog changes the same underlying profile metadata.
 
-### Existing test gap discovered
+`KeyComboManager` serializes only PC-key/chord definitions, by design, and is used as the bundle's `keys` field; local Action buttons stay separate as stable Action IDs in `actions`. No second Action serialization format is warranted.
 
-`KeyboardProfilesManagerTest` verifies:
+Backward compatibility remains deliberate:
 
-- legacy layout migration;
-- create/rename/duplicate/reorder/delete behavior;
-- final-profile deletion protection;
-- legacy import appends without replacing active profile;
-- bundle export includes all profiles.
+- plain Artemis/Diana single-layout JSON imports as one additional geometry-only profile;
+- it has no profile-scoped custom-key or Action metadata, so it imports empty `keys` and `actions` selections;
+- the older `import_special_button_file` path is a separate, import-only legacy payload consumed through `GameMenu.KEY_NAME`; it is not the profile-bundle export surface and does not represent Artemis-local actions.
 
-It does **not** currently appear to directly prove that an exported bundle containing Artemis Action selections imports those selections correctly into the newly created profile. This is a valuable regression gap even if no product code change is needed.
-
-### What remains unknown and must be traced
-
-`KeyComboManager` still has legacy key-definition serialization/parsing behavior that is key-only. Before changing it, determine whether that legacy format is still exposed as a distinct user-facing import/export path, or whether the modern profile-bundle UI is the real/current import/export surface.
-
-Inspect at minimum:
-
-- `KeyboardProfilesManager.java`
-- `KeyboardProfilesManagerTest.java`
-- `KeyboardProfilesDialog.java`
-- `ArtemisActionButtonFactory.java`
-- `ArtemisActionButtonFactoryTest.java`
-- `KeyComboManager.java`
-- `KeyComboManagerTest.java`
-- `KeyBoardController.java`
-- Settings/profile UI import/export callers
-- any file picker/share/export flows touching these APIs
-
-### Decision rule
-
-#### Case A — modern user-facing import/export already includes actions
-
-Do **not** build another serialization system.
-
-Preferred task:
-
-1. add direct bundle round-trip regression coverage for keys/actions/layout as appropriate;
-2. verify malformed/unknown action behavior;
-3. correct README wording so it no longer claims the implemented behavior is planned;
-4. clarify that any legacy key-only JSON remains legacy/keys-only if that is intentional;
-5. keep the patch small and architecture-preserving.
-
-#### Case B — a separate exposed legacy custom-key JSON flow genuinely needs actions
-
-Preserve backward compatibility.
-
-Preferred architecture:
-
-- old plain key-only JSON must remain importable;
-- add a versioned object/envelope rather than pretending Artemis-local actions are keyboard keys;
-- keep local actions represented by stable action IDs;
-- keep profile/layout scope explicit;
-- ignore unknown action IDs safely;
-- do not break existing Artemis/Diana layout imports;
-- add migration/round-trip/unknown-ID regressions.
-
-Do not implement Case B until callers prove it is necessary.
+Regression coverage now directly proves a modern bundle round-trip preserves layout geometry, custom key definitions, and Action selections only on the appended imported profile, while retaining the existing profiles and active profile. Unknown/stale Action IDs are discarded on import and are not re-exported from legacy preference metadata; valid IDs are exported in stable enum order.
 
 ---
 
-## 7. Prioritized roadmap after the current investigation
+## 7. Prioritized roadmap after resolving the Action-bundle investigation
 
 Priorities may change based on new user feedback or audit findings. The current recommended order is:
 
-### Priority 1 — Resolve Artemis Action import/export truth + regression coverage
-
-See section 6. This should likely be a relatively contained audit/fix/docs phase.
-
-### Priority 2 — Mixed-size snapping / deterministic best-candidate behavior
+### Priority 1 — Mixed-size snapping / deterministic best-candidate behavior
 
 This is the strongest known editor-quality weak spot after current feature phases.
 
@@ -481,7 +422,7 @@ Recommended implementation approach:
 6. add mixed-size, competing-neighbor, tie, scaled-group, and detach/re-attach regressions;
 7. verify group outline/UX on real layouts.
 
-### Priority 3 — Final localization/menu/UI polish
+### Priority 2 — Final localization/menu/UI polish
 
 The shared UI direction exists, but some surfaces still contain hard-coded English strings or isolated raw `AlertDialog` styling.
 
@@ -498,7 +439,7 @@ Audit for:
 
 Avoid mixing this with unrelated streaming architecture changes unless a UI fix genuinely requires them.
 
-### Priority 4 — Strengthen sideways-stream integration coverage
+### Priority 3 — Strengthen sideways-stream integration coverage
 
 Pure mapping/policy coverage exists, but the experimental feature still depends on real Activity/View/Surface integration.
 
@@ -514,7 +455,7 @@ Potential test targets where practical:
 
 Do not attempt to fake native MediaCodec behavior in Robolectric if the test would be meaningless. Preserve explicit real-device test requirements.
 
-### Priority 5 — Diana foldable features
+### Priority 4 — Diana foldable features
 
 Still not ported:
 

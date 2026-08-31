@@ -3,10 +3,12 @@ package com.limelight.binding.input.virtual_controller;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.widget.FrameLayout;
 
 import androidx.test.core.app.ApplicationProvider;
 
@@ -27,6 +29,7 @@ public class OscProfilesManagerTest {
     private static final String META_PREFS = "ArtemisPlusOscProfiles";
     private static final String KEY_PROFILES = "profiles";
     private static final String KEY_ACTIVE_PROFILE = "active_profile";
+    private static final String KEY_GAME_PROFILE_PREFIX = "game_profile_";
 
     private Context context;
 
@@ -100,6 +103,94 @@ public class OscProfilesManagerTest {
     public void defaultProfileCannotBeDeleted() {
         assertFalse(OscProfilesManager.deleteProfile(context, OscProfile.DEFAULT_ID));
         assertTrue(containsId(OscProfilesManager.getProfiles(context), OscProfile.DEFAULT_ID));
+    }
+
+    @Test
+    public void perGameMappingCanBeSetChangedAndCleared() {
+        OscProfile first = OscProfilesManager.createProfile(context, "First");
+        OscProfile second = OscProfilesManager.createProfile(context, "Second");
+        String gameKey = "v1|pc=test|app=uuid=test-game";
+
+        assertTrue(OscProfilesManager.setProfileForGame(context, gameKey, first.getId()));
+        assertEquals(first.getId(), OscProfilesManager.getProfileForGame(context, gameKey));
+
+        assertTrue(OscProfilesManager.setProfileForGame(context, gameKey, second.getId()));
+        assertEquals(second.getId(), OscProfilesManager.getProfileForGame(context, gameKey));
+
+        assertTrue(OscProfilesManager.clearProfileForGame(context, gameKey));
+        assertNull(OscProfilesManager.getProfileForGame(context, gameKey));
+    }
+
+    @Test
+    public void deletingProfileRemovesPerGameMappings() {
+        OscProfile mapped = OscProfilesManager.createProfile(context, "Mapped");
+        String firstGame = "game-one";
+        String secondGame = "game-two";
+        assertTrue(OscProfilesManager.setProfileForGame(context, firstGame, mapped.getId()));
+        assertTrue(OscProfilesManager.setProfileForGame(context, secondGame, mapped.getId()));
+
+        assertTrue(OscProfilesManager.deleteProfile(context, mapped.getId()));
+
+        assertNull(OscProfilesManager.getProfileForGame(context, firstGame));
+        assertNull(OscProfilesManager.getProfileForGame(context, secondGame));
+    }
+
+    @Test
+    public void stalePerGameMappingIsRepairedOnRead() {
+        SharedPreferences meta = context.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE);
+        String gameKey = "stale-game";
+        String preferenceKey = KEY_GAME_PROFILE_PREFIX + gameKey;
+        meta.edit().putString(preferenceKey, "missing-profile").commit();
+
+        assertNull(OscProfilesManager.getProfileForGame(context, gameKey));
+        assertFalse(meta.contains(preferenceKey));
+    }
+
+    @Test
+    public void mappedProfileCanActivateThroughExistingSwitchPath() {
+        OscProfile mapped = OscProfilesManager.createProfile(context, "Mapped");
+        String gameKey = "activation-game";
+        assertTrue(OscProfilesManager.setProfileForGame(context, gameKey, mapped.getId()));
+
+        VirtualController controller = new VirtualController(
+                null,
+                new FrameLayout(context),
+                context);
+        controller.refreshLayout();
+
+        assertTrue(OscProfilesManager.activateProfileForGame(context, controller, gameKey));
+        assertEquals(mapped.getId(), OscProfilesManager.getActiveProfileId(context));
+    }
+
+    @Test
+    public void gameProfileKeyIsHostScopedAndPrefersStableAppUuid() {
+        String firstHost = OscGameProfileKey.build(
+                "pc-one", "10.0.0.2", "app-uuid", 5);
+        String sameHostDifferentAppId = OscGameProfileKey.build(
+                "pc-one", "10.0.0.2", "app-uuid", 999);
+        String secondHost = OscGameProfileKey.build(
+                "pc-two", "10.0.0.2", "app-uuid", 5);
+
+        assertEquals(firstHost, sameHostDifferentAppId);
+        assertFalse(firstHost.equals(secondHost));
+        assertTrue(firstHost.contains("uuid=app-uuid"));
+    }
+
+    @Test
+    public void gameProfileKeyFallsBackToHostAndAppId() {
+        String key = OscGameProfileKey.build(null, "192.168.1.20", null, 42);
+        assertNotNull(key);
+        assertTrue(key.contains("pc=192.168.1.20"));
+        assertTrue(key.contains("app=id=42"));
+        assertNull(OscGameProfileKey.build(null, " ", null, -1));
+    }
+
+    @Test
+    public void gameProfileKeyEscapesPreferenceDelimiters() {
+        String key = OscGameProfileKey.build("pc|one", null, "app=one%two", 1);
+        assertNotNull(key);
+        assertTrue(key.contains("pc=pc%7Cone"));
+        assertTrue(key.contains("uuid=app%3Done%25two"));
     }
 
     private static boolean containsId(List<OscProfile> profiles, String id) {

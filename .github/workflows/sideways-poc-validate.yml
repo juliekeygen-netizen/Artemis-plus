@@ -1,0 +1,78 @@
+name: Sideways Stream POC Validate
+
+on:
+  push:
+    branches:
+      - feature/sideways-stream-poc
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Apply sideways integration patch
+        run: python3 .github/sideways_patch.py
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK and NDK
+        run: sdkmanager "platforms;android-36" "ndk;27.0.12077973"
+
+      - name: Make Gradle executable
+        run: chmod +x gradlew
+
+      - name: Compile sideways POC
+        run: ./gradlew :app:compileNonRoot_gameDebugJavaWithJavac --stacktrace
+
+      - name: Run sideways and lifecycle regressions
+        run: >-
+          ./gradlew :app:testNonRoot_gameDebugUnitTest
+          --tests "com.limelight.SidewaysStreamPolicyTest"
+          --tests "com.limelight.ui.FloatingControlPositionStoreTest"
+          --tests "com.limelight.GameActivityManifestTest"
+          --tests "com.limelight.preferences.StreamSettingsFragmentLifecycleTest"
+          --tests "com.limelight.quickmenu.QuickMenuConfigTest"
+          --tests "com.limelight.binding.input.virtual_controller.keyboard.LongPressMoveGestureGuardTest"
+          --tests "com.limelight.binding.input.virtual_controller.keyboard.LayoutSnappingHelperTest"
+          --stacktrace
+
+      - name: Commit validated product patch
+        run: |
+          if git diff --quiet; then
+            echo "No product patch to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            app/src/main/java/com/limelight/Game.java \
+            app/src/main/java/com/limelight/GameMenu.java \
+            app/src/main/java/com/limelight/preferences/PreferenceConfiguration.java \
+            app/src/main/java/com/limelight/binding/input/virtual_controller/VirtualController.java \
+            app/src/main/java/com/limelight/binding/input/virtual_controller/VirtualControllerConfigurationLoader.java \
+            app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardController.java \
+            app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardControllerConfigurationLoader.java \
+            app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/keyBoardVirtualControllerElement.java \
+            app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardLayoutController.java \
+            app/src/main/res/values/arrays.xml \
+            app/src/main/res/xml/preferences.xml
+          git commit -m "Implement experimental sideways stream transform"
+          git push

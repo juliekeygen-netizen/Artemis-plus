@@ -4033,9 +4033,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
      * or after all reconnect attempts have failed.
      */
     private void handleConnectionTerminatedFinal(final int errorCode) {
-        if (controllerHandler != null) {
-            controllerHandler.resumeAfterReconnect();
-        }
+        // A failed reconnect has no live transport to receive input. Keep Fast Resume input
+        // suspended here; connectionStarted() is the success path that restores controllers.
         // Perform a connection test if the failure could be due to a blocked port
         // This does network I/O, so don't do it on the main thread.
         final int portFlags = MoonBridge.getPortFlagsFromTerminationErrorCode(errorCode);

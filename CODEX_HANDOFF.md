@@ -12,112 +12,46 @@ Git history preserves old versions of this file; keep the working copy focused o
 
 ### Task
 
-Sideways/fake-portrait stream regression coverage audit.
-
-### User goal
-
-Strengthen meaningful coverage for the experimental sideways stream implementation without
-pretending Robolectric can validate vendor TextureView/MediaCodec behavior or rewriting the
-feature merely to increase test count.
+Set up durable repository context and a Codex-to-reviewer workflow.
 
 ### Repository state
 
-- Base branch: `main`
-- Base commit: `de32c77770346c7029dcde8011157b3ab302ed13`
-- Task branch: `audit/sideways-stream-regressions`
-- Product commit: `0e1018583f84e06205746ce5575a8dac5102c420`
-- Current handoff commit: this commit (the PR tip includes this packet)
-- Pull request: [#16 — Cover sideways stream layout invariants](https://github.com/juliekeygen-netizen/Artemis-plus/pull/16)
-- PR state: open; `build` and `verify` GitHub Actions checks are in progress at the time of update
+- Setup PR: `#10` — **merged**
+- Merged repository head after setup: `badd0c2158730c705eb1a3be6c7d7a14af43dfb7`
+- Last product-code baseline before documentation setup: `cc136900b15e00df3a62cf2f6d0d70d7c365d3bf`
+- Product baseline feature: `Add automatic per-game OSC profile selection (#9)`
 
-### Scope completed
+The documentation merge changes no Android application/build/signing code. Future agents must still inspect the live `main` head rather than assuming either SHA remains current.
 
-- Added `SidewaysStreamLayoutTest`, a Robolectric layout-level regression suite for the physical
-  portrait root. It verifies the logical canvas dimensions, centering, pivot, and CW/CCW rotation,
-  plus restoration to an ordinary physical canvas when an unsupported mode normalizes to off.
-- Extended `FloatingControlPositionStoreTest` so reset clears portrait, landscape, sideways-CW,
-  and sideways-CCW normalized position slots.
-- Updated project state with the transform/persistence coverage boundary and the remaining
-  device-only TextureView/MediaCodec limitation.
+### Intent completed
 
-### Key implementation decisions
+Future local Codex work is now self-contained and reviewable through three durable repository files:
 
-- Tests use the real `SidewaysStreamLayout` ViewGroup measurement/layout code rather than only
-  reasserting `SidewaysStreamMode` math helpers.
-- No surface lifecycle helper was fabricated merely for unit testing. `StreamContainer` ownership
-  of a real `SurfaceTexture`/decoder transition remains device/vendor dependent and is documented
-  for physical validation.
-- No production code, stream lifecycle, logical coordinate mapping, position persistence format,
-  rendering selection, PiP fallback, or orientation policy changed.
+- `AGENTS.md` — stable operating rules, Git workflow, validation expectations, Android lifecycle/build/signing safety, UI direction, and autonomy expectations;
+- `PROJECT_STATE.md` — current completed phases, architectural decisions, known limitations, active investigation, and prioritized roadmap;
+- `CODEX_HANDOFF.md` — this rolling mandatory review packet.
 
-### Files changed
+### Important workflow decision
 
-- `app/src/test/java/com/limelight/ui/SidewaysStreamLayoutTest.java` (new)
-- `app/src/test/java/com/limelight/ui/FloatingControlPositionStoreTest.java`
-- `PROJECT_STATE.md`
+Future implementation tasks should normally be completed on a pushed feature/fix/audit branch and exposed through a pull request targeting `main`, but **left unmerged by default**. This gives the user a durable exact diff to hand to ChatGPT for an independent audit before promotion.
 
-### Persistence / compatibility
+A task is not considered fully handed off if the only copy exists as uncommitted local changes.
 
-No runtime data changes. The existing four position slots remain `portrait`, `landscape`,
-`sideways_cw`, and `sideways_ccw`; coverage now ensures a reset clears all of them.
+### Next recommended task
 
-### Lifecycle / race / safety review
+Resume the active Artemis Action/custom-key import-export investigation described in `PROJECT_STATE.md`.
 
-- Read and retained the existing `StreamContainer` identity-aware TextureView attach/destroy
-  behavior. It is unchanged.
-- Read and retained Game's unsupported 3D/external-display fallback, HDR/PiP restrictions, full
-  in-stream keyboard fallback, and raw-to-logical drag mapping. They are covered by existing pure
-  policy tests where meaningful and unchanged by this patch.
-- No native `moonlight-core` load was introduced into Robolectric. MediaCodec/TextureView handoff,
-  OEM orientation, IME behavior, and actual decoder Surface replacement remain physical-device
-  validation areas.
+Do not immediately add a new serialization format. Current source already shows that `KeyboardProfilesManager` exports/imports an `actions` array in the modern `artemis-plus-keyboard-profiles` bundle. The next task must trace the actual user-facing import/export callers and related tests first, then choose between:
 
-### Tests actually run
+- a small tests/docs correction if the feature is effectively already implemented; or
+- a backward-compatible legacy-format extension only if a separate exposed legacy path genuinely requires it.
 
-- `./gradlew.bat :app:testNonRoot_gameDebugUnitTest --tests "com.limelight.SidewaysStreamModeTest" --tests "com.limelight.ui.SidewaysStreamLayoutTest" --tests "com.limelight.ui.FloatingControlPositionStoreTest" --tests "com.limelight.preferences.BackgroundStreamingPolicyTest" --tests "com.limelight.ArtemisOrientationHelperTest"` — PASS (28 tests)
-- `./gradlew.bat :app:assembleNonRoot_gameDebug` — PASS
-- `git diff --check` — PASS
-- Full inherited unit suite — NOT RUN; it retains documented legacy/native Robolectric baseline
-  failures and this coverage-only patch exercised every affected pure/layout suite.
+### Reviewer focus for the setup itself
 
-### GitHub Actions / release
-
-- CI result: `build` and two `verify` checks are in progress at the time of this update.
-- APK/release publication: not requested and not performed.
-- Signing material/configuration: untouched.
-
-### Known limitations / real-device validation
-
-- Test both CW and CCW on physical Android hardware with actual video: TextureView availability,
-  Surface identity/recreation, pointer/editor drag mapping, and full keyboard behavior.
-- Exercise Fast Resume and Keep Connection Alive return paths, PiP/manual Rotate blocking, and
-  physical portrait system UI on an OEM device. Robolectric cannot establish MediaCodec safety.
-
-### Audit hotspots
-
-- `SidewaysStreamLayout.onMeasure/onLayout`: review the expected centered negative child bounds
-  when a landscape logical canvas is rotated into the portrait root.
-- `StreamContainer.attachSidewaysTexture()` / destruction callback ordering: verify real vendor
-  behavior rather than extrapolating from the layout test.
-- `FloatingControlPositionStore.clearAllOrientations()`: ensure future persistence slots are added
-  to the reset loop and its regression test together.
-
-### Deferred work
-
-- No speculative Surface lifecycle abstraction or fake native integration test was added.
-- Foldable/Diana Phase 5 remains a read-only feasibility audit, independent of this test branch.
-- The separate action-profile, snapping, UI/localization, and generic persistence-coverage PRs
-  remain unmerged and are not combined here.
-
-### PROJECT_STATE update
-
-Recorded the newly covered transform/reset invariants and clarified that TextureView/MediaCodec
-lifecycle validation remains deliberately device-focused.
-
-### Suggested reviewer action
-
-Audit and, if clean, merge. Physical-device testing is recommended for the named native/OEM
-boundaries but is not a reason to fabricate a brittle unit test.
+- `PROJECT_STATE.md` should reflect source/history through merged PR #9 rather than the older pre-implementation roadmap.
+- `AGENTS.md` must require durable branch/PR publication and a review handoff after every coherent task.
+- Signing/lifecycle/Apollo diagnostic invariants must remain documented.
+- Future Codex tasks should leave PRs unmerged by default so an external audit can happen first.
 
 ---
 

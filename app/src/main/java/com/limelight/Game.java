@@ -1751,6 +1751,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         // This function will also be called for PiP so we can cover
         // that case here too.
         if (isInMultiWindowMode) {
+            // A visible multi-window/PiP transition owns this lifecycle change. Revoke any
+            // speculative Fast Resume arm created by an earlier onPause() ordering.
+            fastResumeLifecycleArmed = false;
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
             decoderRenderer.notifyVideoBackground();
         }
@@ -1825,12 +1828,16 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private boolean shouldUseFastResumeForBackgroundStop() {
-        return prefConfig != null && BackgroundStreamingPolicy.shouldUseFastResume(
-                prefConfig.backgroundStreamingMode,
-                isFinishing(),
-                isChangingConfigurations(),
-                isCurrentlyInPip(),
-                isOnExternalDisplay());
+        // onPause() is the authoritative transition gate because Surface loss may happen before
+        // onStop(). If PiP/multi-window revoked the arm, onStop() must not reinterpret the same
+        // transition as Fast Resume after a terminal Surface path has already begun.
+        return fastResumeLifecycleArmed && prefConfig != null &&
+                BackgroundStreamingPolicy.shouldUseFastResume(
+                        prefConfig.backgroundStreamingMode,
+                        isFinishing(),
+                        isChangingConfigurations(),
+                        isCurrentlyInPip(),
+                        isOnExternalDisplay());
     }
 
     private void releaseStreamingWifiLocks() {

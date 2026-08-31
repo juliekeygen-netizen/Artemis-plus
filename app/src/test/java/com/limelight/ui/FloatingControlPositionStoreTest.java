@@ -75,7 +75,7 @@ public class FloatingControlPositionStoreTest {
     }
 
     @Test
-    public void clearAllOrientationsRemovesPortraitAndLandscapeCoordinates() {
+    public void clearAllOrientationsRemovesPhysicalAndSidewaysCoordinates() {
         String id = "keyboardSettingsButton";
         SharedPreferences preferences = context.getSharedPreferences(
                 FloatingControlPositionStore.PREFS, Context.MODE_PRIVATE);
@@ -86,6 +86,12 @@ public class FloatingControlPositionStoreTest {
                 .putBoolean(id + "_landscape_saved", true)
                 .putFloat(id + "_landscape_x", .75f)
                 .putFloat(id + "_landscape_y", .70f)
+                .putBoolean(id + "_sideways_cw_saved", true)
+                .putFloat(id + "_sideways_cw_x", .40f)
+                .putFloat(id + "_sideways_cw_y", .20f)
+                .putBoolean(id + "_sideways_ccw_saved", true)
+                .putFloat(id + "_sideways_ccw_x", .60f)
+                .putFloat(id + "_sideways_ccw_y", .80f)
                 .commit();
 
         FloatingControlPositionStore.clearAllOrientations(context, id);
@@ -96,5 +102,11 @@ public class FloatingControlPositionStoreTest {
         assertFalse(preferences.contains(id + "_landscape_saved"));
         assertFalse(preferences.contains(id + "_landscape_x"));
         assertFalse(preferences.contains(id + "_landscape_y"));
+        assertFalse(preferences.contains(id + "_sideways_cw_saved"));
+        assertFalse(preferences.contains(id + "_sideways_cw_x"));
+        assertFalse(preferences.contains(id + "_sideways_cw_y"));
+        assertFalse(preferences.contains(id + "_sideways_ccw_saved"));
+        assertFalse(preferences.contains(id + "_sideways_ccw_x"));
+        assertFalse(preferences.contains(id + "_sideways_ccw_y"));
     }
 }

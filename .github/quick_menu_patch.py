@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# Settings entry (idempotent).
 path = Path('app/src/main/res/xml/preferences.xml')
 text = path.read_text(encoding='utf-8')
 marker = '''    <PreferenceCategory\n        android:key="category_ui_settings"\n        android:title="@string/category_ui_settings"\n        app:initialExpandedChildrenCount="3"\n        app:iconSpaceReserved="false">\n'''
@@ -12,3 +13,45 @@ if 'android:key="customize_quick_menu"' not in text:
     print('Inserted Customize Quick Menu preference')
 else:
     print('Customize Quick Menu preference already present')
+
+# Runtime subpage navigation: preserve the existing Cancel button while adding an explicit Back row.
+path = Path('app/src/main/java/com/limelight/GameMenu.java')
+text = path.read_text(encoding='utf-8')
+old = '''    private void showConfiguredPage(QuickMenuConfig.Page page, GameInputDevice device) {\n        List<MenuOption> options = new ArrayList<>();\n        for (QuickMenuConfig.Node node : page.items) {'''
+new = '''    private void showConfiguredPage(QuickMenuConfig.Page page, GameInputDevice device, Runnable backAction) {\n        List<MenuOption> options = new ArrayList<>();\n        if (backAction != null) {\n            options.add(new MenuOption("‹ Back", true, backAction));\n        }\n        for (QuickMenuConfig.Node node : page.items) {'''
+if old in text:
+    text = text.replace(old, new, 1)
+text = text.replace(
+    '''                options.add(new MenuOption(node.page.title, true,\n                        () -> showConfiguredPage(node.page, device)));''',
+    '''                options.add(new MenuOption(node.page.title, true,\n                        () -> showConfiguredPage(node.page, device,\n                                () -> showConfiguredPage(page, device, backAction))));''')
+text = text.replace(
+    '''        showConfiguredPage(config.root, device);''',
+    '''        showConfiguredPage(config.root, device, null);''')
+if 'private void showConfiguredPage(QuickMenuConfig.Page page, GameInputDevice device, Runnable backAction)' not in text:
+    raise SystemExit('GameMenu Back-navigation patch did not apply')
+path.write_text(text, encoding='utf-8')
+
+# Make the safety cap visible to the editor and count the whole persisted tree.
+path = Path('app/src/main/java/com/limelight/quickmenu/QuickMenuConfig.java')
+text = path.read_text(encoding='utf-8')
+text = text.replace('    private static final int MAX_TOTAL_NODES = 128;',
+                    '    public static final int MAX_TOTAL_NODES = 128;')
+text = text.replace('    private static int countNodes(Page page) {',
+                    '    public static int countNodes(Page page) {')
+if 'public static final int MAX_TOTAL_NODES = 128;' not in text or 'public static int countNodes(Page page)' not in text:
+    raise SystemExit('QuickMenuConfig global node-count patch did not apply')
+path.write_text(text, encoding='utf-8')
+
+path = Path('app/src/main/java/com/limelight/quickmenu/QuickMenuEditorDialog.java')
+text = path.read_text(encoding='utf-8')
+old = '''            addPage.setOnClickListener(v -> {\n                if (pageStack.size() - 1 >= MAX_PAGE_DEPTH) {'''
+new = '''            addPage.setOnClickListener(v -> {\n                if (QuickMenuConfig.countNodes(config.root) >= QuickMenuConfig.MAX_TOTAL_NODES) {\n                    Toast.makeText(app, "Quick Menu item limit reached", Toast.LENGTH_SHORT).show();\n                    return;\n                }\n                if (pageStack.size() - 1 >= MAX_PAGE_DEPTH) {'''
+if old in text:
+    text = text.replace(old, new, 1)
+old = '''            row.setOnClickListener(v -> {\n                if (QuickMenuConfig.addAction(currentPage(), action.id)) {'''
+new = '''            row.setOnClickListener(v -> {\n                if (QuickMenuConfig.countNodes(config.root) >= QuickMenuConfig.MAX_TOTAL_NODES) {\n                    Toast.makeText(app, "Quick Menu item limit reached", Toast.LENGTH_SHORT).show();\n                    return;\n                }\n                if (QuickMenuConfig.addAction(currentPage(), action.id)) {'''
+if old in text:
+    text = text.replace(old, new, 1)
+if text.count('Quick Menu item limit reached') != 2:
+    raise SystemExit('QuickMenuEditorDialog global item-limit patch did not apply')
+path.write_text(text, encoding='utf-8')

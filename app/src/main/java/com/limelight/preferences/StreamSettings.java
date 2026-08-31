@@ -374,6 +374,19 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
                 });
             }
 
+            ListPreference backgroundMode = findPreference(
+                    PreferenceConfiguration.BACKGROUND_STREAMING_MODE_PREF_STRING);
+            ListPreference backgroundTimeout = findPreference(
+                    PreferenceConfiguration.BACKGROUND_STREAMING_TIMEOUT_PREF_STRING);
+            if (backgroundMode != null && backgroundTimeout != null) {
+                backgroundTimeout.setEnabled(BackgroundStreamingPolicy.isFastResume(backgroundMode.getValue()));
+                backgroundMode.setOnPreferenceChangeListener((preference, newValue) -> {
+                    backgroundTimeout.setEnabled(
+                            BackgroundStreamingPolicy.isFastResume(String.valueOf(newValue)));
+                    return true;
+                });
+            }
+
             AppCompatActivity activity = (AppCompatActivity) requireActivity();
             PackageManager pm = activity.getPackageManager();
 

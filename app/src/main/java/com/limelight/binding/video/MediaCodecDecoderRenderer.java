@@ -796,6 +796,9 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     @Override
     public int setup(int format, int width, int height, int redrawRate) {
+        // setup() may follow prepareForStop() during a deliberate Fast Resume reconnect.
+        // A fresh codec session must not inherit the old renderer's terminal stopping state.
+        stopping = false;
         this.targetFps = (redrawRate > 0 ? redrawRate : 60);
         this.initialWidth = invertResolution ? height : width;
         this.initialHeight = invertResolution ? width : height;

@@ -42,6 +42,7 @@ import com.limelight.nvstream.input.MouseButtonPacket;
 import com.limelight.nvstream.jni.MoonBridge;
 import com.limelight.preferences.GlPreferences;
 import com.limelight.preferences.PreferenceConfiguration;
+import com.limelight.preferences.BackgroundStreamingPolicy;
 import com.limelight.profiles.ProfilesManager;
 import com.limelight.ui.ExternalControllerView;
 import com.limelight.ui.GameGestures;
@@ -227,6 +228,20 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private float lastAbsTouchDownX, lastAbsTouchDownY;
 
     private boolean quitOnStop = false;
+    private boolean fastResumeLifecycleArmed;
+    private boolean fastResumeBackgrounded;
+    private boolean fastResumeReconnectPending;
+    private boolean reportedShortcutUsage;
+    private final Runnable fastResumeTimeoutRunnable = () -> {
+        if (!fastResumeBackgrounded || isFinishing()) {
+            return;
+        }
+        LimeLog.info("Fast Resume background timeout expired");
+        fastResumeLifecycleArmed = false;
+        fastResumeBackgrounded = false;
+        fastResumeReconnectPending = false;
+        finish();
+    };
     private boolean isHidingOverlays;
     private boolean floatingButtonShown;
     private boolean overlayToggleZoomButtonShown;
@@ -914,6 +929,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 // Starten Sie die NvConnection
                 conn.start(new AndroidAudioRenderer(Game.this, prefConfig.playHostAudio),
                         decoderRenderer, Game.this);
+            } else {
+                startFastResumeReconnectIfReady();
             }
         });
 
@@ -1266,6 +1283,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     @TargetApi(Build.VERSION_CODES.O)
     private void updatePipOverlayState(boolean inPip) {
         if (inPip) {
+            // PiP is still an active stream, not a Fast Resume background stop.
+            fastResumeLifecycleArmed = false;
             boolean entered = pipOverlayState.enter(
                     floatingMenuButton != null && floatingMenuButton.isShown(),
                     overlayToggleButton != null && overlayToggleButton.isShown(),
@@ -1749,6 +1768,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             bottomEdgeStartGestureDetector.resetRecognizedGestureConsumption();
         }
         timerHandler.removeCallbacksAndMessages(null);
+        fastResumeLifecycleArmed = false;
+        fastResumeBackgrounded = false;
+        fastResumeReconnectPending = false;
         stopListeningForExternalDisplayRemoval();
 
         if (prefConfig.enableFullExDisplay) handleDisplayRemoved();
@@ -1771,12 +1793,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             inputManager.unregisterInputDeviceListener(keyboardTranslator);
         }
 
-        if (lowLatencyWifiLock != null) {
-            lowLatencyWifiLock.release();
-        }
-        if (highPerfWifiLock != null) {
-            highPerfWifiLock.release();
-        }
+        releaseStreamingWifiLocks();
 
         // Save zoom/pan before other cleanup
         if (prefConfig != null && prefConfig.rememberZoomPan && panZoomHandler != null) {
@@ -1798,8 +1815,127 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         streamContainer.onDestroy();
     }
 
+    private boolean isCurrentlyInPip() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode();
+    }
+
+    private boolean shouldUseFastResumeForBackgroundStop() {
+        return prefConfig != null && BackgroundStreamingPolicy.shouldUseFastResume(
+                prefConfig.backgroundStreamingMode,
+                isFinishing(),
+                isChangingConfigurations(),
+                isCurrentlyInPip(),
+                isOnExternalDisplay());
+    }
+
+    private void releaseStreamingWifiLocks() {
+        try {
+            if (lowLatencyWifiLock != null && lowLatencyWifiLock.isHeld()) {
+                lowLatencyWifiLock.release();
+            }
+            if (highPerfWifiLock != null && highPerfWifiLock.isHeld()) {
+                highPerfWifiLock.release();
+            }
+        } catch (RuntimeException e) {
+            LimeLog.warning("Failed to release streaming Wi-Fi lock: " + e.getMessage());
+        }
+    }
+
+    private void reacquireStreamingWifiLocks() {
+        try {
+            if (highPerfWifiLock != null && !highPerfWifiLock.isHeld()) {
+                highPerfWifiLock.acquire();
+            }
+            if (lowLatencyWifiLock != null && !lowLatencyWifiLock.isHeld()) {
+                lowLatencyWifiLock.acquire();
+            }
+        } catch (RuntimeException e) {
+            LimeLog.warning("Failed to reacquire streaming Wi-Fi lock: " + e.getMessage());
+        }
+    }
+
+    private void enterFastResumeBackground() {
+        if (fastResumeBackgrounded) {
+            return;
+        }
+
+        LimeLog.info("Entering Fast Resume background state");
+        fastResumeLifecycleArmed = true;
+        fastResumeBackgrounded = true;
+        fastResumeReconnectPending = false;
+        displayedFailureDialog = true;
+        timerHandler.removeCallbacks(fastResumeTimeoutRunnable);
+
+        // The remote app intentionally stays running. Only the client-side stream is stopped.
+        setInputGrabState(false);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        stopConnection();
+        releaseStreamingWifiLocks();
+
+        if (prefConfig.backgroundStreamingTimeoutMs > 0) {
+            timerHandler.postDelayed(fastResumeTimeoutRunnable,
+                    prefConfig.backgroundStreamingTimeoutMs);
+        }
+    }
+
+    private void startFastResumeReconnectIfReady() {
+        if (!fastResumeBackgrounded || !fastResumeReconnectPending || conn == null ||
+                decoderRenderer == null || connected || connecting || streamContainer == null) {
+            return;
+        }
+
+        Surface surface = streamContainer.getSurface();
+        if (surface == null || !surface.isValid()) {
+            return;
+        }
+
+        LimeLog.info("Fast Resume surface is ready, reconnecting stream");
+        fastResumeLifecycleArmed = false;
+        fastResumeBackgrounded = false;
+        fastResumeReconnectPending = false;
+        displayedFailureDialog = false;
+        decoderRenderer.setRenderTarget(surface);
+        if (reconnectOverlay != null) {
+            reconnectOverlay.show(1);
+        }
+        conn.start(new AndroidAudioRenderer(Game.this, prefConfig.playHostAudio),
+                decoderRenderer, Game.this);
+    }
+
+    private void cancelFastResumeState() {
+        fastResumeLifecycleArmed = false;
+        fastResumeBackgrounded = false;
+        fastResumeReconnectPending = false;
+        if (timerHandler != null) {
+            timerHandler.removeCallbacks(fastResumeTimeoutRunnable);
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+
+        if (fastResumeBackgrounded) {
+            LimeLog.info("Returning from Fast Resume background state");
+            timerHandler.removeCallbacks(fastResumeTimeoutRunnable);
+            fastResumeReconnectPending = true;
+            reacquireStreamingWifiLocks();
+            startFastResumeReconnectIfReady();
+        } else {
+            fastResumeLifecycleArmed = false;
+        }
+    }
+
     @Override
     protected void onPause() {
+        if (!isFinishing() && prefConfig != null &&
+                BackgroundStreamingPolicy.isFastResume(prefConfig.backgroundStreamingMode) &&
+                !isChangingConfigurations() && !isOnExternalDisplay()) {
+            // Arm before Surface destruction so an expected graceful connection teardown cannot
+            // race ahead of onStop(). PiP entry explicitly clears this arm below.
+            fastResumeLifecycleArmed = true;
+        }
+
         if (isFinishing()) {
             // Stop any further input device notifications before we lose focus (and pointer capture)
             if (controllerHandler != null) {
@@ -1819,6 +1955,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         SpinnerDialog.closeDialogs(this);
         Dialog.closeDialogs();
+
+        if (shouldUseFastResumeForBackgroundStop()) {
+            enterFastResumeBackground();
+            return;
+        }
+        fastResumeLifecycleArmed = false;
 
         if (virtualController != null) {
             virtualController.hide();
@@ -3755,6 +3897,14 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void connectionTerminated(final int errorCode) {
+        // A graceful termination is expected while Fast Resume parks the client stream.
+        // Do not let that callback finish the retained Activity or cancel its timeout.
+        if (errorCode == MoonBridge.ML_ERROR_GRACEFUL_TERMINATION &&
+                (fastResumeLifecycleArmed || fastResumeBackgrounded || fastResumeReconnectPending)) {
+            LimeLog.info("Ignoring expected graceful termination for Fast Resume");
+            return;
+        }
+
         // For graceful termination or non-reconnectable errors, skip smart reconnect
         if (errorCode == MoonBridge.ML_ERROR_GRACEFUL_TERMINATION ||
                 errorCode == MoonBridge.ML_ERROR_PROTECTED_CONTENT ||
@@ -3981,6 +4131,13 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
                 connected = true;
                 connecting = false;
+                fastResumeLifecycleArmed = false;
+                fastResumeBackgrounded = false;
+                fastResumeReconnectPending = false;
+                timerHandler.removeCallbacks(fastResumeTimeoutRunnable);
+                if (reconnectOverlay != null) {
+                    reconnectOverlay.hide();
+                }
                 updatePipAutoEnter();
 
                 // Hide the mouse cursor now after a short delay.
@@ -4047,21 +4204,24 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             }
         });
 
-        if (prefConfig.usbDriver) {
-            // Start the USB driver
+        if (prefConfig.usbDriver && !connectedToUsbDriverService) {
+            // Start the USB driver once. Fast Resume and smart reconnect reuse the existing binding.
             bindService(new Intent(this, UsbDriverService.class),
                     usbDriverServiceConnection, Service.BIND_AUTO_CREATE);
         }
 
-        // Report this shortcut being used (off the main thread to prevent ANRs)
-        ComputerDetails computer = new ComputerDetails();
-        computer.name = pcName;
-        computer.uuid = Game.this.getIntent().getStringExtra(EXTRA_PC_UUID);
-        ShortcutHelper shortcutHelper = new ShortcutHelper(this);
-        shortcutHelper.reportComputerShortcutUsed(computer);
-        if (appName != null) {
-            // This may be null if launched from the "Resume Session" PC context menu item
-            shortcutHelper.reportGameLaunched(computer, app);
+        // A reconnect is not a new shortcut launch. Report usage only for the first connection.
+        if (!reportedShortcutUsage) {
+            reportedShortcutUsage = true;
+            ComputerDetails computer = new ComputerDetails();
+            computer.name = pcName;
+            computer.uuid = Game.this.getIntent().getStringExtra(EXTRA_PC_UUID);
+            ShortcutHelper shortcutHelper = new ShortcutHelper(this);
+            shortcutHelper.reportComputerShortcutUsed(computer);
+            if (appName != null) {
+                // This may be null if launched from the "Resume Session" PC context menu item
+                shortcutHelper.reportGameLaunched(computer, app);
+            }
         }
     }
 
@@ -4169,6 +4329,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             holder.getSurface().setFrameRate(desiredFrameRate,
                     Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE);
         }
+
+        startFastResumeReconnectIfReady();
     }
 
     @Override
@@ -4176,6 +4338,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         if (!surfaceCreated) {
             throw new IllegalStateException("Surface destroyed before creation!");
         }
+        surfaceCreated = false;
 
         if (attemptedConnection) {
             // Let the decoder know immediately that the surface is gone
@@ -4669,6 +4832,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     public void disconnect() {
+        cancelFastResumeState();
         if (prefConfig.smartClipboardSync) {
             getClipboard(-1);
         }
@@ -4687,6 +4851,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         builder.setMessage(R.string.game_dialog_message_quit_confirm);
 
         builder.setPositiveButton(getString(R.string.yes), (dialog, which) -> {
+            cancelFastResumeState();
             quitOnStop = true;
             dialog.dismiss();
             finish();

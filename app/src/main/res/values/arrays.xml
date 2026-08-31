@@ -1,5 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string-array name="background_streaming_mode_names">
+        <item>Disabled</item>
+        <item>Fast resume</item>
+    </string-array>
+    <string-array name="background_streaming_mode_values" translatable="false">
+        <item>disabled</item>
+        <item>fast_resume</item>
+    </string-array>
+    <string-array name="background_streaming_timeout_names">
+        <item>30 seconds</item>
+        <item>2 minutes</item>
+        <item>5 minutes</item>
+        <item>Until manually disconnected</item>
+    </string-array>
+    <string-array name="background_streaming_timeout_values" translatable="false">
+        <item>30000</item>
+        <item>120000</item>
+        <item>300000</item>
+        <item>0</item>
+    </string-array>
+
     <string-array name="outside_stream_orientation_names">
         <item>Follow system</item>
         <item>Portrait</item>

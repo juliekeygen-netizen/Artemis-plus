@@ -547,6 +547,22 @@
             android:summary="@string/summary_checkbox_resume_without_confirm"
             android:title="@string/title_checkbox_resume_without_confirm"
             app:iconSpaceReserved="false" />
+        <ListPreference
+            android:defaultValue="disabled"
+            android:entries="@array/background_streaming_mode_names"
+            android:entryValues="@array/background_streaming_mode_values"
+            android:key="list_background_streaming_mode"
+            android:title="Background streaming"
+            android:summary="Fast resume closes the client stream while Artemis is in the background, leaves the host app running, and reconnects when you return."
+            app:iconSpaceReserved="false" />
+        <ListPreference
+            android:defaultValue="120000"
+            android:entries="@array/background_streaming_timeout_names"
+            android:entryValues="@array/background_streaming_timeout_values"
+            android:key="list_background_streaming_timeout"
+            android:title="Background timeout"
+            android:summary="How long Fast Resume keeps this stream screen ready to reconnect before Artemis fully closes it."
+            app:iconSpaceReserved="false" />
         <CheckBoxPreference
             android:defaultValue="true"
             android:key="checkbox_enable_quit_dialog"

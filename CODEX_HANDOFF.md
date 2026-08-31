@@ -12,46 +12,104 @@ Git history preserves old versions of this file; keep the working copy focused o
 
 ### Task
 
-Set up durable repository context and a Codex-to-reviewer workflow.
+Regression coverage gap audit for persisted Quick Menu and OSC profile boundaries.
+
+### User goal
+
+Audit the existing durable regression coverage and add small, focused tests only where current
+behavior lacks protection. Avoid production behavior changes and do not conceal inherited test
+failures.
 
 ### Repository state
 
-- Setup PR: `#10` — **merged**
-- Merged repository head after setup: `badd0c2158730c705eb1a3be6c7d7a14af43dfb7`
-- Last product-code baseline before documentation setup: `cc136900b15e00df3a62cf2f6d0d70d7c365d3bf`
-- Product baseline feature: `Add automatic per-game OSC profile selection (#9)`
+- Base branch: `main`
+- Base commit: `de32c77770346c7029dcde8011157b3ab302ed13`
+- Task branch: `audit/regression-coverage-gap`
+- Product commit: `41702e4c8995819d8573dbde03b4b1b013a0a598`
+- Current handoff commit: this commit (the PR tip includes this packet)
+- Pull request: pending publication
+- PR state: local validation complete; ready to push and open for review
 
-The documentation merge changes no Android application/build/signing code. Future agents must still inspect the live `main` head rather than assuming either SHA remains current.
+### Scope completed
 
-### Intent completed
+- Added a Quick Menu deserialization regression proving externally persisted/corrupt deep page
+  trees stop at `MAX_PAGE_DEPTH` and do not retain descendants/actions below that boundary.
+- Added an OSC profile regression proving blank names fall back to the stable generated name and
+  oversized names are capped at the existing 80-character persistence boundary.
+- Updated durable project state to record both protections.
 
-Future local Codex work is now self-contained and reviewable through three durable repository files:
+### Key implementation decisions
 
-- `AGENTS.md` — stable operating rules, Git workflow, validation expectations, Android lifecycle/build/signing safety, UI direction, and autonomy expectations;
-- `PROJECT_STATE.md` — current completed phases, architectural decisions, known limitations, active investigation, and prioritized roadmap;
-- `CODEX_HANDOFF.md` — this rolling mandatory review packet.
+- This is test/documentation-only work: no production code, JSON formats, preference keys, or
+  lifecycle paths changed.
+- Tests exercise the real `QuickMenuConfig.fromJson()` and `OscProfilesManager` public APIs,
+  rather than mocking or reaching into their private normalization/parser logic.
+- The audit deliberately did not force a `VirtualController` profile-switch integration test,
+  because constructing the stream controller loads native Moonlight code under Robolectric. A
+  valid future seam would need to preserve real working-set ownership rather than hiding that
+  native boundary with a meaningless test.
 
-### Important workflow decision
+### Files changed
 
-Future implementation tasks should normally be completed on a pushed feature/fix/audit branch and exposed through a pull request targeting `main`, but **left unmerged by default**. This gives the user a durable exact diff to hand to ChatGPT for an independent audit before promotion.
+- `app/src/test/java/com/limelight/quickmenu/QuickMenuConfigTest.java`
+- `app/src/test/java/com/limelight/binding/input/virtual_controller/OscProfilesManagerTest.java`
+- `PROJECT_STATE.md`
 
-A task is not considered fully handed off if the only copy exists as uncommitted local changes.
+### Persistence / compatibility
 
-### Next recommended task
+No runtime/persistence change. Existing Quick Menu JSON, OSC profile metadata, per-game mappings,
+and fallback behavior remain exactly as before; the tests now pin existing depth/name bounds.
 
-Resume the active Artemis Action/custom-key import-export investigation described in `PROJECT_STATE.md`.
+### Lifecycle / race / safety review
 
-Do not immediately add a new serialization format. Current source already shows that `KeyboardProfilesManager` exports/imports an `actions` array in the modern `artemis-plus-keyboard-profiles` bundle. The next task must trace the actual user-facing import/export callers and related tests first, then choose between:
+No Activity, Fragment, stream, Surface, input, background, PiP, callback, or threading behavior
+changed. The covered boundaries are defensive persistence paths for malformed/external content and
+user-supplied profile names.
 
-- a small tests/docs correction if the feature is effectively already implemented; or
-- a backward-compatible legacy-format extension only if a separate exposed legacy path genuinely requires it.
+### Tests actually run
 
-### Reviewer focus for the setup itself
+- `./gradlew.bat :app:testNonRoot_gameDebugUnitTest --tests "com.limelight.quickmenu.QuickMenuConfigTest" --tests "com.limelight.binding.input.virtual_controller.OscProfilesManagerTest"` — PASS (21 tests)
+- `./gradlew.bat :app:assembleNonRoot_gameDebug` — PASS
+- `git diff --check` — PASS
+- Full inherited unit suite — NOT RUN; it has documented legacy/native Robolectric baseline
+  failures and this test-only change was covered by both affected suites.
 
-- `PROJECT_STATE.md` should reflect source/history through merged PR #9 rather than the older pre-implementation roadmap.
-- `AGENTS.md` must require durable branch/PR publication and a review handoff after every coherent task.
-- Signing/lifecycle/Apollo diagnostic invariants must remain documented.
-- Future Codex tasks should leave PRs unmerged by default so an external audit can happen first.
+### GitHub Actions / release
+
+- CI result: not yet run; branch has not been pushed at handoff creation.
+- APK/release publication: not requested and not performed.
+- Signing material/configuration: untouched.
+
+### Known limitations / real-device validation
+
+No new device-only behavior was introduced. Existing real-device coverage remains necessary for
+stream lifecycle, MediaCodec, OEM orientation, and in-stream UI work; those are outside this
+test-only patch.
+
+### Audit hotspots
+
+- `QuickMenuConfig.pageFromJson()`: review the interpretation of `MAX_PAGE_DEPTH` (the root is
+  depth zero and up to six nested pages are retained) against the editor's UI depth policy.
+- `OscProfilesManager.normalizeName()`: verify the 80-character boundary remains intentional for
+  profile UI/metadata consumers.
+- Confirm the patch did not accidentally add a test environment seam that changes production
+  ownership or suppresses native failures.
+
+### Deferred work
+
+- Stream-controller/profile-switch integration needs a valid non-native test seam before adding a
+  Robolectric test; it was not papered over here.
+- The independent action-profile, snapping, and UI/localization audit branches remain unmerged
+  and are not folded into this coverage-only diff.
+
+### PROJECT_STATE update
+
+Documented direct coverage for Quick Menu maximum depth and OSC profile name normalization.
+
+### Suggested reviewer action
+
+Audit and, if the depth-bound interpretation is correct, merge. No special real-device block is
+required for this test-only patch.
 
 ---
 

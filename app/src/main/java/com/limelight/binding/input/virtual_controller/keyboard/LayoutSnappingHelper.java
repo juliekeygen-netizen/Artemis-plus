@@ -187,20 +187,6 @@ public class LayoutSnappingHelper {
         return Math.abs(proposed - snappedCoordinate) < Math.max(0, releaseThreshold);
     }
 
-    /** Whether a connected member belongs to the branch displaced by a wider text button. */
-    static boolean shouldShiftForTextExpansion(int originalRight, int memberLeft) {
-        return memberLeft >= originalRight - 6;
-    }
-
-    /** Clamp a shared group translation so every member remains within its parent axis. */
-    static int clampGroupTranslation(int requestedDelta, int groupStart, int groupEnd,
-                                     int parentExtent) {
-        if (parentExtent <= 0) {
-            return requestedDelta;
-        }
-        return Math.max(-groupStart, Math.min(requestedDelta, parentExtent - groupEnd));
-    }
-
     private static int overlap(int aStart, int aEnd, int bStart, int bEnd) {
         return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
     }

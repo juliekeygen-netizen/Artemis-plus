@@ -48,6 +48,7 @@ jobs:
           --tests "com.limelight.quickmenu.QuickMenuConfigTest"
           --tests "com.limelight.GameActivityManifestTest"
           --tests "com.limelight.preferences.BackgroundStreamingPolicyTest"
+          --tests "com.limelight.preferences.StreamSettingsFragmentLifecycleTest"
           --stacktrace
 
       - name: Commit validated product patch
@@ -60,8 +61,9 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
             app/src/main/java/com/limelight/GameMenu.java \
+            app/src/main/java/com/limelight/preferences/StreamSettings.java \
             app/src/main/java/com/limelight/quickmenu/QuickMenuConfig.java \
             app/src/main/java/com/limelight/quickmenu/QuickMenuEditorDialog.java \
             app/src/main/res/xml/preferences.xml
-          git commit -m "Harden Quick Menu navigation and limits"
+          git commit -m "Harden Quick Menu navigation and settings scope"
           git push

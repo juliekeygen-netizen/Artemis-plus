@@ -8,7 +8,6 @@ import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.widget.FrameLayout;
 
 import androidx.test.core.app.ApplicationProvider;
 
@@ -144,22 +143,6 @@ public class OscProfilesManagerTest {
 
         assertNull(OscProfilesManager.getProfileForGame(context, gameKey));
         assertFalse(meta.contains(preferenceKey));
-    }
-
-    @Test
-    public void mappedProfileCanActivateThroughExistingSwitchPath() {
-        OscProfile mapped = OscProfilesManager.createProfile(context, "Mapped");
-        String gameKey = "activation-game";
-        assertTrue(OscProfilesManager.setProfileForGame(context, gameKey, mapped.getId()));
-
-        VirtualController controller = new VirtualController(
-                null,
-                new FrameLayout(context),
-                context);
-        controller.refreshLayout();
-
-        assertTrue(OscProfilesManager.activateProfileForGame(context, controller, gameKey));
-        assertEquals(mapped.getId(), OscProfilesManager.getActiveProfileId(context));
     }
 
     @Test

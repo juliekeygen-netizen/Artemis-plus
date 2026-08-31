@@ -99,6 +99,19 @@ public class OscProfilesManagerTest {
     }
 
     @Test
+    public void blankAndOversizedProfileNamesAreNormalized() {
+        OscProfile created = OscProfilesManager.createProfile(context, "   ");
+        assertEquals("OSC Profile 1", created.getName());
+
+        String oversized = repeat('x', 100);
+        assertTrue(OscProfilesManager.renameProfile(context, created.getId(), oversized));
+        OscProfile renamed = findById(OscProfilesManager.getProfiles(context), created.getId());
+        assertNotNull(renamed);
+        assertEquals(80, renamed.getName().length());
+        assertEquals(oversized.substring(0, 80), renamed.getName());
+    }
+
+    @Test
     public void defaultProfileCannotBeDeleted() {
         assertFalse(OscProfilesManager.deleteProfile(context, OscProfile.DEFAULT_ID));
         assertTrue(containsId(OscProfilesManager.getProfiles(context), OscProfile.DEFAULT_ID));
@@ -187,5 +200,13 @@ public class OscProfilesManagerTest {
             }
         }
         return null;
+    }
+
+    private static String repeat(char value, int count) {
+        StringBuilder result = new StringBuilder(count);
+        for (int i = 0; i < count; i++) {
+            result.append(value);
+        }
+        return result.toString();
     }
 }

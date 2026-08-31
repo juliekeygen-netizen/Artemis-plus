@@ -1,0 +1,15 @@
+﻿{
+    "configVersion":  5,
+    "repoPath":  "C:\\Users\\Julie\\Documents\\AHK\\Other\\artemis-plus",
+    "interval":  "30 seconds",
+    "pullMode":  "autostash",
+    "promptOnPullFailure":  true,
+    "runNpmBuild":  false,
+    "customCommands":  [
+                           {
+                               "shell":  "powershell",
+                               "text":  ".\\gradlew.bat :app:assembleNonRoot_gameDebug\r\n\r\n$apk = Get-ChildItem .\\app\\build\\outputs\\apk -Recurse -Filter *.apk |\r\n    Where-Object FullName -Match \"arm64-v8a\" |\r\n    Select-Object -First 1\r\n\r\nCopy-Item $apk.FullName .\\Artemis-Plus-debug-arm64.apk -Force"
+                           }
+                       ],
+    "launchPath":  ""
+}

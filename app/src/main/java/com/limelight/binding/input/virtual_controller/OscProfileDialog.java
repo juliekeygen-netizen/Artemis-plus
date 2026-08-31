@@ -2,11 +2,11 @@ package com.limelight.binding.input.virtual_controller;
 
 import android.app.AlertDialog;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.text.InputType;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /** In-stream OSC profile/configuration UI opened from the controller settings button. */
@@ -17,55 +17,77 @@ public final class OscProfileDialog {
     public static void show(VirtualController controller, Context context) {
         OscProfile active = OscProfilesManager.getActiveProfile(context);
         String activeName = active != null ? active.getName() : "Default";
+        String gameKey = controller.getGameProfileKey();
+        String gameName = gameLabel(controller.getGameDisplayName());
+        String mappedProfileId = gameKey != null
+                ? OscProfilesManager.getProfileForGame(context, gameKey)
+                : null;
+        String mappedProfileName = findProfileName(context, mappedProfileId);
 
-        String[] items = new String[]{
-                "Switch profile",
-                "New profile",
-                "Rename current profile",
-                "Delete current profile",
-                "Save current layout",
-                "Snapping: " + (controller.isSnappingEnabled() ? "On" : "Off"),
-                "Paired sizing: " + (controller.isPairedSizingEnabled() ? "On" : "Off")
-        };
+        ArrayList<String> items = new ArrayList<>();
+        ArrayList<Runnable> actions = new ArrayList<>();
+
+        addItem(items, actions, "Switch profile",
+                () -> showProfilePicker(controller, context));
+        addItem(items, actions, "New profile",
+                () -> showCreateDialog(controller, context));
+        addItem(items, actions, "Rename current profile",
+                () -> showRenameDialog(controller, context));
+        addItem(items, actions, "Delete current profile",
+                () -> showDeleteDialog(controller, context));
+        addItem(items, actions, "Save current layout", () -> {
+            VirtualControllerConfigurationLoader.saveProfile(controller, context);
+            Toast.makeText(context, "OSC layout saved", Toast.LENGTH_SHORT).show();
+        });
+
+        if (gameKey != null) {
+            String mappingLabel = mappedProfileName == null ? "Not set" : mappedProfileName;
+            addItem(items, actions,
+                    "Auto profile for " + gameName + ": " + mappingLabel,
+                    () -> showGameProfilePicker(controller, context, gameKey, gameName));
+            if (mappedProfileId != null) {
+                addItem(items, actions, "Clear auto profile for " + gameName, () -> {
+                    if (OscProfilesManager.clearProfileForGame(context, gameKey)) {
+                        Toast.makeText(context,
+                                "Auto profile cleared for " + gameName,
+                                Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+        }
+
+        addItem(items, actions,
+                "Snapping: " + (controller.isSnappingEnabled() ? "On" : "Off"), () -> {
+                    boolean snapping = controller.toggleSnapping();
+                    Toast.makeText(context,
+                            "OSC snapping " + (snapping ? "enabled" : "disabled"),
+                            Toast.LENGTH_SHORT).show();
+                });
+        addItem(items, actions,
+                "Paired sizing: " + (controller.isPairedSizingEnabled() ? "On" : "Off"), () -> {
+                    boolean paired = controller.togglePairedSizing();
+                    Toast.makeText(context,
+                            "Paired sizing " + (paired ? "enabled" : "disabled"),
+                            Toast.LENGTH_SHORT).show();
+                });
 
         new AlertDialog.Builder(context)
                 .setTitle("OSC Profiles — " + activeName)
-                .setItems(items, (dialog, which) -> {
-                    switch (which) {
-                        case 0:
-                            showProfilePicker(controller, context);
-                            break;
-                        case 1:
-                            showCreateDialog(controller, context);
-                            break;
-                        case 2:
-                            showRenameDialog(controller, context);
-                            break;
-                        case 3:
-                            showDeleteDialog(controller, context);
-                            break;
-                        case 4:
-                            VirtualControllerConfigurationLoader.saveProfile(controller, context);
-                            Toast.makeText(context, "OSC layout saved", Toast.LENGTH_SHORT).show();
-                            break;
-                        case 5:
-                            boolean snapping = controller.toggleSnapping();
-                            Toast.makeText(context,
-                                    "OSC snapping " + (snapping ? "enabled" : "disabled"),
-                                    Toast.LENGTH_SHORT).show();
-                            break;
-                        case 6:
-                            boolean paired = controller.togglePairedSizing();
-                            Toast.makeText(context,
-                                    "Paired sizing " + (paired ? "enabled" : "disabled"),
-                                    Toast.LENGTH_SHORT).show();
-                            break;
-                        default:
-                            break;
+                .setItems(items.toArray(new String[0]), (dialog, which) -> {
+                    if (which >= 0 && which < actions.size()) {
+                        actions.get(which).run();
                     }
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
+    }
+
+    private static void addItem(List<String> items,
+                                List<Runnable> actions,
+                                String label,
+                                Runnable action) {
+        items.add(label);
+        actions.add(action);
     }
 
     private static void showProfilePicker(VirtualController controller, Context context) {
@@ -87,6 +109,42 @@ public final class OscProfileDialog {
                                 "OSC profile: " + selected.getName(),
                                 Toast.LENGTH_SHORT).show();
                     }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private static void showGameProfilePicker(VirtualController controller,
+                                              Context context,
+                                              String gameKey,
+                                              String gameName) {
+        List<OscProfile> profiles = OscProfilesManager.getProfiles(context);
+        String mappedId = OscProfilesManager.getProfileForGame(context, gameKey);
+        String[] names = new String[profiles.size()];
+
+        for (int i = 0; i < profiles.size(); i++) {
+            OscProfile profile = profiles.get(i);
+            names[i] = (profile.getId().equals(mappedId) ? "✓ " : "") + profile.getName();
+        }
+
+        new AlertDialog.Builder(context)
+                .setTitle("Auto OSC Profile — " + gameName)
+                .setItems(names, (dialog, which) -> {
+                    OscProfile selected = profiles.get(which);
+                    if (!OscProfilesManager.setProfileForGame(
+                            context, gameKey, selected.getId())) {
+                        Toast.makeText(context,
+                                "Unable to save game profile",
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    // Apply the newly selected mapping immediately so the current stream matches
+                    // what will be chosen automatically on future launches.
+                    OscProfilesManager.switchProfile(context, controller, selected.getId());
+                    Toast.makeText(context,
+                            "Auto profile for " + gameName + ": " + selected.getName(),
+                            Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
@@ -163,6 +221,22 @@ public final class OscProfileDialog {
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
+    }
+
+    private static String findProfileName(Context context, String profileId) {
+        if (profileId == null) {
+            return null;
+        }
+        for (OscProfile profile : OscProfilesManager.getProfiles(context)) {
+            if (profileId.equals(profile.getId())) {
+                return profile.getName();
+            }
+        }
+        return null;
+    }
+
+    private static String gameLabel(String value) {
+        return value == null || value.trim().isEmpty() ? "this game" : value.trim();
     }
 
     private static EditText buildNameInput(Context context) {

@@ -29,6 +29,7 @@ public class OscProfilesManagerTest {
     private static final String KEY_PROFILES = "profiles";
     private static final String KEY_ACTIVE_PROFILE = "active_profile";
     private static final String KEY_GAME_PROFILE_PREFIX = "game_profile_";
+    private static final String KEY_SNAPSHOT_INITIALIZED_PREFIX = "snapshot_initialized_";
 
     private Context context;
 
@@ -64,6 +65,126 @@ public class OscProfilesManagerTest {
         }
         assertTrue("Default profile repair must be written back to SharedPreferences",
                 persistedDefault);
+    }
+
+    @Test
+    public void malformedTopLevelMetadataRecoversReferencedProfilesDeterministically() throws Exception {
+        SharedPreferences meta = context.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE);
+        String gameKey = "recovered-game";
+        meta.edit()
+                .putString(KEY_PROFILES, "{definitely-not-a-profile-array")
+                .putString(KEY_ACTIVE_PROFILE, "z-active")
+                .putString(KEY_GAME_PROFILE_PREFIX + gameKey, "a-mapped")
+                .putBoolean(KEY_SNAPSHOT_INITIALIZED_PREFIX + "m-snapshot", true)
+                .putBoolean(KEY_SNAPSHOT_INITIALIZED_PREFIX + "ignored-false", false)
+                .putBoolean(KEY_SNAPSHOT_INITIALIZED_PREFIX + "a-mapped", true)
+                .commit();
+
+        List<OscProfile> profiles = OscProfilesManager.getProfiles(context);
+
+        assertEquals(4, profiles.size());
+        assertEquals(OscProfile.DEFAULT_ID, profiles.get(0).getId());
+        assertEquals("a-mapped", profiles.get(1).getId());
+        assertEquals("Recovered OSC Profile 1", profiles.get(1).getName());
+        assertEquals("m-snapshot", profiles.get(2).getId());
+        assertEquals("Recovered OSC Profile 2", profiles.get(2).getName());
+        assertEquals("z-active", profiles.get(3).getId());
+        assertEquals("Recovered OSC Profile 3", profiles.get(3).getName());
+        assertEquals("z-active", OscProfilesManager.getActiveProfileId(context));
+        assertEquals("a-mapped", OscProfilesManager.getProfileForGame(context, gameKey));
+
+        JSONArray persisted = new JSONArray(meta.getString(KEY_PROFILES, "[]"));
+        assertEquals(4, persisted.length());
+    }
+
+    @Test
+    public void malformedProfileEntryDoesNotDiscardValidSiblings() throws Exception {
+        SharedPreferences meta = context.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE);
+        JSONArray profiles = new JSONArray()
+                .put(new JSONObject().put("id", OscProfile.DEFAULT_ID).put("name", "Default"))
+                .put(new JSONObject().put("name", "Missing id"))
+                .put(new JSONObject().put("id", "still-valid").put("name", "Still valid"));
+        meta.edit().putString(KEY_PROFILES, profiles.toString()).commit();
+
+        List<OscProfile> repaired = OscProfilesManager.getProfiles(context);
+
+        assertEquals(2, repaired.size());
+        assertTrue(containsId(repaired, OscProfile.DEFAULT_ID));
+        assertTrue(containsId(repaired, "still-valid"));
+        JSONArray persisted = new JSONArray(meta.getString(KEY_PROFILES, "[]"));
+        assertEquals(2, persisted.length());
+    }
+
+    @Test
+    public void partialCorruptionRecoversReferencedMissingProfileAndKeepsValidSibling() throws Exception {
+        SharedPreferences meta = context.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE);
+        String recoveredId = "recovered-from-snapshot";
+        JSONArray profiles = new JSONArray()
+                .put(new JSONObject().put("id", OscProfile.DEFAULT_ID).put("name", "Default"))
+                .put(new JSONObject().put("id", "still-valid").put("name", "Still valid"))
+                .put(new JSONObject().put("name", "Damaged missing id"));
+        meta.edit()
+                .putString(KEY_PROFILES, profiles.toString())
+                .putString(KEY_ACTIVE_PROFILE, recoveredId)
+                .putBoolean(KEY_SNAPSHOT_INITIALIZED_PREFIX + recoveredId, true)
+                .commit();
+
+        List<OscProfile> repaired = OscProfilesManager.getProfiles(context);
+
+        assertEquals(3, repaired.size());
+        assertTrue(containsId(repaired, OscProfile.DEFAULT_ID));
+        assertTrue(containsId(repaired, "still-valid"));
+        OscProfile recovered = findById(repaired, recoveredId);
+        assertNotNull(recovered);
+        assertTrue(recovered.getName().startsWith("Recovered OSC Profile "));
+        assertEquals(recoveredId, OscProfilesManager.getActiveProfileId(context));
+        assertEquals(3, new JSONArray(meta.getString(KEY_PROFILES, "[]")).length());
+    }
+
+    @Test
+    public void duplicateMetadataDoesNotResurrectUnrelatedStaleMapping() throws Exception {
+        SharedPreferences meta = context.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE);
+        String staleGame = "stale-duplicate-game";
+        JSONArray profiles = new JSONArray()
+                .put(new JSONObject().put("id", OscProfile.DEFAULT_ID).put("name", "Default"))
+                .put(new JSONObject().put("id", "valid").put("name", "Valid"))
+                .put(new JSONObject().put("id", "valid").put("name", "Duplicate"));
+        meta.edit()
+                .putString(KEY_PROFILES, profiles.toString())
+                .putString(KEY_GAME_PROFILE_PREFIX + staleGame, "stale-only")
+                .commit();
+
+        List<OscProfile> repaired = OscProfilesManager.getProfiles(context);
+
+        assertEquals(2, repaired.size());
+        assertTrue(containsId(repaired, OscProfile.DEFAULT_ID));
+        assertTrue(containsId(repaired, "valid"));
+        assertFalse(containsId(repaired, "stale-only"));
+        assertNull(OscProfilesManager.getProfileForGame(context, staleGame));
+        assertFalse(meta.contains(KEY_GAME_PROFILE_PREFIX + staleGame));
+    }
+
+    @Test
+    public void wrongTypeMetadataIsRepairedWithoutClassCastCrashes() {
+        SharedPreferences meta = context.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE);
+        String gameKey = "wrong-type-game";
+        meta.edit()
+                .putInt(KEY_PROFILES, 7)
+                .putInt(KEY_ACTIVE_PROFILE, 8)
+                .putInt(KEY_GAME_PROFILE_PREFIX + gameKey, 9)
+                .putString(KEY_SNAPSHOT_INITIALIZED_PREFIX + "not-a-boolean", "true")
+                .commit();
+
+        List<OscProfile> profiles = OscProfilesManager.getProfiles(context);
+        assertEquals(1, profiles.size());
+        assertEquals(OscProfile.DEFAULT_ID, profiles.get(0).getId());
+        assertTrue(meta.getAll().get(KEY_PROFILES) instanceof String);
+
+        assertEquals(OscProfile.DEFAULT_ID, OscProfilesManager.getActiveProfileId(context));
+        assertEquals(OscProfile.DEFAULT_ID, meta.getString(KEY_ACTIVE_PROFILE, null));
+
+        assertNull(OscProfilesManager.getProfileForGame(context, gameKey));
+        assertFalse(meta.contains(KEY_GAME_PROFILE_PREFIX + gameKey));
     }
 
     @Test
@@ -156,6 +277,7 @@ public class OscProfilesManagerTest {
 
         assertNull(OscProfilesManager.getProfileForGame(context, gameKey));
         assertFalse(meta.contains(preferenceKey));
+        assertFalse(containsId(OscProfilesManager.getProfiles(context), "missing-profile"));
     }
 
     @Test

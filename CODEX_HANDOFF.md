@@ -8,133 +8,111 @@ This is the rolling review packet for the latest coherent agent task. Verify liv
 
 ### Task
 
-Repair the live-only APK signer-fingerprint parser failure discovered immediately after release/signing hardening PR #20 merged.
+Harden persisted OSC-profile metadata recovery after the broader Artemis Plus Continuum audit found that malformed profile-list metadata could orphan otherwise valid per-profile controller snapshots.
 
 ### User goal
 
-Continue the Continuum audit autonomously, fix important defects rather than merely report them, preserve the established Android update signer, verify release behavior on real GitHub Actions, and continue into persistence/lifecycle work after the release path is genuinely proven.
+Continue auditing and fixing autonomously. Preserve user configuration across corruption, upgrades, restarts, profile switching, and future-version compatibility; add regression coverage; do not stop after one patch while useful work remains.
 
 ### Repository state
 
 - Base branch: `main`
-- Base commit: `9de0df8cfeb1206bc9e209406176f35a7b954ac3` (`Harden release signing identity and workflow (#20)`)
-- Task branch: `fix/release-apksigner-fingerprint-parser`
-- Last implementation commit before this handoff update: `d35e7ab20e5f6a731e4509f7d5d026f6a667e917`
-- Pull request: pending at time of this handoff update
+- Base commit for this branch: `423eb27b009c25d53d5a7bc19bd789af756afb17` (`Preserve future Quick Menu action IDs (#23)`)
+- Task branch: `fix/osc-profile-metadata-recovery-v2`
+- Latest implementation commit before this handoff update: `0f0cfda36dae8f3880c9125380e597d3f00da64e`
+- Pull request: #25 `Recover OSC profiles from damaged metadata`
 
-### Why this follow-up exists
+### Completed release/signing audit
 
-PR #20 intentionally moved the privileged signed-release workflow to `main` only. Its audit branch could validate ordinary Android CI but could not exercise repository signing secrets or publication. After #20 merged, the first hardened main release run exposed one live-only parser defect.
+The release/signing sub-audit is now end-to-end proven and no longer blocked:
 
-Observed main runs on merge commit `9de0df8c...`:
+- #20 hardened persistent signing, main-only privileged release, read/write job separation, ABI checks, local fail-closed signer validation, and regression CI.
+- #21/#22 fixed and fixture-tested the live `apksigner --print-certs` digest parser.
+- #23 preserved unknown future Quick Menu action IDs while keeping runtime/action creation registry-gated.
+- Main Build Debug APK #114 on `423eb27b...` passed both build and publish jobs.
+- All four ABI APKs passed `apksigner verify` and matched the established Artemis Plus certificate SHA-256:
+  `88c430db21b298bab7b654ce3b9300e33bf1917df4bf1a73047c9590f0080083`
+- `debug-latest` points exactly to `423eb27b...`.
+- The rolling release contains exactly seven expected assets: four ABI APKs plus `INSTALL.txt`, `SIGNING.txt`, and `SHA256SUMS.txt`; no stale extras remained.
 
-- Android CI #177 (`33484848328`) — **PASS**
-- Build Debug APK #111 (`33484848383`) — **FAIL**, safely before publication
+Do not weaken or duplicate those signer/release gates in later work.
 
-Build Debug APK #111 proved that the core hardened path worked up to APK-certificate text parsing:
+### OSC corruption bug
 
-- persistent signing secrets were present;
-- reconstructed JKS verification passed;
-- verified JKS certificate SHA-256 was exactly the established Artemis Plus fingerprint;
-- `:app:assembleNonRoot_gameDebug` passed;
-- all four expected ABI APKs were produced with exact filenames;
-- package preparation then failed with `Unable to read signer fingerprint from dist/app-nonRoot_game-arm64-v8a-debug.apk`;
-- artifact upload did not run;
-- write-scoped publish job was skipped;
-- the existing `debug-latest` release remained intact with its previous seven assets.
+OSC profile metadata is stored in `ArtemisPlusOscProfiles`, while each profile snapshot is stored independently under an `OSC_PROFILE_<id>` preference file and identified by `snapshot_initialized_<id>` metadata. Active-profile and per-game mappings also retain profile IDs.
 
-### Root cause
+Before this branch, malformed `profiles` JSON could collapse to a new Default profile and leave valid snapshot data orphaned. Wrong-typed SharedPreferences values could also trigger class-cast failures on reads.
 
-The workflow correctly used Android `apksigner verify --print-certs`, but then parsed its human-readable certificate line with an overly strict delimiter:
+### Current recovery behavior
 
-```text
-awk -F': ' '/Signer #1 certificate SHA-256 digest:/ ...
-```
+`OscProfilesManager` now:
 
-The runner's installed build-tools produced a successfully verified APK but the expected exact `colon + space` output shape was not captured, leaving an empty parsed fingerprint. This was a parser compatibility failure, not a signing-identity mismatch.
+1. treats a missing profile-list key as normal first-run state and does **not** promote unrelated stale mappings;
+2. treats malformed, blank, or wrong-typed existing profile-list metadata as corruption;
+3. reconstructs recoverable profile IDs deterministically from:
+   - active-profile metadata,
+   - per-game mappings,
+   - `snapshot_initialized_<id> == true` markers;
+4. always retains/repairs the Default profile;
+5. filters unusable recovered IDs (blank or over 200 characters);
+6. preserves valid siblings if only one stored profile entry is malformed;
+7. after the second audit pass, also merges recoverable IDs when corruption is **partial** rather than only when every parsed profile is lost;
+8. distinguishes simple duplicate metadata from true entry loss so a duplicate alone does not resurrect an unrelated stale mapping;
+9. handles wrong-type active/game/snapshot values without `ClassCastException` and repairs stale metadata on read;
+10. copies `StringSet` snapshot values into fresh sets rather than sharing mutable preference-backed sets.
 
-### Fix
+Recovered IDs that no longer have a stored name receive deterministic labels such as `Recovered OSC Profile 1`.
 
-`.github/workflows/build-debug-apk.yml` now keeps `apksigner verify --print-certs` as the cryptographic gate but parses certificate metadata defensively:
+### Regression coverage
 
-- capture the first case-insensitive line containing `certificate`, `SHA-256`, and `digest`;
-- split at the first colon regardless of following whitespace;
-- remove whitespace and optional colon separators from the digest;
-- normalize hex to lowercase;
-- require exactly 64 hexadecimal characters before comparison;
-- compare the normalized digest to the established Artemis Plus fingerprint;
-- print the selected `apksigner` path/version and each verified APK fingerprint for future diagnosis;
-- on malformed/unrecognized output, print diagnostic certificate output and fail closed rather than publish.
+`OscProfilesManagerTest` covers:
 
-No signer check was removed or weakened.
+- missing Default repair and persistence;
+- malformed top-level profile-list recovery;
+- deterministic recovery ordering from active/game/snapshot references;
+- malformed single-entry isolation while keeping valid siblings;
+- partial corruption recovering a referenced/snapshotted missing profile while retaining valid siblings;
+- duplicate metadata not resurrecting an unrelated stale mapping;
+- wrong-type metadata repair;
+- invalid active-profile fallback;
+- create/rename/activate/delete lifecycle;
+- profile-name normalization/length bound;
+- Default deletion refusal;
+- per-game set/change/clear/delete behavior;
+- stale per-game mapping repair;
+- host/app-scoped game-profile keys and delimiter escaping.
 
-### Stable signing invariant
+### Validation
 
-Expected certificate SHA-256:
+- Initial clean current-main recovery branch head `41546cf...`: Android CI #194 passed compile, focused Artemis regressions, full inherited unit suite, and report upload.
+- The partial-corruption refinement advanced the head to `0f0cfda...`; a fresh CI run is required before merge.
+- PR #25 is mergeable, but must remain unmerged until that exact head is green and its final base-to-head diff is rechecked.
 
-`88c430db21b298bab7b654ce3b9300e33bf1917df4bf1a73047c9590f0080083`
+### Parallel maintenance work
 
-No private key/password material is included or rotated.
+A separate branch `maintenance/node24-github-actions` is modernizing GitHub Action runtimes without changing the proven Android SDK/NDK or release semantics:
 
-### Validation performed so far
+- checkout `v4 -> v7`
+- setup-java `v4 -> v6`
+- setup-android `v3 -> v4`
+- upload-artifact `v4 -> v7`
+- download-artifact `v4 -> v8`
+- `cmdline-tools-version: 12266719` is explicitly pinned so setup-android v4 does not silently move the toolchain from command-line tools 16.0 to 20.0.
 
-- Main Android CI #177 on the #20 merge commit: PASS.
-- Main signed build #111:
-  - JKS stable-fingerprint verification: PASS;
-  - Gradle four-ABI APK build: PASS;
-  - APK output count/names: PASS;
-  - old strict certificate-text parsing: FAIL;
-  - publication: SKIPPED / fail closed.
-- Existing `debug-latest` release checked after failure: still present with four ABI APKs plus `INSTALL.txt`, `SIGNING.txt`, `SHA256SUMS.txt`.
-- New parser was exercised locally against:
-  - canonical `digest: <64hex>`;
-  - `digest:<64hex>` with no space;
-  - colon-separated uppercase hex;
-  - extra whitespace;
-  - malformed non-hex input.
-  All valid variants normalized to the established fingerprint; malformed input was rejected.
-- Current GitHub CLI release-edit/create flags were audited separately; `--target`, `--verify-tag`, `--title`, `--notes-file`, and `--prerelease` are valid current flags, so no additional known publish-command defect was found before retrying the main path.
+That branch must independently pass Android CI, then the post-merge main signed release must be checked because artifact download/publish actions changed.
 
-### Files intentionally changed
+### Other audit findings still open
 
-- `.github/workflows/build-debug-apk.yml`
-- `CODEX_HANDOFF.md`
+- Static localized `title_render_mode_balance_shift_description` strings in Russian, Simplified Chinese, and Traditional Chinese contain literal `%` signs and trigger Android resource-format warnings. The string is used as a static Preference summary; `formatted="false"` is semantically appropriate, but large locale-file replacement has not yet been risked through the connector.
+- Perf-chart localization resources are removed during packaging because several localized-only strings lack required default values. Audit whether they are dead features or missing base resources before fixing.
+- Debug build reports both debuggable and minify enabled; Gradle disables optimizations/obfuscation for debuggable builds. Audit whether this is intentional legacy configuration.
+- Gradle reports deprecated features that will be incompatible with Gradle 9. Audit separately rather than mixing into persistence fixes.
+- Continue lifecycle/race/persistence and long-label connected-control audits after these contained patches.
 
-No Android product source, Gradle signing configuration, keystore, secret value, APK, or release asset is intentionally changed in this follow-up.
+### Reviewer / next-agent action
 
-### Required PR / post-merge verification
-
-Before merge:
-
-1. open a PR targeting `main` so normal Android PR CI runs;
-2. inspect exact base-to-head diff for unrelated/private material;
-3. require Android CI green;
-4. merge only at the audited expected head.
-
-After merge, do not declare the release audit complete until a new main `Build Debug APK` run proves all of these:
-
-1. JKS fingerprint check passes;
-2. build produces exactly four expected ABI APKs;
-3. all four APKs pass `apksigner verify`;
-4. all four parsed certificate digests equal the established fingerprint;
-5. verified release artifact uploads successfully;
-6. write-scoped `publish` job succeeds;
-7. `debug-latest` points at the new merged main commit;
-8. release contains exactly four APKs plus `INSTALL.txt`, `SIGNING.txt`, `SHA256SUMS.txt`;
-9. release/signing metadata reports the established fingerprint.
-
-If another live-only failure appears, fix the pipeline rather than weakening signer or package checks.
-
-### Remaining hardening / next audits
-
-- protected main-only GitHub Actions environment and migration/removal of repository-level signing secrets (requires real secret values from the private backup; connector cannot retrieve them);
-- confirmed Quick Menu forward-compatibility defect: older builds currently delete persisted unknown future action IDs even though the editor can display them as unavailable and runtime safely ignores them; a separate fix branch/tests were prepared but should be rebased/recreated from latest main after this release repair is durable;
-- deeper OSC profile malformed-metadata recovery audit;
-- broader persisted-state robustness audit;
-- lifecycle/race audit;
-- remaining localization display metadata;
-- unresolved graph-based long-label connected-control expansion.
-
-### Suggested reviewer action
-
-Audit this small release-parser follow-up, merge only when PR CI is green, then inspect the resulting privileged main release run step-by-step. The release/signing audit remains open until that real run publishes a verified seven-asset rolling release successfully.
+1. Verify PR #25 at its live head; require the rerun for `0f0cfda...` to be green.
+2. Re-audit the exact two-file OSC diff, especially first-run vs corruption boundaries and stale-reference resurrection.
+3. Merge #25 only if the exact head remains clean.
+4. Continue the Node-24 workflow maintenance branch and its live main release validation.
+5. Keep moving through remaining persistence, resource, lifecycle, and UI regression findings rather than stopping after one merge.

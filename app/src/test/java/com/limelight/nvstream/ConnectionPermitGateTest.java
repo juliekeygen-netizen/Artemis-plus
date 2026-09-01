@@ -6,18 +6,19 @@ import static org.junit.Assert.fail;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.Test;
 
 public class ConnectionPermitGateTest {
     @Test
-    public void reconnectCanReuseCurrentOwnerWithoutReleasing() throws Exception {
+    public void reconnectCanOnlyReuseCurrentOwner() throws Exception {
         ConnectionPermitGate gate = new ConnectionPermitGate();
         Object owner = new Object();
+        Object other = new Object();
 
-        assertTrue(gate.acquire(owner, false));
-        assertFalse(gate.acquire(owner, true));
+        gate.acquire(owner);
+        assertTrue(gate.canReuse(owner));
+        assertFalse(gate.canReuse(other));
         assertTrue(gate.isOwnedBy(owner));
     }
 
@@ -25,10 +26,10 @@ public class ConnectionPermitGateTest {
     public void ordinarySecondStartFromSameOwnerIsRejected() throws Exception {
         ConnectionPermitGate gate = new ConnectionPermitGate();
         Object owner = new Object();
-        gate.acquire(owner, false);
+        gate.acquire(owner);
 
         try {
-            gate.acquire(owner, false);
+            gate.acquire(owner);
             fail("Expected duplicate ordinary start to be rejected");
         } catch (IllegalStateException expected) {
             assertTrue(gate.isOwnedBy(owner));
@@ -41,12 +42,12 @@ public class ConnectionPermitGateTest {
         Object first = new Object();
         Object second = new Object();
 
-        gate.acquire(first, false);
+        gate.acquire(first);
         assertFalse(gate.release(second));
         assertTrue(gate.isOwnedBy(first));
         assertTrue(gate.release(first));
         assertFalse(gate.release(first));
-        assertTrue(gate.acquire(second, false));
+        gate.acquire(second);
         assertTrue(gate.isOwnedBy(second));
     }
 
@@ -55,15 +56,14 @@ public class ConnectionPermitGateTest {
         ConnectionPermitGate gate = new ConnectionPermitGate();
         Object first = new Object();
         Object second = new Object();
-        gate.acquire(first, false);
+        gate.acquire(first);
 
         CountDownLatch started = new CountDownLatch(1);
         CountDownLatch acquired = new CountDownLatch(1);
-        AtomicBoolean acquiredFresh = new AtomicBoolean();
         Thread waiter = new Thread(() -> {
             started.countDown();
             try {
-                acquiredFresh.set(gate.acquire(second, false));
+                gate.acquire(second);
                 acquired.countDown();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -75,7 +75,6 @@ public class ConnectionPermitGateTest {
         assertFalse(acquired.await(100, TimeUnit.MILLISECONDS));
         assertTrue(gate.release(first));
         assertTrue(acquired.await(1, TimeUnit.SECONDS));
-        assertTrue(acquiredFresh.get());
         assertTrue(gate.isOwnedBy(second));
         waiter.join(1000);
     }

@@ -871,6 +871,7 @@ final class KeyComboManager {
         }
 
         List<String> seenIds = new ArrayList<>();
+        JSONArray repairedArray = new JSONArray();
         boolean corruptedEntry = false;
         for (int i = 0; i < array.length(); i++) {
             Object value = array.opt(i);
@@ -878,21 +879,24 @@ final class KeyComboManager {
                 corruptedEntry = true;
                 continue;
             }
+            JSONObject object = (JSONObject) value;
             try {
-                Definition definition = Definition.fromJson((JSONObject) value);
+                Definition definition = Definition.fromJson(object);
                 if (definition.id.isEmpty() || definition.keys.length == 0 || seenIds.contains(definition.id)) {
                     corruptedEntry = true;
                     continue;
                 }
                 seenIds.add(definition.id);
                 definitions.add(definition);
+                // Preserve fields unknown to this build when cleaning only the damaged siblings.
+                repairedArray.put(object);
             } catch (JSONException ignored) {
                 corruptedEntry = true;
             }
         }
 
         if (corruptedEntry) {
-            saveDefinitionsForLayout(context, layout, definitions);
+            preferences.edit().putString(definitionsKey(layout), repairedArray.toString()).apply();
         }
         return definitions;
     }

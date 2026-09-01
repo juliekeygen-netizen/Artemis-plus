@@ -404,6 +404,7 @@ public final class KeyboardProfilesManager {
             return profiles;
         }
 
+        JSONArray repairedArray = new JSONArray();
         boolean corruptedEntry = false;
         for (int i = 0; i < array.length(); i++) {
             Object value = array.opt(i);
@@ -411,21 +412,24 @@ public final class KeyboardProfilesManager {
                 corruptedEntry = true;
                 continue;
             }
+            JSONObject object = (JSONObject) value;
             try {
-                Profile profile = Profile.fromJson((JSONObject) value);
+                Profile profile = Profile.fromJson(object);
                 if (profile.id.isEmpty() || profile.storageName.isEmpty() || findById(profiles, profile.id) != null) {
                     corruptedEntry = true;
                     continue;
                 }
                 profiles.add(profile);
+                // Keep the original object so fields added by newer clients survive older-client repair.
+                repairedArray.put(object);
             } catch (JSONException ignored) {
                 corruptedEntry = true;
             }
         }
 
-        // Keep valid siblings instead of allowing one bad entry to orphan every profile layout.
+        // Keep valid siblings while preserving any unknown fields on those valid metadata objects.
         if (corruptedEntry && !profiles.isEmpty()) {
-            writeProfiles(context, profiles, readActiveId(context, profiles.get(0).id));
+            metadata.edit().putString(KEY_PROFILES, repairedArray.toString()).apply();
         }
         return profiles;
     }

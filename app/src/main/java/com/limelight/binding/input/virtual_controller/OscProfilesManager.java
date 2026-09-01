@@ -322,6 +322,7 @@ public final class OscProfilesManager {
     private static ArrayList<OscProfile> readProfiles(Context context) {
         ArrayList<OscProfile> profiles = new ArrayList<>();
         SharedPreferences meta = getMetaPreferences(context);
+        boolean hadProfileMetadata = meta.contains(KEY_PROFILES);
         Object rawSerialized = meta.getAll().get(KEY_PROFILES);
         String serialized = rawSerialized instanceof String ? (String) rawSerialized : null;
 
@@ -349,7 +350,14 @@ public final class OscProfilesManager {
         }
 
         if (profiles.isEmpty()) {
-            profiles = recoverProfilesFromMetadata(meta);
+            if (hadProfileMetadata) {
+                profiles = recoverProfilesFromMetadata(meta);
+            } else {
+                // A missing profile list is the normal first-run state. Do not promote stale
+                // mappings left by an old install into real profiles merely because metadata has
+                // never been initialized.
+                profiles.add(defaultProfile());
+            }
             writeProfiles(context, profiles);
         }
         return profiles;
@@ -358,7 +366,7 @@ public final class OscProfilesManager {
     /**
      * Reconstruct the minimum safe profile list after catastrophic profile-list loss. Existing
      * active/game references and true snapshot markers are durable evidence that a profile ID was
-     * user-owned. We only do this when no valid profile-list entries survived parsing; ordinary
+     * user-owned. We only do this when an existing profile list is unusable; ordinary first-run or
      * stale-reference repair therefore keeps its existing behavior.
      */
     private static ArrayList<OscProfile> recoverProfilesFromMetadata(SharedPreferences meta) {

@@ -19,8 +19,8 @@ Continue the Continuum audit autonomously, fix important defects rather than mer
 - Base branch: `main`
 - Base commit: `bc7bf204371290a7c1051773bddbcca3ce39a02f` (`Sync durable state after Continuum audit (#19)`)
 - Task branch: `audit/release-signing-hardening`
-- Last implementation/state commit before this handoff write: `c3e2345c49739cd4dd286bea3f02636b540a6467`
-- Pull request: not yet opened at the time this handoff text was written; publish after final diff/CI review.
+- Last implementation commit before this final handoff update: `0191bb94d947ff42294f601b5ae0bf4a69ad756c`
+- Pull request: publish after this final handoff commit/diff check.
 
 ### Scope completed
 
@@ -52,6 +52,10 @@ The hardened branch now:
 - moves the rolling tag only after the package is verified;
 - updates an existing `debug-latest` release in place with `gh release upload --clobber` + `gh release edit` rather than deleting the whole release first;
 - creates the release only when it does not already exist.
+
+#### CI validation infrastructure
+
+`.github/workflows/android-ci.yml` now parses `signing-common.ps1`, `setup-signing.ps1`, and `build-apk.ps1` with PowerShell's parser before Android compilation/tests. This is a syntax-only gate; it does not execute the signing helpers or expose secrets.
 
 #### Local signing tooling
 
@@ -97,11 +101,13 @@ This connector session cannot recover those secret values, so the branch intenti
 
 ### Files materially changed
 
+- `.github/workflows/android-ci.yml` — PowerShell syntax gate
 - `.github/workflows/build-debug-apk.yml`
 - `signing-common.ps1` — new
 - `setup-signing.ps1`
 - `build-apk.ps1`
 - `SIGNING.md`
+- `README.md` — rolling-release/signing guidance
 - `AGENTS.md` — signing safety + stale roadmap correction
 - `PROJECT_STATE.md` — durable release audit state/next priorities
 - `CODEX_HANDOFF.md` — this review packet
@@ -125,18 +131,22 @@ Independent self-review caught and fixed two would-be pipeline regressions befor
 1. the first ABI validator used a broad `*x86*`-style glob that would also count `x86_64`; it was replaced with exact `*-<abi>-debug.apk` suffix matching;
 2. one manually duplicated expected-fingerprint literal briefly contained an extra `008`; the workflow now has a single top-level expected-fingerprint value used by all three stages, removing that drift class.
 
-These findings are why the workflow should still receive a final diff review and real post-merge main run before the audit is considered complete.
-
-### Tests / CI actually observed so far
+### Tests / CI actually observed
 
 - Pre-hardening merged baseline `bc7bf204...`:
   - Android CI #156 — PASS
   - old Build Debug APK #109 — PASS
-- Current audit branch ordinary Android CI:
-  - run #161 on intermediate head `5f9187ed...` — PASS
-  - later Android CI runs were triggered by additional workflow/docs hardening commits; inspect the final branch head and require its latest run to pass before merge.
+- Current audit branch:
+  - Android CI #161 on intermediate head `5f9187ed...` — PASS
+  - Android CI #170 on implementation head `0191bb94d947ff42294f601b5ae0bf4a69ad756c` — PASS
+    - `Validate Artemis Plus PowerShell helper syntax` — PASS
+    - non-root debug Java compile — PASS
+    - focused Artemis Plus regression suite — PASS
+    - full inherited unit suite step — PASS
 
 The privileged Build Debug APK workflow intentionally does **not** execute on this audit branch anymore. Therefore its new signing/APK/publish path cannot be honestly declared proven until the patch merges to `main` and the new main workflow is observed end-to-end.
+
+This final Markdown-only handoff update may trigger one additional Android CI run; require it to remain green before merge.
 
 ### Post-merge verification required
 
@@ -173,7 +183,7 @@ Review especially:
 
 ### PROJECT_STATE update
 
-`PROJECT_STATE.md` now records `bc7bf204...` as the latest merged baseline, describes this release hardening as pending review rather than merged, records the remaining environment-secret limitation, and makes post-merge release verification the immediate audit priority before persisted-state work.
+`PROJECT_STATE.md` records `bc7bf204...` as the latest merged baseline, describes this release hardening as pending review rather than merged, records the remaining environment-secret limitation, and makes post-merge release verification the immediate audit priority before persisted-state work.
 
 ### Suggested reviewer action
 

@@ -76,17 +76,46 @@ public class QuickMenuConfigTest {
     }
 
     @Test
-    public void unknownActionIsSanitizedWithoutDiscardingValidSiblings() throws Exception {
-        JSONObject root = new JSONObject();
-        root.put("id", "root");
-        root.put("title", "Quick Menu");
-        JSONArray items = new JSONArray();
-        items.put(new JSONObject().put("type", "action").put("actionId", "removed.future.action"));
-        items.put(new JSONObject().put("type", "action").put("actionId", StreamActionRegistry.TASK_MANAGER));
-        root.put("items", items);
-        JSONObject object = new JSONObject().put("version", QuickMenuConfig.CURRENT_VERSION).put("root", root);
+    public void unknownActionIsPreservedWithoutDiscardingValidSiblings() throws Exception {
+        JSONObject object = configWithUnknownAndKnownAction();
 
         QuickMenuConfig parsed = QuickMenuConfig.fromJson(object);
+        assertNotNull(parsed);
+        assertEquals(2, parsed.root.items.size());
+        assertEquals("removed.future.action", parsed.root.items.get(0).actionId);
+        assertEquals(StreamActionRegistry.TASK_MANAGER, parsed.root.items.get(1).actionId);
+    }
+
+    @Test
+    public void unknownActionSurvivesRepeatedPreferenceRoundTrips() throws Exception {
+        QuickMenuConfig parsed = QuickMenuConfig.fromJson(configWithUnknownAndKnownAction());
+        assertNotNull(parsed);
+
+        QuickMenuConfig.save(context, parsed);
+        QuickMenuConfig loaded = QuickMenuConfig.load(context);
+        assertEquals(2, loaded.root.items.size());
+        assertEquals("removed.future.action", loaded.root.items.get(0).actionId);
+        assertEquals(StreamActionRegistry.TASK_MANAGER, loaded.root.items.get(1).actionId);
+
+        QuickMenuConfig.save(context, loaded);
+        QuickMenuConfig loadedAgain = QuickMenuConfig.load(context);
+        assertEquals(2, loadedAgain.root.items.size());
+        assertEquals("removed.future.action", loadedAgain.root.items.get(0).actionId);
+        assertEquals(StreamActionRegistry.TASK_MANAGER, loadedAgain.root.items.get(1).actionId);
+    }
+
+    @Test
+    public void blankPersistedActionIdsAreStillIgnored() throws Exception {
+        JSONObject root = new JSONObject()
+                .put("id", "root")
+                .put("title", "Quick Menu")
+                .put("items", new JSONArray()
+                        .put(new JSONObject().put("type", "action").put("actionId", "   "))
+                        .put(new JSONObject().put("type", "action").put("actionId", StreamActionRegistry.TASK_MANAGER)));
+        QuickMenuConfig parsed = QuickMenuConfig.fromJson(new JSONObject()
+                .put("version", QuickMenuConfig.CURRENT_VERSION)
+                .put("root", root));
+
         assertNotNull(parsed);
         assertEquals(1, parsed.root.items.size());
         assertEquals(StreamActionRegistry.TASK_MANAGER, parsed.root.items.get(0).actionId);
@@ -177,6 +206,19 @@ public class QuickMenuConfigTest {
             assertFalse(action.label.trim().isEmpty());
             assertFalse(action.category.trim().isEmpty());
         }
+    }
+
+    private static JSONObject configWithUnknownAndKnownAction() throws Exception {
+        JSONObject root = new JSONObject();
+        root.put("id", "root");
+        root.put("title", "Quick Menu");
+        JSONArray items = new JSONArray();
+        items.put(new JSONObject().put("type", "action").put("actionId", "removed.future.action"));
+        items.put(new JSONObject().put("type", "action").put("actionId", StreamActionRegistry.TASK_MANAGER));
+        root.put("items", items);
+        return new JSONObject()
+                .put("version", QuickMenuConfig.CURRENT_VERSION)
+                .put("root", root);
     }
 
     private static int deepestPageDepth(QuickMenuConfig.Page page) {

@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 /**
@@ -30,6 +31,7 @@ public final class OscProfilesManager {
     private static final String KEY_GAME_PROFILE_PREFIX = "game_profile_";
     private static final String KEY_SNAPSHOT_INITIALIZED_PREFIX = "snapshot_initialized_";
     private static final String PROFILE_SNAPSHOT_PREFIX = "OSC_PROFILE_";
+    private static final int MAX_RECOVERED_ID_LENGTH = 200;
 
     private OscProfilesManager() {
     }
@@ -46,10 +48,18 @@ public final class OscProfilesManager {
     public static synchronized OscProfile getActiveProfile(Context context) {
         List<OscProfile> profiles = getProfiles(context);
         SharedPreferences meta = getMetaPreferences(context);
-        String activeId = meta.getString(KEY_ACTIVE_PROFILE, OscProfile.DEFAULT_ID);
+        Object rawActive = meta.getAll().get(KEY_ACTIVE_PROFILE);
+        String activeId = rawActive instanceof String
+                ? (String) rawActive
+                : OscProfile.DEFAULT_ID;
 
         OscProfile profile = findById(profiles, activeId);
         if (profile != null) {
+            // Wrong-type active metadata should not survive merely because Default is a valid
+            // fallback. Normalize it so later readers never hit a ClassCastException.
+            if (rawActive != null && !(rawActive instanceof String)) {
+                meta.edit().putString(KEY_ACTIVE_PROFILE, profile.getId()).apply();
+            }
             return profile;
         }
 
@@ -156,7 +166,10 @@ public final class OscProfilesManager {
         SharedPreferences meta = getMetaPreferences(context);
         SharedPreferences.Editor metaEditor = meta.edit();
 
-        if (profileId.equals(meta.getString(KEY_ACTIVE_PROFILE, OscProfile.DEFAULT_ID))) {
+        Object rawActive = meta.getAll().get(KEY_ACTIVE_PROFILE);
+        if (rawActive instanceof String && profileId.equals(rawActive)) {
+            metaEditor.putString(KEY_ACTIVE_PROFILE, OscProfile.DEFAULT_ID);
+        } else if (rawActive != null && !(rawActive instanceof String)) {
             metaEditor.putString(KEY_ACTIVE_PROFILE, OscProfile.DEFAULT_ID);
         }
 
@@ -211,13 +224,14 @@ public final class OscProfilesManager {
         }
         SharedPreferences meta = getMetaPreferences(context);
         String preferenceKey = KEY_GAME_PROFILE_PREFIX + gameKey;
-        String profileId = meta.getString(preferenceKey, null);
-        if (findById(getProfiles(context), profileId) != null) {
+        Object rawProfileId = meta.getAll().get(preferenceKey);
+        String profileId = rawProfileId instanceof String ? (String) rawProfileId : null;
+        if (profileId != null && findById(getProfiles(context), profileId) != null) {
             return profileId;
         }
 
         // Repair stale/corrupt mappings immediately so they do not linger forever.
-        if (profileId != null) {
+        if (rawProfileId != null) {
             meta.edit().remove(preferenceKey).apply();
         }
         return null;
@@ -248,9 +262,9 @@ public final class OscProfilesManager {
         SharedPreferences working = context.getSharedPreferences(
                 VirtualControllerConfigurationLoader.OSC_PREFERENCE,
                 Context.MODE_PRIVATE);
-        boolean initialized = getMetaPreferences(context).getBoolean(
-                KEY_SNAPSHOT_INITIALIZED_PREFIX + profileId,
-                false);
+        Object rawInitialized = getMetaPreferences(context).getAll().get(
+                KEY_SNAPSHOT_INITIALIZED_PREFIX + profileId);
+        boolean initialized = Boolean.TRUE.equals(rawInitialized);
 
         if (!initialized) {
             working.edit().clear().apply();
@@ -307,39 +321,82 @@ public final class OscProfilesManager {
 
     private static ArrayList<OscProfile> readProfiles(Context context) {
         ArrayList<OscProfile> profiles = new ArrayList<>();
-        String serialized = getMetaPreferences(context).getString(KEY_PROFILES, null);
-        if (serialized == null || serialized.trim().isEmpty()) {
-            profiles.add(defaultProfile());
-            writeProfiles(context, profiles);
-            return profiles;
-        }
+        SharedPreferences meta = getMetaPreferences(context);
+        Object rawSerialized = meta.getAll().get(KEY_PROFILES);
+        String serialized = rawSerialized instanceof String ? (String) rawSerialized : null;
 
-        try {
-            JSONArray array = new JSONArray(serialized);
-            for (int i = 0; i < array.length(); i++) {
-                JSONObject object = array.optJSONObject(i);
-                if (object == null) {
-                    continue;
-                }
+        if (serialized != null && !serialized.trim().isEmpty()) {
+            try {
+                JSONArray array = new JSONArray(serialized);
+                for (int i = 0; i < array.length(); i++) {
+                    JSONObject object = array.optJSONObject(i);
+                    if (object == null) {
+                        continue;
+                    }
 
-                OscProfile profile = OscProfile.fromJson(object);
-                String id = profile.getId();
-                if (id == null || id.trim().isEmpty()) {
-                    continue;
+                    OscProfile profile = OscProfile.fromJson(object);
+                    String id = profile.getId();
+                    if (id == null || id.trim().isEmpty()) {
+                        continue;
+                    }
+                    if (findById(profiles, id) == null) {
+                        profiles.add(profile);
+                    }
                 }
-                if (findById(profiles, id) == null) {
-                    profiles.add(profile);
-                }
+            } catch (JSONException ignored) {
+                profiles.clear();
             }
-        } catch (JSONException ignored) {
-            profiles.clear();
         }
 
         if (profiles.isEmpty()) {
-            profiles.add(defaultProfile());
+            profiles = recoverProfilesFromMetadata(meta);
             writeProfiles(context, profiles);
         }
         return profiles;
+    }
+
+    /**
+     * Reconstruct the minimum safe profile list after catastrophic profile-list loss. Existing
+     * active/game references and true snapshot markers are durable evidence that a profile ID was
+     * user-owned. We only do this when no valid profile-list entries survived parsing; ordinary
+     * stale-reference repair therefore keeps its existing behavior.
+     */
+    private static ArrayList<OscProfile> recoverProfilesFromMetadata(SharedPreferences meta) {
+        TreeSet<String> recoveredIds = new TreeSet<>();
+        Map<String, ?> values = meta.getAll();
+
+        addRecoverableId(recoveredIds, values.get(KEY_ACTIVE_PROFILE));
+        for (Map.Entry<String, ?> entry : values.entrySet()) {
+            String key = entry.getKey();
+            Object value = entry.getValue();
+            if (key.startsWith(KEY_GAME_PROFILE_PREFIX)) {
+                addRecoverableId(recoveredIds, value);
+            } else if (key.startsWith(KEY_SNAPSHOT_INITIALIZED_PREFIX)
+                    && Boolean.TRUE.equals(value)) {
+                addRecoverableId(recoveredIds,
+                        key.substring(KEY_SNAPSHOT_INITIALIZED_PREFIX.length()));
+            }
+        }
+
+        recoveredIds.remove(OscProfile.DEFAULT_ID);
+        ArrayList<OscProfile> profiles = new ArrayList<>();
+        profiles.add(defaultProfile());
+        int recoveredIndex = 1;
+        for (String profileId : recoveredIds) {
+            profiles.add(new OscProfile(profileId, "Recovered OSC Profile " + recoveredIndex++));
+        }
+        return profiles;
+    }
+
+    private static void addRecoverableId(Set<String> recoveredIds, Object rawId) {
+        if (!(rawId instanceof String)) {
+            return;
+        }
+        String id = (String) rawId;
+        if (id.trim().isEmpty() || id.length() > MAX_RECOVERED_ID_LENGTH) {
+            return;
+        }
+        recoveredIds.add(id);
     }
 
     /** @return true when the list was repaired. */

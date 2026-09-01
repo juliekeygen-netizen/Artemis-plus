@@ -199,7 +199,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     public NvConnection conn;
     private SpinnerDialog spinner;
     private boolean displayedFailureDialog = false;
-    private boolean connecting = false;
+    private volatile boolean connecting = false;
     public volatile boolean connected = false;
     private boolean autoEnterPip = false;
     private boolean surfaceCreated = false;
@@ -280,6 +280,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private WifiMonitor wifiMonitor;
     private boolean smartReconnectEnabled = true;
     private static final int SMART_RECONNECT_MAX_ATTEMPTS = 6;
+    private final SmartReconnectFence smartReconnectFence = new SmartReconnectFence();
+    private volatile boolean activityDestroyed = false;
 
     private WifiManager.WifiLock highPerfWifiLock;
     private WifiManager.WifiLock lowLatencyWifiLock;
@@ -979,6 +981,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 decoderRenderer.setRenderTarget(streamContainer.getSurface());
 
                 // Starten Sie die NvConnection
+                connecting = true;
                 conn.start(new AndroidAudioRenderer(Game.this, prefConfig.playHostAudio),
                         decoderRenderer, Game.this);
             } else {
@@ -1865,6 +1868,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     protected void onDestroy() {
+        activityDestroyed = true;
+        smartReconnectFence.cancel();
+        cancelPendingCommitText();
         super.onDestroy();
 
         instance = null;
@@ -2195,6 +2201,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         if (reconnectOverlay != null) {
             reconnectOverlay.show(1);
         }
+        connecting = true;
         conn.start(new AndroidAudioRenderer(Game.this, prefConfig.playHostAudio),
                 decoderRenderer, Game.this);
     }
@@ -2275,6 +2282,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             setInputGrabState(false);
         }
 
+        cancelPendingCommitText();
         super.onPause();
     }
 
@@ -4128,6 +4136,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private void stopConnection(boolean preserveControllerStateForReconnect, Runnable onStopped) {
+        smartReconnectFence.cancel();
+        cancelPendingCommitText();
+        if (reconnectOverlay != null) {
+            reconnectOverlay.hide();
+        }
         if (connecting || connected) {
             connecting = connected = false;
             updatePipAutoEnter();
@@ -4260,6 +4273,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void connectionTerminated(final int errorCode) {
+        if (activityDestroyed || isFinishing()) {
+            LimeLog.info("Ignoring connectionTerminated callback after Activity teardown");
+            return;
+        }
         // A graceful termination is expected while Fast Resume parks the client stream.
         // Do not let that callback finish the retained Activity or cancel its timeout.
         if (errorCode == MoonBridge.ML_ERROR_GRACEFUL_TERMINATION &&
@@ -4277,6 +4294,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
 
         // Attempt smart reconnect: freeze frame is automatic (we don't clear the surface)
+        final int reconnectToken = smartReconnectFence.beginAttempt();
         LimeLog.info("Connection lost (error " + errorCode + "), attempting smart reconnect...");
 
         runOnUiThread(new Runnable() {
@@ -4295,6 +4313,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 boolean reconnected = false;
 
                 for (int attempt = 1; attempt <= SMART_RECONNECT_MAX_ATTEMPTS; attempt++) {
+                    if (!isSmartReconnectAttemptAllowed(reconnectToken)) {
+                        return;
+                    }
                     final int currentAttempt = attempt;
                     LimeLog.info("Reconnect attempt " + attempt + "/" + SMART_RECONNECT_MAX_ATTEMPTS);
 
@@ -4311,7 +4332,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                     try {
                         Thread.sleep(500L * attempt);
                     } catch (InterruptedException e) {
-                        break;
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                    if (!isSmartReconnectAttemptAllowed(reconnectToken)) {
+                        return;
                     }
 
                     // Check if WiFi/network is available
@@ -4322,6 +4347,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
                     // Attempt to reconnect by stopping and restarting the connection
                     try {
+                        if (!isSmartReconnectAttemptAllowed(reconnectToken)) {
+                            return;
+                        }
                         synchronized (MoonBridge.class) {
                             MoonBridge.stopConnection();
                             MoonBridge.cleanupBridge();
@@ -4338,12 +4366,19 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                             reconnectSurface = streamContainer.getSurface();
                         }
                         if (conn != null && reconnectSurface != null) {
+                            if (!isSmartReconnectAttemptAllowed(reconnectToken)) {
+                                return;
+                            }
                             decoderRenderer.setRenderTarget(reconnectSurface);
+                            connecting = true;
                             conn.start(new AndroidAudioRenderer(Game.this, prefConfig.playHostAudio),
                                     decoderRenderer, Game.this);
 
                             // Wait briefly to see if connection succeeds
                             Thread.sleep(2000);
+                            if (!isSmartReconnectAttemptAllowed(reconnectToken)) {
+                                return;
+                            }
 
                             if (connected) {
                                 reconnected = true;
@@ -4360,6 +4395,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
+                        if (!isSmartReconnectAttemptAllowed(reconnectToken)) {
+                            return;
+                        }
                         if (reconnectOverlay != null) {
                             reconnectOverlay.hide();
                         }
@@ -4378,7 +4416,14 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
      * Original connection terminated handler, called when smart reconnect is disabled
      * or after all reconnect attempts have failed.
      */
+    private boolean isSmartReconnectAttemptAllowed(int token) {
+        return smartReconnectFence.isCurrent(token) && !activityDestroyed && !isFinishing();
+    }
+
     private void handleConnectionTerminatedFinal(final int errorCode) {
+        if (activityDestroyed || isFinishing()) {
+            return;
+        }
         // A failed reconnect has no live transport to receive input. Keep Fast Resume input
         // suspended here; connectionStarted() is the success path that restores controllers.
         // Perform a connection test if the failure could be due to a blocked port
@@ -4507,6 +4552,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void connectionStarted() {
+        if (activityDestroyed || isFinishing()) {
+            LimeLog.info("Ignoring connectionStarted callback after Activity teardown");
+            return;
+        }
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -5380,6 +5429,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             }
         }
         return true;
+    }
+
+    private void cancelPendingCommitText() {
+        commitTextHandler.removeCallbacks(flushCommitTextQueue);
+        commitTextQueue.clear();
     }
 
     private void enqueueCommitText(String text) {

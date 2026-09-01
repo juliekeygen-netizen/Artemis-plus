@@ -5,10 +5,16 @@ on:
   push:
     branches:
       - main
-      - 'audit/**'
 
+# Public certificate identity metadata, shared by all release-verification steps so copies cannot
+# drift independently. The private keystore/passwords remain encrypted GitHub secrets.
+env:
+  ARTEMIS_PLUS_EXPECTED_SIGNER_SHA256: 88c430db21b298bab7b654ce3b9300e33bf1917df4bf1a73047c9590f0080083
+
+# Building/signing only needs repository reads. The separate publish job receives the
+# write-scoped token after the APKs and signer have already been validated.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: build-debug-${{ github.ref }}
@@ -16,8 +22,15 @@ concurrency:
 
 jobs:
   build:
+    # Never expose the persistent release-signing path to a manually dispatched branch run.
+    # Audit/feature branches use Android CI; rolling signed APKs are a main-only artifact.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    outputs:
+      version_name: ${{ steps.signing.outputs.version_name }}
+      version_code: ${{ steps.signing.outputs.version_code }}
+      signer_sha256: ${{ steps.signing.outputs.signer_sha256 }}
 
     steps:
       - name: Checkout
@@ -38,7 +51,8 @@ jobs:
       - name: Install SDK and NDK
         run: sdkmanager "platforms;android-36" "ndk;27.0.12077973"
 
-      - name: Configure Artemis Plus signing and version
+      - name: Configure and verify Artemis Plus signing
+        id: signing
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.ARTEMIS_PLUS_KEYSTORE_BASE64 }}
@@ -48,35 +62,16 @@ jobs:
         run: |
           set -euo pipefail
 
+          EXPECTED_SIGNER_SHA256="$ARTEMIS_PLUS_EXPECTED_SIGNER_SHA256"
           KEYSTORE_PATH="$RUNNER_TEMP/artemis-plus.jks"
-          USING_PERSISTENT_SIGNER=false
 
-          if [[ -n "${KEYSTORE_BASE64}" && -n "${KEYSTORE_PASSWORD}" && -n "${KEY_ALIAS}" && -n "${KEY_PASSWORD}" ]]; then
-            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
-            USING_PERSISTENT_SIGNER=true
-          elif [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
-            echo "Persistent Artemis Plus signing secrets are not configured." >&2
-            echo "Run .\\setup-signing.ps1 once from a local clone before publishing main builds." >&2
+          if [[ -z "${KEYSTORE_BASE64}" || -z "${KEYSTORE_PASSWORD}" || -z "${KEY_ALIAS}" || -z "${KEY_PASSWORD}" ]]; then
+            echo "Persistent Artemis Plus signing secrets are not fully configured." >&2
+            echo "Refusing to create a rolling main build with an ephemeral or partial signer." >&2
             exit 1
-          else
-            # Audit branches need to prove that the configured signing path compiles and packages,
-            # but they must never publish. Generate a throw-away audit key when repository secrets
-            # have not been configured yet.
-            KEYSTORE_PASSWORD='artemis-plus-audit-only'
-            KEY_PASSWORD="$KEYSTORE_PASSWORD"
-            KEY_ALIAS='artemis-plus-audit'
-            keytool -genkeypair \
-              -keystore "$KEYSTORE_PATH" \
-              -storetype JKS \
-              -storepass "$KEYSTORE_PASSWORD" \
-              -keypass "$KEY_PASSWORD" \
-              -alias "$KEY_ALIAS" \
-              -keyalg RSA \
-              -keysize 3072 \
-              -validity 365 \
-              -dname 'CN=Artemis Plus Audit,O=Artemis Plus,C=FI' \
-              -noprompt >/dev/null 2>&1
           fi
+
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
 
           VERSION_CODE="$(( $(date +%s) / 60 ))"
           SHORT_SHA="${GITHUB_SHA::7}"
@@ -84,7 +79,15 @@ jobs:
           SIGNER_SHA256="$(keytool -exportcert \
             -keystore "$KEYSTORE_PATH" \
             -storepass "$KEYSTORE_PASSWORD" \
-            -alias "$KEY_ALIAS" 2>/dev/null | sha256sum | awk '{print $1}')"
+            -alias "$KEY_ALIAS" 2>/dev/null | sha256sum | awk '{print tolower($1)}')"
+
+          if [[ "$SIGNER_SHA256" != "$EXPECTED_SIGNER_SHA256" ]]; then
+            echo "Artemis Plus signing identity mismatch." >&2
+            echo "Expected: $EXPECTED_SIGNER_SHA256" >&2
+            echo "Actual:   $SIGNER_SHA256" >&2
+            echo "Refusing to build/publish an APK that would break update compatibility." >&2
+            exit 1
+          fi
 
           echo "ARTEMIS_PLUS_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
           echo "ARTEMIS_PLUS_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
@@ -93,11 +96,14 @@ jobs:
           echo "ARTEMIS_PLUS_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
           echo "ARTEMIS_PLUS_VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
           echo "ARTEMIS_PLUS_SIGNER_SHA256=$SIGNER_SHA256" >> "$GITHUB_ENV"
-          echo "ARTEMIS_PLUS_PERSISTENT_SIGNER=$USING_PERSISTENT_SIGNER" >> "$GITHUB_ENV"
+          echo "ARTEMIS_PLUS_PERSISTENT_SIGNER=true" >> "$GITHUB_ENV"
+
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "signer_sha256=$SIGNER_SHA256" >> "$GITHUB_OUTPUT"
 
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
-          echo "Signer SHA-256: $SIGNER_SHA256"
-          echo "Persistent signer: $USING_PERSISTENT_SIGNER"
+          echo "Verified signer SHA-256: $SIGNER_SHA256"
 
       - name: Make Gradle executable
         run: chmod +x gradlew
@@ -105,10 +111,11 @@ jobs:
       - name: Build installable debug APKs
         run: ./gradlew :app:assembleNonRoot_gameDebug --stacktrace
 
-      - name: Prepare download package
+      - name: Prepare and verify download package
         shell: bash
         run: |
           set -euo pipefail
+          EXPECTED_SIGNER_SHA256="$ARTEMIS_PLUS_EXPECTED_SIGNER_SHA256"
           mkdir -p dist
           find app/build/outputs/apk -type f -name '*.apk' -path '*nonRoot_game*debug*' -print -exec cp '{}' dist/ \;
 
@@ -116,6 +123,48 @@ jobs:
             echo 'No debug APKs were produced.' >&2
             exit 1
           fi
+
+          # The non-root debug build is intentionally ABI-split. Fail if a configured architecture
+          # silently disappears or if a new unexpected artifact begins riding the rolling release.
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            mapfile -t matches < <(find dist -maxdepth 1 -type f -name "*-${abi}-debug.apk" -print)
+            if [[ ${#matches[@]} -ne 1 ]]; then
+              echo "Expected exactly one ${abi} debug APK, found ${#matches[@]}." >&2
+              printf '%s\n' "${matches[@]}" >&2
+              exit 1
+            fi
+          done
+          if [[ $(find dist -maxdepth 1 -type f -name '*.apk' | wc -l) -ne 4 ]]; then
+            echo 'Unexpected APK count in rolling release package.' >&2
+            find dist -maxdepth 1 -type f -name '*.apk' -print >&2
+            exit 1
+          fi
+
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [[ -z "$SDK_ROOT" || ! -d "$SDK_ROOT/build-tools" ]]; then
+            echo 'Android SDK build-tools directory is unavailable.' >&2
+            exit 1
+          fi
+          APKSIGNER="$(find "$SDK_ROOT/build-tools" -type f -name apksigner 2>/dev/null | sort -V | tail -n 1)"
+          if [[ -z "$APKSIGNER" || ! -x "$APKSIGNER" ]]; then
+            echo 'apksigner was not found after the Android build.' >&2
+            exit 1
+          fi
+
+          for apk in dist/*.apk; do
+            cert_sha256="$($APKSIGNER verify --print-certs "$apk" \
+              | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print tolower($2); exit}')"
+            if [[ -z "$cert_sha256" ]]; then
+              echo "Unable to read signer fingerprint from $apk" >&2
+              exit 1
+            fi
+            if [[ "$cert_sha256" != "$EXPECTED_SIGNER_SHA256" ]]; then
+              echo "APK signer mismatch for $apk" >&2
+              echo "Expected: $EXPECTED_SIGNER_SHA256" >&2
+              echo "Actual:   $cert_sha256" >&2
+              exit 1
+            fi
+          done
 
           (
             cd dist
@@ -136,10 +185,10 @@ jobs:
           Version: ${ARTEMIS_PLUS_VERSION_NAME}
           Version code: ${ARTEMIS_PLUS_VERSION_CODE}
           Signer SHA-256: ${ARTEMIS_PLUS_SIGNER_SHA256}
-          Persistent project signer: ${ARTEMIS_PLUS_PERSISTENT_SIGNER}
+          Persistent project signer: true
 
-          Once the persistent Artemis Plus signer is installed on your phone, later APKs signed by
-          this same key can be installed directly as updates without uninstalling the app first.
+          Later APKs signed by this same Artemis Plus key can be installed directly as updates
+          without uninstalling the app first.
           EOF
 
           cat > dist/SIGNING.txt <<EOF
@@ -150,13 +199,15 @@ jobs:
           Version: ${ARTEMIS_PLUS_VERSION_NAME}
           Version code: ${ARTEMIS_PLUS_VERSION_CODE}
           Certificate SHA-256: ${ARTEMIS_PLUS_SIGNER_SHA256}
-          Persistent project signer: ${ARTEMIS_PLUS_PERSISTENT_SIGNER}
+          Expected certificate SHA-256: ${EXPECTED_SIGNER_SHA256}
+          Persistent project signer: true
+          APK signer verification: passed for all release APKs
           EOF
 
-          echo 'Produced APKs:'
+          echo 'Verified APKs:'
           ls -lh dist/*.apk
 
-      - name: Upload Artemis Plus APKs as Actions artifact
+      - name: Upload verified Artemis Plus release package
         uses: actions/upload-artifact@v4
         with:
           name: Artemis-Plus-debug-APKs
@@ -164,16 +215,39 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/main' && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download verified release package
+        uses: actions/download-artifact@v4
+        with:
+          name: Artemis-Plus-debug-APKs
+          path: dist
+
       - name: Publish rolling debug release
-        if: github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          ARTEMIS_PLUS_VERSION_NAME: ${{ needs.build.outputs.version_name }}
+          ARTEMIS_PLUS_VERSION_CODE: ${{ needs.build.outputs.version_code }}
+          ARTEMIS_PLUS_SIGNER_SHA256: ${{ needs.build.outputs.signer_sha256 }}
         run: |
           set -euo pipefail
 
-          if [[ "$ARTEMIS_PLUS_PERSISTENT_SIGNER" != "true" ]]; then
-            echo "Refusing to publish a rolling release without the persistent Artemis Plus signer." >&2
+          EXPECTED_SIGNER_SHA256="$ARTEMIS_PLUS_EXPECTED_SIGNER_SHA256"
+          if [[ "$ARTEMIS_PLUS_SIGNER_SHA256" != "$EXPECTED_SIGNER_SHA256" ]]; then
+            echo 'Refusing to publish because the verified build signer changed between jobs.' >&2
             exit 1
           fi
 
@@ -194,29 +268,42 @@ jobs:
           - Version code: \`${ARTEMIS_PLUS_VERSION_CODE}\`
           - Signer SHA-256: \`${ARTEMIS_PLUS_SIGNER_SHA256}\`
           - Build type: non-root debug
+          - Release APK signer verification: passed
 
           **Most modern Android phones/tablets should use the \`arm64-v8a\` APK.**
 
-          After installing the first build signed with this Artemis Plus key, later builds can be
-          installed directly as updates without uninstalling. See \`INSTALL.txt\`, \`SIGNING.txt\`,
-          and \`SHA256SUMS.txt\` for details.
+          Later builds can be installed directly over earlier Artemis Plus builds only when the
+          certificate SHA-256 above remains the established Artemis Plus fingerprint. See
+          \`INSTALL.txt\`, \`SIGNING.txt\`, and \`SHA256SUMS.txt\` for details.
           EOF
 
-          # Keep one stable download location instead of creating a release for every commit.
-          # Remove the previous rolling release/tag if they exist, then recreate them at this commit.
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release delete "$TAG" --yes
-          fi
-          git push origin ":refs/tags/$TAG" >/dev/null 2>&1 || true
+          # Move the rolling tag only after the package has been fully verified. Preserve the
+          # existing release object so a transient API failure does not erase the download page.
           git tag -f "$TAG" "$GITHUB_SHA"
           git push origin "refs/tags/$TAG" --force
 
-          gh release create "$TAG" \
-            dist/*.apk \
-            dist/SHA256SUMS.txt \
-            dist/INSTALL.txt \
-            dist/SIGNING.txt \
-            --title "$TITLE" \
-            --notes-file release-notes.md \
-            --prerelease \
-            --verify-tag
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              dist/*.apk \
+              dist/SHA256SUMS.txt \
+              dist/INSTALL.txt \
+              dist/SIGNING.txt \
+              --clobber
+            gh release edit "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "$TITLE" \
+              --notes-file release-notes.md \
+              --prerelease \
+              --verify-tag
+          else
+            gh release create "$TAG" \
+              dist/*.apk \
+              dist/SHA256SUMS.txt \
+              dist/INSTALL.txt \
+              dist/SIGNING.txt \
+              --target "$GITHUB_SHA" \
+              --title "$TITLE" \
+              --notes-file release-notes.md \
+              --prerelease \
+              --verify-tag
+          fi

@@ -25,6 +25,28 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Validate Artemis Plus PowerShell helper syntax
+        shell: pwsh
+        run: |
+          $files = @(
+            'signing-common.ps1',
+            'setup-signing.ps1',
+            'build-apk.ps1'
+          )
+          foreach ($file in $files) {
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file),
+              [ref]$tokens,
+              [ref]$parseErrors)
+            if ($parseErrors.Count -gt 0) {
+              Write-Error "PowerShell syntax errors in ${file}:"
+              $parseErrors | ForEach-Object { Write-Error $_.Message }
+              exit 1
+            }
+          }
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:

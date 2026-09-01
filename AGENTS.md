@@ -154,13 +154,19 @@ Remove temporary validator scripts/workflows/debug files from the final product 
 
 Do not regenerate, replace, expose, or casually modify the established Artemis Plus signing identity or secrets.
 
-The previously verified stable signing certificate SHA-256 is:
+The verified stable signing certificate SHA-256 is:
 
 `88c430db21b298bab7b654ce3b9300e33bf1917df4bf1a73047c9590f0080083`
 
-If signing/release infrastructure appears broken, investigate before changing key material.
+If signing/release infrastructure appears broken, investigate before changing key material. A missing `.artemis-signing` directory means restore the private backup; it is **not** permission to generate a new key. `setup-signing.ps1` is expected to verify the established certificate before it can upload signing values to GitHub.
 
-The repository maintains a rolling `debug-latest` prerelease for successful `main` builds. Do not change signing/release workflows unless the task actually requires it.
+The rolling `debug-latest` prerelease is a privileged `main`-only path. Audit/feature branches should use normal Android CI and must not become routine consumers of the persistent signing secrets or a write-scoped release token.
+
+The release workflow must fail closed if the reconstructed keystore or any produced APK does not match the established certificate fingerprint. Keep build/token permissions least-privileged and isolate `contents: write` to publication after build/signature validation.
+
+Repository-level signing secrets are not the strongest isolation boundary for same-repository workflows. `SIGNING.md` documents the intended future migration to a protected main-only GitHub Actions environment; do not switch to environment-only secret references until the existing values have actually been migrated from the private backup.
+
+Do not change signing/release workflows unless the active task actually requires it, and verify the real `debug-latest` tag/assets after any such merge.
 
 ## 10. Important diagnostic trap: Apollo permissions
 
@@ -168,7 +174,9 @@ If video streaming works but **all** mouse/keyboard/touch/controller input appea
 
 ## 11. Current roadmap discipline
 
-Read the detailed priorities in `PROJECT_STATE.md` rather than assuming an order from README. In particular, the current next item starts with an audit: the modern keyboard-profile bundle already appears to serialize Artemis Action selections, so do not build a redundant serialization system before tracing the actual user-facing import/export paths.
+Read the live priorities in `PROJECT_STATE.md` rather than assuming an order from README or an older handoff.
+
+The Artemis Action/profile-bundle import/export investigation is already resolved and merged: the modern profile bundle carries layout + custom keys + Action selections, including inert preservation of unknown/future Action IDs. Do not restart that work unless a genuinely different user-facing interchange requirement is demonstrated.
 
 For experimental/high-risk features, prefer a contained proof-of-concept branch with explicit fallbacks and tests instead of destabilizing the normal path.
 

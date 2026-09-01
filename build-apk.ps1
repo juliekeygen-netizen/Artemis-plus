@@ -4,13 +4,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
+. (Join-Path $PSScriptRoot "signing-common.ps1")
 
 $OutputName = "Artemis-Plus-debug-arm64.apk"
 $OutputPath = Join-Path $PSScriptRoot $OutputName
 $SigningDir = Join-Path $PSScriptRoot ".artemis-signing"
 $SigningProperties = Join-Path $SigningDir "signing.properties"
 $SigningKeystore = Join-Path $SigningDir "artemis-plus.jks"
-$SigningInfo = Join-Path $SigningDir "BACKUP-THIS-KEY.txt"
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
@@ -25,7 +25,7 @@ if (-not (Test-Path ".\gradlew.bat")) {
 # Never silently fall back to Android's machine-specific debug keystore. That would create an APK
 # which cannot update an Artemis Plus build signed on GitHub or another machine.
 if (-not (Test-Path $SigningProperties) -or -not (Test-Path $SigningKeystore)) {
-    throw "Persistent Artemis Plus signing is not configured. Run .\setup-signing.ps1 once, then build again."
+    throw "The established Artemis Plus signing files are missing. Restore the backed-up .artemis-signing directory and run .\setup-signing.ps1 before building."
 }
 
 # Prefer the same Java major version used by GitHub Actions. If JAVA_HOME is
@@ -53,15 +53,23 @@ if (-not $javac) {
     $javac = Join-Path $jdk17.FullName "bin\javac.exe"
 }
 
-Write-Host "Java : $env:JAVA_HOME" -ForegroundColor DarkGray
-Write-Host "Sign : $SigningKeystore" -ForegroundColor DarkGray
-
-if (Test-Path $SigningInfo) {
-    $fingerprintLine = Get-Content $SigningInfo | Where-Object { $_ -like "Certificate SHA-256:*" } | Select-Object -First 1
-    if ($fingerprintLine) {
-        Write-Host $fingerprintLine -ForegroundColor DarkGray
+$signingProps = Read-ArtemisPlusSigningProperties $SigningProperties
+foreach ($required in @("storePassword", "keyAlias", "keyPassword")) {
+    if (-not $signingProps.ContainsKey($required) -or [string]::IsNullOrWhiteSpace($signingProps[$required])) {
+        throw "Missing '$required' in $SigningProperties. Restore the verified signing backup or rerun .\setup-signing.ps1."
     }
 }
+
+$keyTool = Find-ArtemisPlusKeyTool
+$fingerprint = Assert-ArtemisPlusSigningIdentity `
+    -KeyTool $keyTool `
+    -Store $SigningKeystore `
+    -StorePassword $signingProps["storePassword"] `
+    -KeyAlias $signingProps["keyAlias"]
+
+Write-Host "Java : $env:JAVA_HOME" -ForegroundColor DarkGray
+Write-Host "Sign : $SigningKeystore" -ForegroundColor DarkGray
+Write-Host "Cert : $fingerprint (verified)" -ForegroundColor Green
 
 # Give every rolling/local test build a monotonic Android version code based on UTC epoch minutes.
 # This stays comfortably below Android's integer limit and works consistently on both Windows/CI.
@@ -99,7 +107,7 @@ if (-not (Test-Path ".\local.properties")) {
 }
 
 Write-Host ""
-Write-Host "Building stable-signed non-root debug APKs..." -ForegroundColor Yellow
+Write-Host "Building verified stable-signed non-root debug APKs..." -ForegroundColor Yellow
 Write-Host ""
 
 & .\gradlew.bat :app:assembleNonRoot_gameDebug
@@ -126,8 +134,9 @@ Write-Host "Source : $($apk.FullName)" -ForegroundColor DarkGray
 Write-Host "APK    : $OutputPath" -ForegroundColor Green
 Write-Host "Size   : $sizeMb MB" -ForegroundColor DarkGray
 Write-Host "Version: $env:ARTEMIS_PLUS_VERSION_NAME" -ForegroundColor DarkGray
+Write-Host "Signer : $fingerprint" -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "This APK uses your persistent Artemis Plus signing key and can update other builds signed by the same key." -ForegroundColor Green
+Write-Host "This APK uses the verified persistent Artemis Plus signing key and can update established Artemis Plus installs." -ForegroundColor Green
 Write-Host ""
 
 if ($OpenFolder) {

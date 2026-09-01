@@ -4242,12 +4242,18 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         // A terminal stage failure ends the current start attempt. Keep this truthful so
         // teardown/PiP/reconnect logic never mistakes a failed start for an in-flight one.
+        final boolean smartReconnectStageFailure;
         synchronized (smartReconnectFence) {
             if (activityDestroyed || isFinishing() || !connecting) {
                 return false;
             }
             connecting = false;
             connected = false;
+            smartReconnectStageFailure = smartReconnectFence.hasActiveAttempt();
+        }
+        if (smartReconnectStageFailure) {
+            LimeLog.info("Reconnect start stage failed; retry owner remains active");
+            return false;
         }
 
         runOnUiThread(new Runnable() {
@@ -4335,6 +4341,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         runOnUiThread(() -> {
             if (!activityDestroyed && !isFinishing()) {
                 updatePipAutoEnter();
+                // Freeze-frame reconnect must not continue sending direct touch/mouse/keyboard
+                // input into a dead transport. connectionStarted() restores capture on success.
+                setInputGrabState(false);
             }
         });
 
@@ -4458,13 +4467,19 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                                 }
                                 connecting = true;
                             }
-                            conn.start(new AndroidAudioRenderer(Game.this, prefConfig.playHostAudio),
+                            Thread reconnectStartThread = conn.restart(
+                                    new AndroidAudioRenderer(Game.this, prefConfig.playHostAudio),
                                     decoderRenderer, Game.this);
 
-                            // A successful connectionStarted() atomically completes this reconnect
-                            // token. If the token remains current after the observation window, the
-                            // attempt did not establish a live transport and the worker may retry.
-                            Thread.sleep(2000);
+                            // NvConnection.start() is asynchronous. Wait for this exact replacement
+                            // start worker to finish rather than guessing with a fixed delay; this
+                            // prevents overlapping HTTP/native starts on slow failure paths.
+                            try {
+                                reconnectStartThread.join();
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                return;
+                            }
                             if (!isSmartReconnectAttemptAllowed(reconnectToken)) {
                                 return;
                             }
@@ -4606,12 +4621,18 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         });
     }
 
+    private boolean isTransportCallbackAllowed() {
+        synchronized (smartReconnectFence) {
+            return !activityDestroyed && !isFinishing() && (connecting || connected);
+        }
+    }
+
     @Override
     public void connectionStatusUpdate(final int connectionStatus) {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                if (activityDestroyed || isFinishing() || !connected) {
+                if (!isTransportCallbackAllowed()) {
                     return;
                 }
                 if (prefConfig.disableWarnings) {
@@ -4787,7 +4808,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                if (activityDestroyed || isFinishing()) {
+                if (activityDestroyed || isFinishing() || smartReconnectFence.hasActiveAttempt()) {
                     return;
                 }
                 Toast.makeText(Game.this, message, Toast.LENGTH_LONG).show();
@@ -4801,7 +4822,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
-                    if (activityDestroyed || isFinishing()) {
+                    if (activityDestroyed || isFinishing() || smartReconnectFence.hasActiveAttempt()) {
                         return;
                     }
                     Toast.makeText(Game.this, message, Toast.LENGTH_LONG).show();
@@ -4812,7 +4833,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void rumble(short controllerNumber, short lowFreqMotor, short highFreqMotor) {
-        if (activityDestroyed || isFinishing() || !connected) {
+        if (!isTransportCallbackAllowed()) {
             return;
         }
         if (prefConfig.enableRumble) {
@@ -4823,7 +4844,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void rumbleTriggers(short controllerNumber, short leftTrigger, short rightTrigger) {
-        if (activityDestroyed || isFinishing() || !connected) {
+        if (!isTransportCallbackAllowed()) {
             return;
         }
         LimeLog.info(String.format((Locale)null, "Rumble on gamepad triggers %d: %04x %04x", controllerNumber, leftTrigger, rightTrigger));
@@ -4833,7 +4854,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void setHdrMode(boolean enabled, byte[] hdrMetadata) {
-        if (activityDestroyed || isFinishing() || !connected) {
+        if (!isTransportCallbackAllowed()) {
             return;
         }
         LimeLog.info("Display HDR mode: " + (enabled ? "enabled" : "disabled"));
@@ -4842,7 +4863,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void setMotionEventState(short controllerNumber, byte motionType, short reportRateHz) {
-        if (activityDestroyed || isFinishing() || !connected) {
+        if (!isTransportCallbackAllowed()) {
             return;
         }
         controllerHandler.handleSetMotionEventState(controllerNumber, motionType, reportRateHz);
@@ -4850,7 +4871,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void setControllerLED(short controllerNumber, byte r, byte g, byte b) {
-        if (activityDestroyed || isFinishing() || !connected) {
+        if (!isTransportCallbackAllowed()) {
             return;
         }
         controllerHandler.handleSetControllerLED(controllerNumber, r, g, b);

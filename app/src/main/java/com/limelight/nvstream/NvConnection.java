@@ -24,7 +24,7 @@ import java.security.cert.X509Certificate;
 import java.util.Objects;
 import java.util.Timer;
 import java.util.TimerTask;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
@@ -48,7 +48,8 @@ public class NvConnection {
     private LimelightCryptoProvider cryptoProvider;
     private String uniqueId;
     private ConnectionContext context;
-    private static Semaphore connectionAllowed = new Semaphore(1);
+    private static final ConnectionPermitGate connectionPermitGate = new ConnectionPermitGate();
+    private final AtomicInteger startGeneration = new AtomicInteger();
     private final boolean isMonkey;
     private final Context appContext;
 
@@ -90,7 +91,10 @@ public class NvConnection {
     }
 
     public void stop() {
-        // Interrupt any pending connection. This is thread-safe.
+        // Invalidate pending/restarting Java start workers before touching native state.
+        startGeneration.incrementAndGet();
+
+        // Interrupt any pending native connection. This is thread-safe.
         MoonBridge.interruptConnection();
 
         // Moonlight-core is not thread-safe with respect to connection start and stop, so
@@ -100,8 +104,9 @@ public class NvConnection {
             MoonBridge.cleanupBridge();
         }
 
-        // Now a pending connection can be processed
-        connectionAllowed.release();
+        // Release only if this NvConnection actually owns the process-wide connection slot.
+        // A failed start and a concurrent stop may both reach this path; release is idempotent.
+        connectionPermitGate.release(this);
     }
 
     private InetAddress resolveServerAddress() throws IOException {
@@ -385,20 +390,44 @@ public class NvConnection {
         return true;
     }
 
-    public void start(final AudioRenderer audioRenderer, final VideoDecoderRenderer videoDecoderRenderer, final NvConnectionListener connectionListener)
+    public Thread start(final AudioRenderer audioRenderer, final VideoDecoderRenderer videoDecoderRenderer, final NvConnectionListener connectionListener)
     {
-        new Thread(new Runnable() {
+        return startInternal(audioRenderer, videoDecoderRenderer, connectionListener, false);
+    }
+
+    /**
+     * Restart the native transport while retaining this NvConnection's existing global session
+     * permit. Smart reconnect uses this path after an unexpected transport termination.
+     */
+    public Thread restart(final AudioRenderer audioRenderer, final VideoDecoderRenderer videoDecoderRenderer, final NvConnectionListener connectionListener)
+    {
+        return startInternal(audioRenderer, videoDecoderRenderer, connectionListener, true);
+    }
+
+    private Thread startInternal(final AudioRenderer audioRenderer,
+                                 final VideoDecoderRenderer videoDecoderRenderer,
+                                 final NvConnectionListener connectionListener,
+                                 final boolean reuseExistingPermit)
+    {
+        final int generation = startGeneration.incrementAndGet();
+        Thread startThread = new Thread(new Runnable() {
             public void run() {
                 context.connListener = connectionListener;
                 context.videoCapabilities = videoDecoderRenderer.getCapabilities();
 
                 String appName = context.streamConfig.getApp().getAppName();
+                if (!isStartGenerationCurrent(generation)) {
+                    return;
+                }
 
                 context.connListener.stageStarting(appName);
 
                 int tryCount = 0;
 
                 do {
+                    if (!isStartGenerationCurrent(generation)) {
+                        return;
+                    }
                     boolean retry = false;
                     try {
                         if (!startApp()) {
@@ -430,10 +459,14 @@ public class NvConnection {
                     try {
                         sleep(2000);
                     } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
+                        Thread.currentThread().interrupt();
+                        return;
                     }
                 } while (tryCount < 5);
 
+                if (!isStartGenerationCurrent(generation)) {
+                    return;
+                }
                 if (tryCount >= 5) {
                     context.connListener.stageFailed(appName, 0, -408);
                     return;
@@ -442,19 +475,47 @@ public class NvConnection {
                 ByteBuffer ib = ByteBuffer.allocate(16);
                 ib.putInt(context.riKeyId);
 
-                // Acquire the connection semaphore to ensure we only have one
-                // connection going at once.
-                try {
-                    connectionAllowed.acquire();
-                } catch (InterruptedException e) {
-                    context.connListener.displayMessage(e.getMessage());
-                    context.connListener.stageFailed(appName, 0, 0);
+                if (reuseExistingPermit) {
+                    if (!connectionPermitGate.canReuse(NvConnection.this)) {
+                        LimeLog.warning("Reconnect requested without retained connection ownership");
+                        context.connListener.stageFailed(appName, 0, 0);
+                        return;
+                    }
+                }
+                else {
+                    try {
+                        connectionPermitGate.acquire(NvConnection.this);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        if (isStartGenerationCurrent(generation)) {
+                            context.connListener.stageFailed(appName, 0, 0);
+                        }
+                        return;
+                    } catch (IllegalStateException e) {
+                        LimeLog.warning(e.getMessage());
+                        if (isStartGenerationCurrent(generation)) {
+                            context.connListener.stageFailed(appName, 0, 0);
+                        }
+                        return;
+                    }
+                }
+
+                if (!isStartGenerationCurrent(generation)) {
+                    if (!reuseExistingPermit) {
+                        connectionPermitGate.release(NvConnection.this);
+                    }
                     return;
                 }
 
                 // Moonlight-core is not thread-safe with respect to connection start and stop, so
                 // we must not invoke that functionality in parallel.
                 synchronized (MoonBridge.class) {
+                    if (!isStartGenerationCurrent(generation)) {
+                        if (!reuseExistingPermit) {
+                            connectionPermitGate.release(NvConnection.this);
+                        }
+                        return;
+                    }
                     MoonBridge.setupBridge(videoDecoderRenderer, audioRenderer, connectionListener);
                     int ret = MoonBridge.startConnection(context.serverAddress.address,
                             context.serverAppVersion, context.serverGfeVersion, context.rtspSessionUrl,
@@ -470,15 +531,23 @@ public class NvConnection {
                             context.streamConfig.getColorSpace(),
                             context.streamConfig.getColorRange());
                     if (ret != 0) {
-                        // LiStartConnection() failed, so the caller is not expected
-                        // to stop the connection themselves. We need to release their
-                        // semaphore count for them.
-                        connectionAllowed.release();
+                        // Ordinary failed starts never established a live session and release their
+                        // ownership. Smart reconnect retains the existing session permit so the
+                        // bounded retry owner can attempt the next transport without deadlocking.
+                        if (!reuseExistingPermit) {
+                            connectionPermitGate.release(NvConnection.this);
+                        }
                         return;
                     }
                 }
             }
-        }).start();
+        }, reuseExistingPermit ? "NvConnectionRestart" : "NvConnectionStart");
+        startThread.start();
+        return startThread;
+    }
+
+    private boolean isStartGenerationCurrent(int generation) {
+        return startGeneration.get() == generation;
     }
 
     public void sendExecServerCmd(final int cmdId) {

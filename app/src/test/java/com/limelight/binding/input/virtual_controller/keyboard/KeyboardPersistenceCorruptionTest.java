@@ -51,7 +51,8 @@ public class KeyboardPersistenceCorruptionTest {
     @Test
     public void keyboardProfilesKeepValidSiblingsAndRepairWrongTypedActiveId() throws Exception {
         JSONArray stored = new JSONArray();
-        stored.put(profile("keep-a", "Keep A", "OSC_Keyboard"));
+        stored.put(profile("keep-a", "Keep A", "OSC_Keyboard")
+                .put("futureField", "profile-a-future"));
         stored.put(new JSONObject().put("id", "broken").put("name", "Broken"));
         stored.put(profile("keep-b", "Keep B", "OSC_Keyboard_2"));
 
@@ -69,6 +70,7 @@ public class KeyboardPersistenceCorruptionTest {
 
         JSONArray repaired = new JSONArray(meta.getString(KEY_PROFILES, "[]"));
         assertEquals(2, repaired.length());
+        assertEquals("profile-a-future", repaired.getJSONObject(0).getString("futureField"));
         assertEquals("keep-a", meta.getString(KEY_ACTIVE, ""));
     }
 
@@ -91,7 +93,8 @@ public class KeyboardPersistenceCorruptionTest {
         String layout = "corrupt-layout";
         JSONArray stored = new JSONArray();
         stored.put(new KeyComboManager.Definition(
-                "first", "First", new int[0], new int[]{KeyEvent.KEYCODE_F1}).toJson());
+                "first", "First", new int[0], new int[]{KeyEvent.KEYCODE_F1}).toJson()
+                .put("futureField", "combo-future"));
         stored.put("not-an-object");
         stored.put(new KeyComboManager.Definition(
                 "second", "Second", new int[]{KeyEvent.KEYCODE_CTRL_LEFT},
@@ -104,7 +107,9 @@ public class KeyboardPersistenceCorruptionTest {
         assertEquals(2, definitions.size());
         assertEquals("first", definitions.get(0).id);
         assertEquals("second", definitions.get(1).id);
-        assertEquals(2, new JSONArray(prefs.getString("definitions_" + layout, "[]")).length());
+        JSONArray repaired = new JSONArray(prefs.getString("definitions_" + layout, "[]"));
+        assertEquals(2, repaired.length());
+        assertEquals("combo-future", repaired.getJSONObject(0).getString("futureField"));
     }
 
     @Test

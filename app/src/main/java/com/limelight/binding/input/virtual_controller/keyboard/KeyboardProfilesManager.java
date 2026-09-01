@@ -72,7 +72,8 @@ public final class KeyboardProfilesManager {
         }
 
         SharedPreferences defaults = PreferenceManager.getDefaultSharedPreferences(context);
-        String selectedLegacy = defaults.getString(
+        String selectedLegacy = SafePreferenceValues.getString(
+                defaults,
                 KeyBoardControllerConfigurationLoader.OSC_PREFERENCE,
                 KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);
 
@@ -120,7 +121,7 @@ public final class KeyboardProfilesManager {
     public static synchronized Profile getActiveProfile(Context context) {
         ensureInitialized(context);
         List<Profile> profiles = readProfiles(context);
-        String activeId = meta(context).getString(KEY_ACTIVE, "");
+        String activeId = readActiveId(context, "");
         Profile active = findById(profiles, activeId);
         if (active == null) {
             active = profiles.get(0);
@@ -152,7 +153,7 @@ public final class KeyboardProfilesManager {
         String name = uniqueName(profiles, cleanName(requestedName, "Profile " + (profiles.size() + 1)), null);
         Profile profile = new Profile(newId(), name, newStorageName());
         profiles.add(profile);
-        writeProfiles(context, profiles, meta(context).getString(KEY_ACTIVE, profiles.get(0).id));
+        writeProfiles(context, profiles, readActiveId(context, profiles.get(0).id));
         return profile;
     }
 
@@ -174,7 +175,7 @@ public final class KeyboardProfilesManager {
 
         int sourceIndex = profiles.indexOf(source);
         profiles.add(sourceIndex + 1, duplicate);
-        writeProfiles(context, profiles, meta(context).getString(KEY_ACTIVE, profiles.get(0).id));
+        writeProfiles(context, profiles, readActiveId(context, profiles.get(0).id));
         return duplicate;
     }
 
@@ -186,7 +187,7 @@ public final class KeyboardProfilesManager {
             if (profile.id.equals(profileId)) {
                 String name = uniqueName(profiles, cleanName(requestedName, profile.name), profileId);
                 profiles.set(i, new Profile(profile.id, name, profile.storageName));
-                writeProfiles(context, profiles, meta(context).getString(KEY_ACTIVE, profiles.get(0).id));
+                writeProfiles(context, profiles, readActiveId(context, profiles.get(0).id));
                 return true;
             }
         }
@@ -210,7 +211,7 @@ public final class KeyboardProfilesManager {
         KeyComboManager.deleteDefinitionsForLayout(context, victim.storageName);
         ArtemisActionButtonFactory.deleteSelectionForLayout(context, victim.storageName);
 
-        String activeId = meta(context).getString(KEY_ACTIVE, "");
+        String activeId = readActiveId(context, "");
         if (victim.id.equals(activeId)) {
             activeId = profiles.get(Math.max(0, Math.min(profiles.size() - 1, 0))).id;
         }
@@ -245,7 +246,7 @@ public final class KeyboardProfilesManager {
             return false;
         }
         Collections.swap(profiles, from, to);
-        writeProfiles(context, profiles, meta(context).getString(KEY_ACTIVE, profiles.get(0).id));
+        writeProfiles(context, profiles, readActiveId(context, profiles.get(0).id));
         return true;
     }
 
@@ -255,7 +256,7 @@ public final class KeyboardProfilesManager {
         JSONObject root = new JSONObject();
         root.put("format", EXPORT_FORMAT);
         root.put("version", EXPORT_VERSION);
-        root.put("activeProfile", meta(context).getString(KEY_ACTIVE, ""));
+        root.put("activeProfile", readActiveId(context, ""));
 
         JSONArray profileArray = new JSONArray();
         for (Profile profile : readProfiles(context)) {
@@ -368,7 +369,7 @@ public final class KeyboardProfilesManager {
         }
 
         if (added > 0) {
-            writeProfiles(context, existing, meta(context).getString(KEY_ACTIVE, existing.get(0).id));
+            writeProfiles(context, existing, readActiveId(context, existing.get(0).id));
         }
         return added;
     }
@@ -384,23 +385,47 @@ public final class KeyboardProfilesManager {
         }
     }
 
+    private static String readActiveId(Context context, String fallback) {
+        return SafePreferenceValues.getString(meta(context), KEY_ACTIVE, fallback);
+    }
+
     private static SharedPreferences meta(Context context) {
         return context.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE);
     }
 
     private static List<Profile> readProfiles(Context context) {
-        String serialized = meta(context).getString(KEY_PROFILES, "[]");
+        SharedPreferences metadata = meta(context);
+        String serialized = SafePreferenceValues.getString(metadata, KEY_PROFILES, "[]");
         List<Profile> profiles = new ArrayList<>();
+        JSONArray array;
         try {
-            JSONArray array = new JSONArray(serialized);
-            for (int i = 0; i < array.length(); i++) {
-                Profile profile = Profile.fromJson(array.getJSONObject(i));
-                if (!profile.id.isEmpty() && !profile.storageName.isEmpty() && findById(profiles, profile.id) == null) {
-                    profiles.add(profile);
-                }
-            }
+            array = new JSONArray(serialized);
         } catch (JSONException ignored) {
-            profiles.clear();
+            return profiles;
+        }
+
+        boolean corruptedEntry = false;
+        for (int i = 0; i < array.length(); i++) {
+            Object value = array.opt(i);
+            if (!(value instanceof JSONObject)) {
+                corruptedEntry = true;
+                continue;
+            }
+            try {
+                Profile profile = Profile.fromJson((JSONObject) value);
+                if (profile.id.isEmpty() || profile.storageName.isEmpty() || findById(profiles, profile.id) != null) {
+                    corruptedEntry = true;
+                    continue;
+                }
+                profiles.add(profile);
+            } catch (JSONException ignored) {
+                corruptedEntry = true;
+            }
+        }
+
+        // Keep valid siblings instead of allowing one bad entry to orphan every profile layout.
+        if (corruptedEntry && !profiles.isEmpty()) {
+            writeProfiles(context, profiles, readActiveId(context, profiles.get(0).id));
         }
         return profiles;
     }
@@ -420,7 +445,7 @@ public final class KeyboardProfilesManager {
     }
 
     private static void repairActive(Context context, List<Profile> profiles) {
-        String activeId = meta(context).getString(KEY_ACTIVE, "");
+        String activeId = readActiveId(context, "");
         Profile active = findById(profiles, activeId);
         if (active == null) {
             active = profiles.get(0);

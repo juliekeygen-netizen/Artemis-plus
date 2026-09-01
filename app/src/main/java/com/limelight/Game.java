@@ -1868,8 +1868,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     protected void onDestroy() {
-        activityDestroyed = true;
-        smartReconnectFence.cancel();
+        synchronized (smartReconnectFence) {
+            activityDestroyed = true;
+            smartReconnectFence.cancel();
+        }
         cancelPendingCommitText();
         super.onDestroy();
 
@@ -4097,6 +4099,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                if (activityDestroyed || isFinishing() || !connecting) {
+                    return;
+                }
                 if (spinner != null) {
                     spinner.setMessage(getResources().getString(R.string.conn_starting) + " " + stage);
                 }
@@ -4136,13 +4141,20 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private void stopConnection(boolean preserveControllerStateForReconnect, Runnable onStopped) {
-        smartReconnectFence.cancel();
+        final boolean hadConnection;
+        synchronized (smartReconnectFence) {
+            smartReconnectFence.cancel();
+            hadConnection = connecting || connected;
+            if (hadConnection) {
+                connecting = false;
+                connected = false;
+            }
+        }
         cancelPendingCommitText();
         if (reconnectOverlay != null) {
             reconnectOverlay.hide();
         }
-        if (connecting || connected) {
-            connecting = connected = false;
+        if (hadConnection) {
             updatePipAutoEnter();
 
             if (preserveControllerStateForReconnect) {
@@ -4174,9 +4186,17 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                         try {
                             sleep(1000);
                             httpConn.quitApp();
-                            Game.this.runOnUiThread(() -> Toast.makeText(Game.this, Game.this.getResources().getString(R.string.applist_quit_success) + " " + appName, Toast.LENGTH_LONG).show());
+                            Game.this.runOnUiThread(() -> {
+                                if (!activityDestroyed && !isFinishing()) {
+                                    Toast.makeText(Game.this, Game.this.getResources().getString(R.string.applist_quit_success) + " " + appName, Toast.LENGTH_LONG).show();
+                                }
+                            });
                         } catch (Exception e) {
-                            Game.this.runOnUiThread(() -> Toast.makeText(Game.this, e.getMessage(), Toast.LENGTH_LONG).show());
+                            Game.this.runOnUiThread(() -> {
+                                if (!activityDestroyed && !isFinishing()) {
+                                    Toast.makeText(Game.this, e.getMessage(), Toast.LENGTH_LONG).show();
+                                }
+                            });
                         }
                     }
                     Game.this.runOnUiThread(() -> {
@@ -4197,19 +4217,38 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean stageFailed(final String stage, final int portFlags, final int errorCode) {
+        synchronized (smartReconnectFence) {
+            if (activityDestroyed || isFinishing() || !connecting) {
+                return false;
+            }
+        }
         // Perform a connection test if the failure could be due to a blocked port
         // This does network I/O, so don't do it on the main thread.
         final int portTestResult = MoonBridge.testClientConnectivity(ServerHelper.CONNECTION_TEST_SERVER, 443, portFlags);
 
         if (errorCode == 0 && portFlags != 0 && (portTestResult == MoonBridge.ML_TEST_RESULT_INCONCLUSIVE || portTestResult == 0)) {
-            spinner.setMessage(getResources().getString(R.string.unlocking_or_starting));
+            synchronized (smartReconnectFence) {
+                if (activityDestroyed || isFinishing() || !connecting) {
+                    return false;
+                }
+            }
+            runOnUiThread(() -> {
+                if (!activityDestroyed && !isFinishing() && connecting && spinner != null) {
+                    spinner.setMessage(getResources().getString(R.string.unlocking_or_starting));
+                }
+            });
             return true;
         }
 
         // A terminal stage failure ends the current start attempt. Keep this truthful so
         // teardown/PiP/reconnect logic never mistakes a failed start for an in-flight one.
-        connecting = false;
-        connected = false;
+        synchronized (smartReconnectFence) {
+            if (activityDestroyed || isFinishing() || !connecting) {
+                return false;
+            }
+            connecting = false;
+            connected = false;
+        }
 
         runOnUiThread(new Runnable() {
             @Override
@@ -4267,12 +4306,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private void finishSecondScreen() {
-        // Otherwise screen stays connected but not working with no way of quitting it
+        // Otherwise screen stays connected but not working with no way of quitting it. Use the
+        // Activity-owned handler so onDestroy() can cancel this delayed lifecycle action.
         if (prefConfig.enableFullExDisplay) {
-            Handler h = new Handler();
-            h.postDelayed(new Runnable() {
-                @Override
-                public void run() {
+            timerHandler.postDelayed(() -> {
+                if (!activityDestroyed && !isFinishing()) {
                     finish();
                 }
             }, 2000);
@@ -4281,15 +4319,35 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void connectionTerminated(final int errorCode) {
-        if (activityDestroyed || isFinishing()) {
-            LimeLog.info("Ignoring connectionTerminated callback after Activity teardown");
+        final boolean reconnectAlreadyActive;
+        synchronized (smartReconnectFence) {
+            if (activityDestroyed || isFinishing()) {
+                LimeLog.info("Ignoring connectionTerminated callback after Activity teardown");
+                return;
+            }
+            // The old transport is gone before any reconnect decision is made. In particular,
+            // do not let a stale connected=true make a retry worker report false success.
+            connected = false;
+            connecting = false;
+            reconnectAlreadyActive = smartReconnectFence.hasActiveAttempt();
+        }
+        cancelPendingCommitText();
+        runOnUiThread(() -> {
+            if (!activityDestroyed && !isFinishing()) {
+                updatePipAutoEnter();
+            }
+        });
+
+        // A transport started by the current reconnect sequence may terminate before the worker
+        // advances to its next attempt. Do not recursively create a new six-attempt sequence.
+        if (reconnectAlreadyActive && errorCode != MoonBridge.ML_ERROR_PROTECTED_CONTENT) {
+            LimeLog.info("Reconnect attempt transport terminated; retry owner remains active");
             return;
         }
-        // The old transport is gone before any reconnect decision is made. In particular,
-        // do not let a stale connected=true make the retry thread report false success.
-        connected = false;
-        connecting = false;
-        runOnUiThread(this::updatePipAutoEnter);
+        if (reconnectAlreadyActive) {
+            smartReconnectFence.cancel();
+        }
+
         // A graceful termination is expected while Fast Resume parks the client stream.
         // Do not let that callback finish the retained Activity or cancel its timeout.
         if (errorCode == MoonBridge.ML_ERROR_GRACEFUL_TERMINATION &&
@@ -4306,8 +4364,15 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             return;
         }
 
-        // Attempt smart reconnect: freeze frame is automatic (we don't clear the surface)
-        final int reconnectToken = smartReconnectFence.beginAttempt();
+        // Attempt smart reconnect: freeze frame is automatic (we don't clear the surface).
+        // beginAttemptIfIdle() is an atomic second guard against concurrent termination callbacks.
+        final int reconnectToken = smartReconnectFence.beginAttemptIfIdle();
+        if (reconnectToken == SmartReconnectFence.NO_ATTEMPT) {
+            return;
+        }
+        if (controllerHandler != null) {
+            controllerHandler.suspendForReconnect();
+        }
         LimeLog.info("Connection lost (error " + errorCode + "), attempting smart reconnect...");
 
         runOnUiThread(new Runnable() {
@@ -4326,8 +4391,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         new Thread(new Runnable() {
             @Override
             public void run() {
-                boolean reconnected = false;
-
                 for (int attempt = 1; attempt <= SMART_RECONNECT_MAX_ATTEMPTS; attempt++) {
                     if (!isSmartReconnectAttemptAllowed(reconnectToken)) {
                         return;
@@ -4389,20 +4452,21 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                                 return;
                             }
                             decoderRenderer.setRenderTarget(reconnectSurface);
-                            connecting = true;
+                            synchronized (smartReconnectFence) {
+                                if (!isSmartReconnectAttemptAllowed(reconnectToken)) {
+                                    return;
+                                }
+                                connecting = true;
+                            }
                             conn.start(new AndroidAudioRenderer(Game.this, prefConfig.playHostAudio),
                                     decoderRenderer, Game.this);
 
-                            // Wait briefly to see if connection succeeds
+                            // A successful connectionStarted() atomically completes this reconnect
+                            // token. If the token remains current after the observation window, the
+                            // attempt did not establish a live transport and the worker may retry.
                             Thread.sleep(2000);
                             if (!isSmartReconnectAttemptAllowed(reconnectToken)) {
                                 return;
-                            }
-
-                            if (connected) {
-                                reconnected = true;
-                                LimeLog.info("Reconnect succeeded on attempt " + attempt);
-                                break;
                             }
                         }
                     } catch (Exception e) {
@@ -4410,21 +4474,21 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                     }
                 }
 
-                final boolean success = reconnected;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
-                        if (!isSmartReconnectAttemptAllowed(reconnectToken)) {
+                        if (!smartReconnectFence.complete(reconnectToken)) {
+                            return;
+                        }
+                        if (activityDestroyed || isFinishing()) {
                             return;
                         }
                         if (reconnectOverlay != null) {
                             reconnectOverlay.hide();
                         }
-
-                        if (!success) {
-                            // All attempts failed, fall through to normal disconnect handling
-                            handleConnectionTerminatedFinal(errorCode);
-                        }
+                        // No connectionStarted() callback completed the owner during the retry
+                        // budget, so fall through to normal disconnect handling.
+                        handleConnectionTerminatedFinal(errorCode);
                     }
                 });
             }
@@ -4547,6 +4611,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                if (activityDestroyed || isFinishing() || !connected) {
+                    return;
+                }
                 if (prefConfig.disableWarnings) {
                     return;
                 }
@@ -4574,14 +4641,22 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void connectionStarted() {
-        if (activityDestroyed || isFinishing()) {
-            LimeLog.info("Ignoring connectionStarted callback after Activity teardown");
-            return;
+        synchronized (smartReconnectFence) {
+            if (activityDestroyed || isFinishing() || !connecting) {
+                LimeLog.info("Ignoring stale connectionStarted callback");
+                return;
+            }
+            // Publish transport success before queuing UI work and release any reconnect owner.
+            // stopConnection()/onDestroy() use the same monitor, so a cancelled start cannot
+            // resurrect connected=true after teardown.
+            connected = true;
+            connecting = false;
+            smartReconnectFence.completeActive();
         }
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                if (activityDestroyed || isFinishing()) {
+                if (activityDestroyed || isFinishing() || !connected) {
                     return;
                 }
                 if (spinner != null) {
@@ -4589,8 +4664,6 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                     spinner = null;
                 }
 
-                connected = true;
-                connecting = false;
                 boolean connectedWhileKeepAliveBackgrounded = keepAliveBackgrounded || keepAliveLifecycleArmed;
                 if (!connectedWhileKeepAliveBackgrounded && controllerHandler != null) {
                     controllerHandler.resumeAfterReconnect();
@@ -4641,6 +4714,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
+                                if (activityDestroyed || isFinishing() || !connected) {
+                                    return;
+                                }
                                 if (statsOverlay != null) {
                                     statsOverlay.updateServerStats(bitrate, fecPct, thermalState);
                                 }
@@ -4653,6 +4729,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 wifiMonitor.start(Game.this, new WifiMonitor.WifiCallback() {
                     @Override
                     public void onWifiQualityChanged(int quality, int rssi, int linkSpeed) {
+                        if (activityDestroyed || !connected) {
+                            return;
+                        }
                         // Update the stats overlay
                         if (statsOverlay != null) {
                             statsOverlay.updateWifiStats(quality, rssi, linkSpeed);
@@ -4708,6 +4787,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                if (activityDestroyed || isFinishing()) {
+                    return;
+                }
                 Toast.makeText(Game.this, message, Toast.LENGTH_LONG).show();
             }
         });
@@ -4719,6 +4801,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
+                    if (activityDestroyed || isFinishing()) {
+                        return;
+                    }
                     Toast.makeText(Game.this, message, Toast.LENGTH_LONG).show();
                 }
             });
@@ -4727,6 +4812,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void rumble(short controllerNumber, short lowFreqMotor, short highFreqMotor) {
+        if (activityDestroyed || isFinishing() || !connected) {
+            return;
+        }
         if (prefConfig.enableRumble) {
             LimeLog.info(String.format((Locale)null, "Rumble on gamepad %d: %04x %04x", controllerNumber, lowFreqMotor, highFreqMotor));
             controllerHandler.handleRumble(controllerNumber, lowFreqMotor, highFreqMotor);
@@ -4735,6 +4823,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void rumbleTriggers(short controllerNumber, short leftTrigger, short rightTrigger) {
+        if (activityDestroyed || isFinishing() || !connected) {
+            return;
+        }
         LimeLog.info(String.format((Locale)null, "Rumble on gamepad triggers %d: %04x %04x", controllerNumber, leftTrigger, rightTrigger));
 
         controllerHandler.handleRumbleTriggers(controllerNumber, leftTrigger, rightTrigger);
@@ -4742,17 +4833,26 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void setHdrMode(boolean enabled, byte[] hdrMetadata) {
+        if (activityDestroyed || isFinishing() || !connected) {
+            return;
+        }
         LimeLog.info("Display HDR mode: " + (enabled ? "enabled" : "disabled"));
         decoderRenderer.setHdrMode(enabled, hdrMetadata);
     }
 
     @Override
     public void setMotionEventState(short controllerNumber, byte motionType, short reportRateHz) {
+        if (activityDestroyed || isFinishing() || !connected) {
+            return;
+        }
         controllerHandler.handleSetMotionEventState(controllerNumber, motionType, reportRateHz);
     }
 
     @Override
     public void setControllerLED(short controllerNumber, byte r, byte g, byte b) {
+        if (activityDestroyed || isFinishing() || !connected) {
+            return;
+        }
         controllerHandler.handleSetControllerLED(controllerNumber, r, g, b);
     }
 

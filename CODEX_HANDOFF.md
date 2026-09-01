@@ -19,8 +19,8 @@ Continue the Continuum audit autonomously, fix important defects rather than mer
 - Base branch: `main`
 - Base commit: `bc7bf204371290a7c1051773bddbcca3ce39a02f` (`Sync durable state after Continuum audit (#19)`)
 - Task branch: `audit/release-signing-hardening`
-- Last implementation commit before this final handoff update: `0191bb94d947ff42294f601b5ae0bf4a69ad756c`
-- Pull request: publish after this final handoff commit/diff check.
+- Last implementation commit before this final handoff update: `789df14aec25cd92b04b5652b15b28367ee1155a`
+- Pull request: #20 — `Harden release signing identity and workflow`
 
 ### Scope completed
 
@@ -72,7 +72,7 @@ It now:
 - repairs only the local absolute `storeFile` path after a valid backup is restored to another clone/PC;
 - uploads values to GitHub only after identity verification.
 
-`build-apk.ps1` now also verifies the actual local certificate before Gradle starts and refuses machine-specific debug-keystore fallback.
+`build-apk.ps1` now verifies the actual local certificate before Gradle starts, refuses machine-specific debug-keystore fallback, and explicitly binds Gradle's `ARTEMIS_PLUS_KEYSTORE_*` environment inputs to the exact keystore/password/alias tuple that was just verified. A stale or edited `storeFile` in `signing.properties` therefore cannot make the helper verify one keystore and silently build with another.
 
 `SIGNING.md` now documents the project as being in the long-term preserve-the-established-identity phase rather than initial key creation.
 
@@ -123,13 +123,15 @@ No Android application source, product persistence format, native streaming code
 - Expected release APK set remains the four configured ABI splits already produced by `app/build.gradle`.
 - Android update compatibility is now explicitly fail-closed on signer mismatch.
 - Local users with a valid backed-up `.artemis-signing` directory can restore it on a new path; only `storeFile` is normalized after certificate verification.
+- Local builds force Gradle to the exact verified keystore rather than trusting a persisted `storeFile` path.
 
 ### Audit defects found during implementation itself
 
-Independent self-review caught and fixed two would-be pipeline regressions before PR publication:
+Independent self-review caught and fixed three would-be regressions/gaps before merge:
 
 1. the first ABI validator used a broad `*x86*`-style glob that would also count `x86_64`; it was replaced with exact `*-<abi>-debug.apk` suffix matching;
-2. one manually duplicated expected-fingerprint literal briefly contained an extra `008`; the workflow now has a single top-level expected-fingerprint value used by all three stages, removing that drift class.
+2. one manually duplicated expected-fingerprint literal briefly contained an extra `008`; the workflow now has a single top-level expected-fingerprint value used by all three stages, removing that drift class;
+3. local `build-apk.ps1` initially verified the fixed `.artemis-signing/artemis-plus.jks` path while Gradle could still honor a different `storeFile` from `signing.properties`; the helper now exports all four `ARTEMIS_PLUS_KEYSTORE_*` inputs from the verified key/properties before Gradle starts.
 
 ### Tests / CI actually observed
 
@@ -139,6 +141,7 @@ Independent self-review caught and fixed two would-be pipeline regressions befor
 - Current audit branch:
   - Android CI #161 on intermediate head `5f9187ed...` — PASS
   - Android CI #170 on implementation head `0191bb94d947ff42294f601b5ae0bf4a69ad756c` — PASS
+  - Android CI #174 on final implementation head `789df14aec25cd92b04b5652b15b28367ee1155a` — PASS
     - `Validate Artemis Plus PowerShell helper syntax` — PASS
     - non-root debug Java compile — PASS
     - focused Artemis Plus regression suite — PASS
@@ -170,6 +173,7 @@ Review especially:
 - rolling tag force-update followed by release asset/metadata update;
 - PowerShell native-process handling in `signing-common.ps1`;
 - restored `signing.properties` path repair without credential mutation;
+- local Gradle environment binding to the already-verified keystore;
 - absence of any key-generation path in `setup-signing.ps1`;
 - absence of secrets/private key material in the diff.
 

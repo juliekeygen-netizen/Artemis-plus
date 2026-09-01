@@ -150,14 +150,29 @@ jobs:
             echo 'apksigner was not found after the Android build.' >&2
             exit 1
           fi
+          echo "Using apksigner: $APKSIGNER"
+          "$APKSIGNER" version
 
           for apk in dist/*.apk; do
-            cert_sha256="$($APKSIGNER verify --print-certs "$apk" \
-              | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print tolower($2); exit}')"
-            if [[ -z "$cert_sha256" ]]; then
-              echo "Unable to read signer fingerprint from $apk" >&2
+            # `apksigner verify` is the cryptographic gate. Parse the printed certificate line
+            # defensively because build-tools versions have varied whitespace around the label's
+            # colon. Preserve support for colon-separated fingerprints while still requiring one
+            # exact 32-byte SHA-256 digest before comparison.
+            cert_output="$($APKSIGNER verify --print-certs "$apk")"
+            cert_line="$(printf '%s\n' "$cert_output" \
+              | grep -i -m1 'certificate[[:space:]].*SHA-256.*digest' || true)"
+            cert_sha256="${cert_line#*:}"
+            cert_sha256="$(printf '%s' "$cert_sha256" \
+              | tr -d '[:space:]:' \
+              | tr '[:upper:]' '[:lower:]')"
+
+            if [[ ! "$cert_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "Unable to read a 64-hex certificate SHA-256 fingerprint from $apk" >&2
+              echo "Certificate line: ${cert_line:-<missing>}" >&2
+              printf '%s\n' "$cert_output" >&2
               exit 1
             fi
+            echo "Verified APK signer: $apk -> $cert_sha256"
             if [[ "$cert_sha256" != "$EXPECTED_SIGNER_SHA256" ]]; then
               echo "APK signer mismatch for $apk" >&2
               echo "Expected: $EXPECTED_SIGNER_SHA256" >&2

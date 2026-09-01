@@ -1,0 +1,163 @@
+name: Keyboard persistence corruption patch
+
+on:
+  push:
+    branches:
+      - fix/keyboard-persistence-corruption
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: ${{ !contains(github.event.head_commit.message, '[persistence-bot]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Apply exact guarded production patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_exact(path, old, new, expected=1):
+              text = path.read_text(encoding='utf-8')
+              actual = text.count(old)
+              if actual != expected:
+                  raise SystemExit(f'{path}: expected {expected} occurrences, found {actual}: {old[:120]!r}')
+              path.write_text(text.replace(old, new), encoding='utf-8')
+
+          root = Path('.')
+          profiles = root / 'app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyboardProfilesManager.java'
+          combos = root / 'app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyComboManager.java'
+          actions = root / 'app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/ArtemisActionButtonFactory.java'
+
+          replace_exact(
+              profiles,
+              '''        String selectedLegacy = defaults.getString(\n                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE,\n                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);''',
+              '''        String selectedLegacy = SafePreferenceValues.getString(\n                defaults,\n                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE,\n                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);''')
+
+          replace_exact(
+              profiles,
+              'meta(context).getString(KEY_ACTIVE,',
+              'readActiveId(context,',
+              expected=9)
+
+          old_profile_reader = '''    private static List<Profile> readProfiles(Context context) {\n        String serialized = meta(context).getString(KEY_PROFILES, "[]");\n        List<Profile> profiles = new ArrayList<>();\n        try {\n            JSONArray array = new JSONArray(serialized);\n            for (int i = 0; i < array.length(); i++) {\n                Profile profile = Profile.fromJson(array.getJSONObject(i));\n                if (!profile.id.isEmpty() && !profile.storageName.isEmpty() && findById(profiles, profile.id) == null) {\n                    profiles.add(profile);\n                }\n            }\n        } catch (JSONException ignored) {\n            profiles.clear();\n        }\n        return profiles;\n    }'''
+          new_profile_reader = '''    private static List<Profile> readProfiles(Context context) {\n        SharedPreferences metadata = meta(context);\n        String serialized = SafePreferenceValues.getString(metadata, KEY_PROFILES, "[]");\n        List<Profile> profiles = new ArrayList<>();\n        JSONArray array;\n        try {\n            array = new JSONArray(serialized);\n        } catch (JSONException ignored) {\n            return profiles;\n        }\n\n        boolean corruptedEntry = false;\n        for (int i = 0; i < array.length(); i++) {\n            Object value = array.opt(i);\n            if (!(value instanceof JSONObject)) {\n                corruptedEntry = true;\n                continue;\n            }\n            try {\n                Profile profile = Profile.fromJson((JSONObject) value);\n                if (profile.id.isEmpty() || profile.storageName.isEmpty() || findById(profiles, profile.id) != null) {\n                    corruptedEntry = true;\n                    continue;\n                }\n                profiles.add(profile);\n            } catch (JSONException ignored) {\n                corruptedEntry = true;\n            }\n        }\n\n        // Keep valid siblings instead of allowing one bad entry to orphan every profile layout.\n        if (corruptedEntry && !profiles.isEmpty()) {\n            writeProfiles(context, profiles, readActiveId(context, profiles.get(0).id));\n        }\n        return profiles;\n    }'''
+          replace_exact(profiles, old_profile_reader, new_profile_reader)
+
+          replace_exact(
+              profiles,
+              '''    private static SharedPreferences meta(Context context) {\n        return context.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE);\n    }''',
+              '''    private static String readActiveId(Context context, String fallback) {\n        return SafePreferenceValues.getString(meta(context), KEY_ACTIVE, fallback);\n    }\n\n    private static SharedPreferences meta(Context context) {\n        return context.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE);\n    }''')
+
+          old_combo_reader = '''    private static List<Definition> loadDefinitionsForLayout(Context context, String layout) {\n        String serialized = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)\n                .getString(definitionsKey(layout), "[]");\n        List<Definition> definitions = new ArrayList<>();\n        try {\n            JSONArray array = new JSONArray(serialized);\n            List<String> seenIds = new ArrayList<>();\n            for (int i = 0; i < array.length(); i++) {\n                Definition definition = Definition.fromJson(array.getJSONObject(i));\n                if (!definition.id.isEmpty() && definition.keys.length > 0 && !seenIds.contains(definition.id)) {\n                    seenIds.add(definition.id);\n                    definitions.add(definition);\n                }\n            }\n        } catch (JSONException ignored) {\n            // Treat corrupt metadata as no custom keys; geometry preferences remain untouched.\n        }\n        return definitions;\n    }'''
+          new_combo_reader = '''    static List<Definition> loadDefinitionsForLayout(Context context, String layout) {\n        SharedPreferences preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);\n        String serialized = SafePreferenceValues.getString(preferences, definitionsKey(layout), "[]");\n        List<Definition> definitions = new ArrayList<>();\n        JSONArray array;\n        try {\n            array = new JSONArray(serialized);\n        } catch (JSONException ignored) {\n            return definitions;\n        }\n\n        List<String> seenIds = new ArrayList<>();\n        boolean corruptedEntry = false;\n        for (int i = 0; i < array.length(); i++) {\n            Object value = array.opt(i);\n            if (!(value instanceof JSONObject)) {\n                corruptedEntry = true;\n                continue;\n            }\n            try {\n                Definition definition = Definition.fromJson((JSONObject) value);\n                if (definition.id.isEmpty() || definition.keys.length == 0 || seenIds.contains(definition.id)) {\n                    corruptedEntry = true;\n                    continue;\n                }\n                seenIds.add(definition.id);\n                definitions.add(definition);\n            } catch (JSONException ignored) {\n                corruptedEntry = true;\n            }\n        }\n\n        if (corruptedEntry) {\n            saveDefinitionsForLayout(context, layout, definitions);\n        }\n        return definitions;\n    }'''
+          replace_exact(combos, old_combo_reader, new_combo_reader)
+
+          replace_exact(
+              combos,
+              '''        String serialized = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)\n                .getString(definitionsKey(layout), "[]");''',
+              '''        String serialized = SafePreferenceValues.getString(\n                context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE),\n                definitionsKey(layout),\n                "[]");''')
+
+          replace_exact(
+              combos,
+              '''        String value = preferences.getString(definitionsKey(fromLayout), "[]");''',
+              '''        String value = SafePreferenceValues.getString(\n                preferences, definitionsKey(fromLayout), "[]");''')
+
+          replace_exact(
+              combos,
+              '''        return PreferenceManager.getDefaultSharedPreferences(context).getString(\n                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE,\n                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);''',
+              '''        return SafePreferenceValues.getString(\n                PreferenceManager.getDefaultSharedPreferences(context),\n                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE,\n                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);''')
+
+          replace_exact(
+              actions,
+              '''        String layoutPreference = PreferenceManager.getDefaultSharedPreferences(context).getString(\n                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE,\n                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);''',
+              '''        String layoutPreference = SafePreferenceValues.getString(\n                PreferenceManager.getDefaultSharedPreferences(context),\n                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE,\n                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);''')
+
+          replace_exact(
+              actions,
+              '''        String serialized = preferences.getString(element.elementId, null);''',
+              '''        String serialized = SafePreferenceValues.getString(preferences, element.elementId, null);''')
+
+          replace_exact(
+              actions,
+              '''        Set<String> values = preferences.getStringSet(selectionKey(layout), null);\n        return values == null ? new HashSet<>() : new HashSet<>(values);''',
+              '''        return SafePreferenceValues.getStringSetCopy(preferences, selectionKey(layout));''')
+
+          replace_exact(
+              actions,
+              '''        return PreferenceManager.getDefaultSharedPreferences(context).getString(\n                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE,\n                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);''',
+              '''        return SafePreferenceValues.getString(\n                PreferenceManager.getDefaultSharedPreferences(context),\n                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE,\n                KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);''')
+
+      - name: Enforce production patch shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          mapfile -t changed < <(git diff --name-only)
+          printf 'Changed production files:\n%s\n' "${changed[@]}"
+          expected=(
+            app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/ArtemisActionButtonFactory.java
+            app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyComboManager.java
+            app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyboardProfilesManager.java
+          )
+          if [[ "$(printf '%s\n' "${changed[@]}" | sort)" != "$(printf '%s\n' "${expected[@]}" | sort)" ]]; then
+            echo 'Unexpected production patch file set.' >&2
+            exit 1
+          fi
+          total_changes="$(git diff --numstat | awk '{a+=$1; d+=$2} END {print a+d+0}')"
+          if (( total_changes > 220 )); then
+            echo "Persistence production diff unexpectedly large (${total_changes} lines)." >&2
+            exit 1
+          fi
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: 12266719
+
+      - name: Install SDK and NDK
+        run: sdkmanager "platforms;android-36" "ndk;27.0.12077973"
+
+      - name: Compile and run persistence regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew :app:compileNonRoot_gameDebugJavaWithJavac :app:testNonRoot_gameDebugUnitTest \
+            --tests 'com.limelight.binding.input.virtual_controller.keyboard.KeyboardPersistenceCorruptionTest' \
+            --tests 'com.limelight.binding.input.virtual_controller.keyboard.KeyboardProfilesManagerTest' \
+            --tests 'com.limelight.binding.input.virtual_controller.keyboard.KeyComboManagerTest' \
+            --tests 'com.limelight.binding.input.virtual_controller.keyboard.ArtemisActionButtonFactoryTest' \
+            --stacktrace
+
+      - name: Commit verified production patch and remove runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/keyboard-persistence-corruption-patch.yml
+          git config user.name 'Artemis Plus Audit Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add \
+            app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/ArtemisActionButtonFactory.java \
+            app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyComboManager.java \
+            app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyboardProfilesManager.java \
+            .github/workflows/keyboard-persistence-corruption-patch.yml
+          git diff --cached --check
+          git commit -m 'Harden keyboard persistence corruption recovery [persistence-bot]'
+          git push origin HEAD:fix/keyboard-persistence-corruption

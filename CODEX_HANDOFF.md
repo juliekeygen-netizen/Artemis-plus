@@ -1,6 +1,6 @@
 # Artemis Plus — Codex Review Handoff
 
-This is the rolling review packet for the latest coherent Codex/agent task. Verify live GitHub state before relying on any recorded SHA because the final handoff commit itself necessarily advances the branch.
+This is the rolling review packet for the latest coherent agent task. Verify live GitHub state before relying on recorded SHAs because the final handoff commit itself advances the branch.
 
 ---
 
@@ -8,73 +8,65 @@ This is the rolling review packet for the latest coherent Codex/agent task. Veri
 
 ### Task
 
-Release/signing/workflow security and reliability audit.
+Repair the live-only APK signer-fingerprint parser failure discovered immediately after release/signing hardening PR #20 merged.
 
 ### User goal
 
-Continue the Continuum audit autonomously, fix important defects rather than merely report them, keep the established Android update signer safe, and continue into further useful audits instead of stopping for routine guidance.
+Continue the Continuum audit autonomously, fix important defects rather than merely report them, preserve the established Android update signer, verify release behavior on real GitHub Actions, and continue into persistence/lifecycle work after the release path is genuinely proven.
 
 ### Repository state
 
 - Base branch: `main`
-- Base commit: `bc7bf204371290a7c1051773bddbcca3ce39a02f` (`Sync durable state after Continuum audit (#19)`)
-- Task branch: `audit/release-signing-hardening`
-- Last implementation commit before this final handoff update: `789df14aec25cd92b04b5652b15b28367ee1155a`
-- Pull request: #20 — `Harden release signing identity and workflow`
+- Base commit: `9de0df8cfeb1206bc9e209406176f35a7b954ac3` (`Harden release signing identity and workflow (#20)`)
+- Task branch: `fix/release-apksigner-fingerprint-parser`
+- Last implementation commit before this handoff update: `d35e7ab20e5f6a731e4509f7d5d026f6a667e917`
+- Pull request: pending at time of this handoff update
 
-### Scope completed
+### Why this follow-up exists
 
-#### GitHub Actions release path
+PR #20 intentionally moved the privileged signed-release workflow to `main` only. Its audit branch could validate ordinary Android CI but could not exercise repository signing secrets or publication. After #20 merged, the first hardened main release run exposed one live-only parser defect.
 
-`.github/workflows/build-debug-apk.yml` was audited against the actual current Actions/release behavior.
+Observed main runs on merge commit `9de0df8c...`:
 
-The old workflow:
+- Android CI #177 (`33484848328`) — **PASS**
+- Build Debug APK #111 (`33484848383`) — **FAIL**, safely before publication
 
-- ran automatically on `main` **and `audit/**`** pushes;
-- granted `contents: write` to the whole workflow;
-- referenced the persistent project signing repository secrets on audit-branch runs;
-- computed the signer fingerprint but did not require the established fingerprint before publication;
-- did not independently verify the certificate on every output APK;
-- deleted the entire rolling `debug-latest` release before recreating it.
+Build Debug APK #111 proved that the core hardened path worked up to APK-certificate text parsing:
 
-The hardened branch now:
+- persistent signing secrets were present;
+- reconstructed JKS verification passed;
+- verified JKS certificate SHA-256 was exactly the established Artemis Plus fingerprint;
+- `:app:assembleNonRoot_gameDebug` passed;
+- all four expected ABI APKs were produced with exact filenames;
+- package preparation then failed with `Unable to read signer fingerprint from dist/app-nonRoot_game-arm64-v8a-debug.apk`;
+- artifact upload did not run;
+- write-scoped publish job was skipped;
+- the existing `debug-latest` release remained intact with its previous seven assets.
 
-- automatically runs the signed release workflow only on `main`;
-- skips the privileged build job for a non-main manual dispatch;
-- uses `contents: read` by default and grants `contents: write` only to the separate publish job after verification;
-- requires all persistent signing values and has no ephemeral/throwaway rolling-release signer fallback;
-- uses one workflow-level public expected certificate fingerprint so signing/build/publish checks cannot drift independently;
-- rejects the reconstructed keystore unless it matches the established Artemis Plus certificate;
-- requires exactly one APK for each configured ABI (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`) and exactly four APKs total;
-- uses exact ABI filename matching so `x86` cannot accidentally count `x86_64`;
-- independently verifies every APK certificate with Android `apksigner`;
-- creates checksums/install/signing metadata only after package verification;
-- moves the rolling tag only after the package is verified;
-- updates an existing `debug-latest` release in place with `gh release upload --clobber` + `gh release edit` rather than deleting the whole release first;
-- creates the release only when it does not already exist.
+### Root cause
 
-#### CI validation infrastructure
+The workflow correctly used Android `apksigner verify --print-certs`, but then parsed its human-readable certificate line with an overly strict delimiter:
 
-`.github/workflows/android-ci.yml` now parses `signing-common.ps1`, `setup-signing.ps1`, and `build-apk.ps1` with PowerShell's parser before Android compilation/tests. This is a syntax-only gate; it does not execute the signing helpers or expose secrets.
+```text
+awk -F': ' '/Signer #1 certificate SHA-256 digest:/ ...
+```
 
-#### Local signing tooling
+The runner's installed build-tools produced a successfully verified APK but the expected exact `colon + space` output shape was not captured, leaving an empty parsed fingerprint. This was a parser compatibility failure, not a signing-identity mismatch.
 
-New `signing-common.ps1` centralizes local certificate inspection and stable-fingerprint enforcement.
+### Fix
 
-`setup-signing.ps1` previously generated a new JKS when `.artemis-signing` was absent, then could upload that incompatible identity over the GitHub repository secrets. Because Artemis Plus now has an established update identity, that behavior was unsafe.
+`.github/workflows/build-debug-apk.yml` now keeps `apksigner verify --print-certs` as the cryptographic gate but parses certificate metadata defensively:
 
-It now:
+- capture the first case-insensitive line containing `certificate`, `SHA-256`, and `digest`;
+- split at the first colon regardless of following whitespace;
+- remove whitespace and optional colon separators from the digest;
+- normalize hex to lowercase;
+- require exactly 64 hexadecimal characters before comparison;
+- compare the normalized digest to the established Artemis Plus fingerprint;
+- print the selected `apksigner` path/version and each verified APK fingerprint for future diagnosis;
+- on malformed/unrecognized output, print diagnostic certificate output and fail closed rather than publish.
 
-- requires an existing/restored keystore + properties pair;
-- rejects partial/missing local signing state;
-- refuses automatic replacement-key generation;
-- verifies the actual certificate against the established fingerprint before changing anything;
-- repairs only the local absolute `storeFile` path after a valid backup is restored to another clone/PC;
-- uploads values to GitHub only after identity verification.
-
-`build-apk.ps1` now verifies the actual local certificate before Gradle starts, refuses machine-specific debug-keystore fallback, and explicitly binds Gradle's `ARTEMIS_PLUS_KEYSTORE_*` environment inputs to the exact keystore/password/alias tuple that was just verified. A stale or edited `storeFile` in `signing.properties` therefore cannot make the helper verify one keystore and silently build with another.
-
-`SIGNING.md` now documents the project as being in the long-term preserve-the-established-identity phase rather than initial key creation.
+No signer check was removed or weakened.
 
 ### Stable signing invariant
 
@@ -82,119 +74,67 @@ Expected certificate SHA-256:
 
 `88c430db21b298bab7b654ce3b9300e33bf1917df4bf1a73047c9590f0080083`
 
-This is public certificate identity metadata. The private keystore/passwords remain secrets.
+No private key/password material is included or rotated.
 
-### Important residual security limitation
+### Validation performed so far
 
-The four signing values are still repository-level GitHub Actions secrets:
+- Main Android CI #177 on the #20 merge commit: PASS.
+- Main signed build #111:
+  - JKS stable-fingerprint verification: PASS;
+  - Gradle four-ABI APK build: PASS;
+  - APK output count/names: PASS;
+  - old strict certificate-text parsing: FAIL;
+  - publication: SKIPPED / fail closed.
+- Existing `debug-latest` release checked after failure: still present with four ABI APKs plus `INSTALL.txt`, `SIGNING.txt`, `SHA256SUMS.txt`.
+- New parser was exercised locally against:
+  - canonical `digest: <64hex>`;
+  - `digest:<64hex>` with no space;
+  - colon-separated uppercase hex;
+  - extra whitespace;
+  - malformed non-hex input.
+  All valid variants normalized to the established fingerprint; malformed input was rejected.
+- Current GitHub CLI release-edit/create flags were audited separately; `--target`, `--verify-tag`, `--title`, `--notes-file`, and `--prerelease` are valid current flags, so no additional known publish-command defect was found before retrying the main path.
 
-- `ARTEMIS_PLUS_KEYSTORE_BASE64`
-- `ARTEMIS_PLUS_KEYSTORE_PASSWORD`
-- `ARTEMIS_PLUS_KEY_ALIAS`
-- `ARTEMIS_PLUS_KEY_PASSWORD`
+### Files intentionally changed
 
-Trigger and token hardening reduce accidental exposure, but repository-level secrets are not the strongest boundary against same-repository workflow edits.
-
-The stronger end state is a protected GitHub Actions environment (for example `release-signing`) restricted to `main`, followed by deletion of the repository-level copies. Do **not** switch the workflow to environment-only references until the real values have been migrated from the backed-up private signing material; GitHub does not reveal existing secret values for copying.
-
-This connector session cannot recover those secret values, so the branch intentionally preserves the functioning repository-secret references while documenting the safer migration path.
-
-### Files materially changed
-
-- `.github/workflows/android-ci.yml` — PowerShell syntax gate
 - `.github/workflows/build-debug-apk.yml`
-- `signing-common.ps1` — new
-- `setup-signing.ps1`
-- `build-apk.ps1`
-- `SIGNING.md`
-- `README.md` — rolling-release/signing guidance
-- `AGENTS.md` — signing safety + stale roadmap correction
-- `PROJECT_STATE.md` — durable release audit state/next priorities
-- `CODEX_HANDOFF.md` — this review packet
+- `CODEX_HANDOFF.md`
 
-No Android application source, product persistence format, native streaming code, Gradle configuration, or private signing material is intentionally changed.
+No Android product source, Gradle signing configuration, keystore, secret value, APK, or release asset is intentionally changed in this follow-up.
 
-### Compatibility / safety behavior
+### Required PR / post-merge verification
 
-- Existing stable signer is preserved; no key material was rotated.
-- Existing repository secret names remain unchanged so the current release setup can continue working.
-- Rolling tag remains `debug-latest`.
-- Build target remains `:app:assembleNonRoot_gameDebug`.
-- Expected release APK set remains the four configured ABI splits already produced by `app/build.gradle`.
-- Android update compatibility is now explicitly fail-closed on signer mismatch.
-- Local users with a valid backed-up `.artemis-signing` directory can restore it on a new path; only `storeFile` is normalized after certificate verification.
-- Local builds force Gradle to the exact verified keystore rather than trusting a persisted `storeFile` path.
+Before merge:
 
-### Audit defects found during implementation itself
+1. open a PR targeting `main` so normal Android PR CI runs;
+2. inspect exact base-to-head diff for unrelated/private material;
+3. require Android CI green;
+4. merge only at the audited expected head.
 
-Independent self-review caught and fixed three would-be regressions/gaps before merge:
+After merge, do not declare the release audit complete until a new main `Build Debug APK` run proves all of these:
 
-1. the first ABI validator used a broad `*x86*`-style glob that would also count `x86_64`; it was replaced with exact `*-<abi>-debug.apk` suffix matching;
-2. one manually duplicated expected-fingerprint literal briefly contained an extra `008`; the workflow now has a single top-level expected-fingerprint value used by all three stages, removing that drift class;
-3. local `build-apk.ps1` initially verified the fixed `.artemis-signing/artemis-plus.jks` path while Gradle could still honor a different `storeFile` from `signing.properties`; the helper now exports all four `ARTEMIS_PLUS_KEYSTORE_*` inputs from the verified key/properties before Gradle starts.
+1. JKS fingerprint check passes;
+2. build produces exactly four expected ABI APKs;
+3. all four APKs pass `apksigner verify`;
+4. all four parsed certificate digests equal the established fingerprint;
+5. verified release artifact uploads successfully;
+6. write-scoped `publish` job succeeds;
+7. `debug-latest` points at the new merged main commit;
+8. release contains exactly four APKs plus `INSTALL.txt`, `SIGNING.txt`, `SHA256SUMS.txt`;
+9. release/signing metadata reports the established fingerprint.
 
-### Tests / CI actually observed
+If another live-only failure appears, fix the pipeline rather than weakening signer or package checks.
 
-- Pre-hardening merged baseline `bc7bf204...`:
-  - Android CI #156 — PASS
-  - old Build Debug APK #109 — PASS
-- Current audit branch:
-  - Android CI #161 on intermediate head `5f9187ed...` — PASS
-  - Android CI #170 on implementation head `0191bb94d947ff42294f601b5ae0bf4a69ad756c` — PASS
-  - Android CI #174 on final implementation head `789df14aec25cd92b04b5652b15b28367ee1155a` — PASS
-    - `Validate Artemis Plus PowerShell helper syntax` — PASS
-    - non-root debug Java compile — PASS
-    - focused Artemis Plus regression suite — PASS
-    - full inherited unit suite step — PASS
+### Remaining hardening / next audits
 
-The privileged Build Debug APK workflow intentionally does **not** execute on this audit branch anymore. Therefore its new signing/APK/publish path cannot be honestly declared proven until the patch merges to `main` and the new main workflow is observed end-to-end.
-
-This final Markdown-only handoff update may trigger one additional Android CI run; require it to remain green before merge.
-
-### Post-merge verification required
-
-After this PR is audited and merged:
-
-1. verify main Android CI passes;
-2. verify the new `Build Debug APK` run has both `build` and `publish` jobs successful;
-3. inspect job steps/logs for signer/ABI/APK-verification success;
-4. verify `debug-latest` points to the merged main commit;
-5. verify release assets are exactly four ABI APKs plus `INSTALL.txt`, `SIGNING.txt`, `SHA256SUMS.txt`;
-6. verify release/signing metadata reports the stable fingerprint above;
-7. if the workflow fails, fix it immediately on a follow-up audit branch rather than weakening signer checks.
-
-### Audit hotspots
-
-Review especially:
-
-- GitHub Actions YAML job-level `if`, permissions and outputs;
-- bash exact-ABI matching and SDK/apksigner discovery;
-- `keytool -exportcert` fingerprint calculation vs `apksigner` fingerprint format;
-- rolling tag force-update followed by release asset/metadata update;
-- PowerShell native-process handling in `signing-common.ps1`;
-- restored `signing.properties` path repair without credential mutation;
-- local Gradle environment binding to the already-verified keystore;
-- absence of any key-generation path in `setup-signing.ps1`;
-- absence of secrets/private key material in the diff.
-
-### Deferred work
-
-- protected GitHub Actions environment + migration/removal of repository-level signing secrets;
-- persisted-state robustness audit;
+- protected main-only GitHub Actions environment and migration/removal of repository-level signing secrets (requires real secret values from the private backup; connector cannot retrieve them);
+- confirmed Quick Menu forward-compatibility defect: older builds currently delete persisted unknown future action IDs even though the editor can display them as unavailable and runtime safely ignores them; a separate fix branch/tests were prepared but should be rebased/recreated from latest main after this release repair is durable;
+- deeper OSC profile malformed-metadata recovery audit;
+- broader persisted-state robustness audit;
 - lifecycle/race audit;
 - remaining localization display metadata;
 - unresolved graph-based long-label connected-control expansion.
 
-### PROJECT_STATE update
-
-`PROJECT_STATE.md` records `bc7bf204...` as the latest merged baseline, describes this release hardening as pending review rather than merged, records the remaining environment-secret limitation, and makes post-merge release verification the immediate audit priority before persisted-state work.
-
 ### Suggested reviewer action
 
-Audit this branch and merge only after the final branch Android CI is green and the diff contains no unrelated/private material. After merge, observe the new main release workflow end-to-end before declaring the signing/release audit complete.
-
----
-
-## Required shape for the next coherent handoff
-
-Replace the current section with the next task's real branch/base/head/PR, exact scope, files, compatibility/state ownership, lifecycle/persistence considerations, tests actually run, Actions/release state, limitations, audit hotspots, deferred work, and suggested reviewer action. Do not claim external or device validation that was not observed.
+Audit this small release-parser follow-up, merge only when PR CI is green, then inspect the resulting privileged main release run step-by-step. The release/signing audit remains open until that real run publishes a verified seven-asset rolling release successfully.

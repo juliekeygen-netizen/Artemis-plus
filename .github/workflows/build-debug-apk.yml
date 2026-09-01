@@ -110,7 +110,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          EXPECTED_SIGNER_SHA256='88c430db21b298bab7b654ce3b9300e33bf1917df4bf1a73047c9590f0080083'
+          EXPECTED_SIGNER_SHA256='88c430db21b298bab7b654ce3b9300e33bf1917df4bf1a73047c9590f0080080083'
           mkdir -p dist
           find app/build/outputs/apk -type f -name '*.apk' -path '*nonRoot_game*debug*' -print -exec cp '{}' dist/ \;
 
@@ -272,21 +272,33 @@ jobs:
           \`INSTALL.txt\`, \`SIGNING.txt\`, and \`SHA256SUMS.txt\` for details.
           EOF
 
-          # Keep one stable download location instead of creating a release for every commit.
-          # Build/signature validation has completed before this destructive replacement begins.
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release delete "$TAG" --yes
-          fi
-          git push origin ":refs/tags/$TAG" >/dev/null 2>&1 || true
+          # Move the rolling tag only after the package has been fully verified. Preserve the
+          # existing release object so a transient API failure does not erase the download page.
           git tag -f "$TAG" "$GITHUB_SHA"
           git push origin "refs/tags/$TAG" --force
 
-          gh release create "$TAG" \
-            dist/*.apk \
-            dist/SHA256SUMS.txt \
-            dist/INSTALL.txt \
-            dist/SIGNING.txt \
-            --title "$TITLE" \
-            --notes-file release-notes.md \
-            --prerelease \
-            --verify-tag
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              dist/*.apk \
+              dist/SHA256SUMS.txt \
+              dist/INSTALL.txt \
+              dist/SIGNING.txt \
+              --clobber
+            gh release edit "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "$TITLE" \
+              --notes-file release-notes.md \
+              --prerelease \
+              --verify-tag
+          else
+            gh release create "$TAG" \
+              dist/*.apk \
+              dist/SHA256SUMS.txt \
+              dist/INSTALL.txt \
+              dist/SIGNING.txt \
+              --target "$GITHUB_SHA" \
+              --title "$TITLE" \
+              --notes-file release-notes.md \
+              --prerelease \
+              --verify-tag
+          fi

@@ -1,0 +1,237 @@
+name: Lifecycle connection state follow-up
+
+on:
+  push:
+    branches:
+      - fix/lifecycle-reconnect-input-teardown
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: ${{ !contains(github.event.head_commit.message, '[lifecycle-state-bot]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Apply guarded connection-state corrections
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('app/src/main/java/com/limelight/Game.java')
+          text = path.read_text(encoding='utf-8')
+
+          def replace_once(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 occurrence, found {count}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '        if (errorCode == 0 && portFlags != 0 && (portTestResult == MoonBridge.ML_TEST_RESULT_INCONCLUSIVE || portTestResult == 0)) {\n'
+              '            spinner.setMessage(getResources().getString(R.string.unlocking_or_starting));\n'
+              '            return true;\n'
+              '        }\n\n'
+              '        runOnUiThread(new Runnable() {\n',
+              '        if (errorCode == 0 && portFlags != 0 && (portTestResult == MoonBridge.ML_TEST_RESULT_INCONCLUSIVE || portTestResult == 0)) {\n'
+              '            spinner.setMessage(getResources().getString(R.string.unlocking_or_starting));\n'
+              '            return true;\n'
+              '        }\n\n'
+              '        // A terminal stage failure ends the current start attempt. Keep this truthful so\n'
+              '        // teardown/PiP/reconnect logic never mistakes a failed start for an in-flight one.\n'
+              '        connecting = false;\n'
+              '        connected = false;\n\n'
+              '        runOnUiThread(new Runnable() {\n',
+              'terminal stage failure state')
+
+          replace_once(
+              '        runOnUiThread(new Runnable() {\n'
+              '            @Override\n'
+              '            public void run() {\n'
+              '                if (spinner != null) {\n'
+              '                    spinner.dismiss();\n'
+              '                    spinner = null;\n'
+              '                }\n\n'
+              '                if (!displayedFailureDialog) {\n'
+              '                    displayedFailureDialog = true;\n'
+              '                    LimeLog.severe(stage + " failed: " + errorCode);\n',
+              '        runOnUiThread(new Runnable() {\n'
+              '            @Override\n'
+              '            public void run() {\n'
+              '                if (activityDestroyed || isFinishing()) {\n'
+              '                    return;\n'
+              '                }\n'
+              '                if (spinner != null) {\n'
+              '                    spinner.dismiss();\n'
+              '                    spinner = null;\n'
+              '                }\n\n'
+              '                if (!displayedFailureDialog) {\n'
+              '                    displayedFailureDialog = true;\n'
+              '                    LimeLog.severe(stage + " failed: " + errorCode);\n',
+              'stageFailed queued UI guard')
+
+          replace_once(
+              '    public void connectionTerminated(final int errorCode) {\n'
+              '        if (activityDestroyed || isFinishing()) {\n'
+              '            LimeLog.info("Ignoring connectionTerminated callback after Activity teardown");\n'
+              '            return;\n'
+              '        }\n'
+              '        // A graceful termination is expected while Fast Resume parks the client stream.\n',
+              '    public void connectionTerminated(final int errorCode) {\n'
+              '        if (activityDestroyed || isFinishing()) {\n'
+              '            LimeLog.info("Ignoring connectionTerminated callback after Activity teardown");\n'
+              '            return;\n'
+              '        }\n'
+              '        // The old transport is gone before any reconnect decision is made. In particular,\n'
+              '        // do not let a stale connected=true make the retry thread report false success.\n'
+              '        connected = false;\n'
+              '        connecting = false;\n'
+              '        runOnUiThread(this::updatePipAutoEnter);\n'
+              '        // A graceful termination is expected while Fast Resume parks the client stream.\n',
+              'termination clears stale state')
+
+          replace_once(
+              '        runOnUiThread(new Runnable() {\n'
+              '            @Override\n'
+              '            public void run() {\n'
+              '                if (reconnectOverlay != null) {\n'
+              '                    reconnectOverlay.show(SMART_RECONNECT_MAX_ATTEMPTS);\n'
+              '                }\n'
+              '            }\n'
+              '        });\n\n'
+              '        // Run reconnect attempts on a background thread\n',
+              '        runOnUiThread(new Runnable() {\n'
+              '            @Override\n'
+              '            public void run() {\n'
+              '                if (!isSmartReconnectAttemptAllowed(reconnectToken)) {\n'
+              '                    return;\n'
+              '                }\n'
+              '                if (reconnectOverlay != null) {\n'
+              '                    reconnectOverlay.show(SMART_RECONNECT_MAX_ATTEMPTS);\n'
+              '                }\n'
+              '            }\n'
+              '        });\n\n'
+              '        // Run reconnect attempts on a background thread\n',
+              'reconnect overlay show fence')
+
+          replace_once(
+              '                    runOnUiThread(new Runnable() {\n'
+              '                        @Override\n'
+              '                        public void run() {\n'
+              '                            if (reconnectOverlay != null) {\n'
+              '                                reconnectOverlay.setAttempt(currentAttempt);\n'
+              '                            }\n'
+              '                        }\n'
+              '                    });\n',
+              '                    runOnUiThread(new Runnable() {\n'
+              '                        @Override\n'
+              '                        public void run() {\n'
+              '                            if (!isSmartReconnectAttemptAllowed(reconnectToken)) {\n'
+              '                                return;\n'
+              '                            }\n'
+              '                            if (reconnectOverlay != null) {\n'
+              '                                reconnectOverlay.setAttempt(currentAttempt);\n'
+              '                            }\n'
+              '                        }\n'
+              '                    });\n',
+              'reconnect attempt overlay fence')
+
+          replace_once(
+              '        runOnUiThread(new Runnable() {\n'
+              '            @Override\n'
+              '            public void run() {\n'
+              '                // Let the display go to sleep now\n'
+              '                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);\n',
+              '        runOnUiThread(new Runnable() {\n'
+              '            @Override\n'
+              '            public void run() {\n'
+              '                if (activityDestroyed || isFinishing()) {\n'
+              '                    return;\n'
+              '                }\n'
+              '                // Let the display go to sleep now\n'
+              '                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);\n',
+              'final termination queued UI guard')
+
+          replace_once(
+              '        runOnUiThread(new Runnable() {\n'
+              '            @Override\n'
+              '            public void run() {\n'
+              '                if (spinner != null) {\n'
+              '                    spinner.dismiss();\n'
+              '                    spinner = null;\n'
+              '                }\n\n'
+              '                connected = true;\n'
+              '                connecting = false;\n',
+              '        runOnUiThread(new Runnable() {\n'
+              '            @Override\n'
+              '            public void run() {\n'
+              '                if (activityDestroyed || isFinishing()) {\n'
+              '                    return;\n'
+              '                }\n'
+              '                if (spinner != null) {\n'
+              '                    spinner.dismiss();\n'
+              '                    spinner = null;\n'
+              '                }\n\n'
+              '                connected = true;\n'
+              '                connecting = false;\n',
+              'connectionStarted queued UI guard')
+
+          path.write_text(text, encoding='utf-8')
+
+      - name: Enforce minimal state patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git diff --name-only)" = 'app/src/main/java/com/limelight/Game.java'
+          grep -F 'connected = false;' app/src/main/java/com/limelight/Game.java >/dev/null
+          grep -F 'connecting = false;' app/src/main/java/com/limelight/Game.java >/dev/null
+          grep -F 'if (!isSmartReconnectAttemptAllowed(reconnectToken)) {' app/src/main/java/com/limelight/Game.java >/dev/null
+          changed="$(git diff --numstat | awk '{print $1+$2}')"
+          if (( changed > 70 )); then
+            echo "Follow-up unexpectedly large: ${changed} changed lines" >&2
+            exit 1
+          fi
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: 12266719
+      - name: Install SDK and NDK
+        run: sdkmanager "platforms;android-36" "ndk;27.0.12077973"
+      - name: Compile and run lifecycle regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew :app:compileNonRoot_gameDebugJavaWithJavac \
+            :app:testNonRoot_gameDebugUnitTest \
+            --tests com.limelight.SmartReconnectFenceTest \
+            --tests com.limelight.GameActivityManifestTest \
+            --tests com.limelight.SidewaysStreamModeTest \
+            --stacktrace
+      - name: Commit verified follow-up and remove runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/lifecycle-connection-state-followup.yml
+          git config user.name 'Artemis Plus Audit Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add app/src/main/java/com/limelight/Game.java .github/workflows/lifecycle-connection-state-followup.yml
+          git diff --cached --check
+          git commit -m 'Correct reconnect transport state transitions [lifecycle-state-bot]'
+          git push origin HEAD:fix/lifecycle-reconnect-input-teardown

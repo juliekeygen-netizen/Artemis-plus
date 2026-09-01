@@ -859,22 +859,44 @@ final class KeyComboManager {
         return loadDefinitionsForLayout(context, activeLayout(context));
     }
 
-    private static List<Definition> loadDefinitionsForLayout(Context context, String layout) {
-        String serialized = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-                .getString(definitionsKey(layout), "[]");
+    static List<Definition> loadDefinitionsForLayout(Context context, String layout) {
+        SharedPreferences preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+        String serialized = SafePreferenceValues.getString(preferences, definitionsKey(layout), "[]");
         List<Definition> definitions = new ArrayList<>();
+        JSONArray array;
         try {
-            JSONArray array = new JSONArray(serialized);
-            List<String> seenIds = new ArrayList<>();
-            for (int i = 0; i < array.length(); i++) {
-                Definition definition = Definition.fromJson(array.getJSONObject(i));
-                if (!definition.id.isEmpty() && definition.keys.length > 0 && !seenIds.contains(definition.id)) {
-                    seenIds.add(definition.id);
-                    definitions.add(definition);
-                }
-            }
+            array = new JSONArray(serialized);
         } catch (JSONException ignored) {
-            // Treat corrupt metadata as no custom keys; geometry preferences remain untouched.
+            return definitions;
+        }
+
+        List<String> seenIds = new ArrayList<>();
+        JSONArray repairedArray = new JSONArray();
+        boolean corruptedEntry = false;
+        for (int i = 0; i < array.length(); i++) {
+            Object value = array.opt(i);
+            if (!(value instanceof JSONObject)) {
+                corruptedEntry = true;
+                continue;
+            }
+            JSONObject object = (JSONObject) value;
+            try {
+                Definition definition = Definition.fromJson(object);
+                if (definition.id.isEmpty() || definition.keys.length == 0 || seenIds.contains(definition.id)) {
+                    corruptedEntry = true;
+                    continue;
+                }
+                seenIds.add(definition.id);
+                definitions.add(definition);
+                // Preserve fields unknown to this build when cleaning only the damaged siblings.
+                repairedArray.put(object);
+            } catch (JSONException ignored) {
+                corruptedEntry = true;
+            }
+        }
+
+        if (corruptedEntry) {
+            preferences.edit().putString(definitionsKey(layout), repairedArray.toString()).apply();
         }
         return definitions;
     }
@@ -900,8 +922,10 @@ final class KeyComboManager {
     }
 
     static JSONArray exportDefinitionsForLayout(Context context, String layout) {
-        String serialized = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-                .getString(definitionsKey(layout), "[]");
+        String serialized = SafePreferenceValues.getString(
+                context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE),
+                definitionsKey(layout),
+                "[]");
         try {
             return new JSONArray(serialized);
         } catch (JSONException ignored) {
@@ -918,7 +942,8 @@ final class KeyComboManager {
 
     static void copyDefinitionsForLayout(Context context, String fromLayout, String toLayout) {
         SharedPreferences preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
-        String value = preferences.getString(definitionsKey(fromLayout), "[]");
+        String value = SafePreferenceValues.getString(
+                preferences, definitionsKey(fromLayout), "[]");
         preferences.edit().putString(definitionsKey(toLayout), value).apply();
     }
 
@@ -931,7 +956,8 @@ final class KeyComboManager {
 
     private static String activeLayout(Context context) {
         KeyboardProfilesManager.ensureInitialized(context);
-        return PreferenceManager.getDefaultSharedPreferences(context).getString(
+        return SafePreferenceValues.getString(
+                PreferenceManager.getDefaultSharedPreferences(context),
                 KeyBoardControllerConfigurationLoader.OSC_PREFERENCE,
                 KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);
     }

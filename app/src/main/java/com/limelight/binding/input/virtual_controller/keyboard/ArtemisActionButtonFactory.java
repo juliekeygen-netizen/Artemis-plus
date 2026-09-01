@@ -262,13 +262,14 @@ public final class ArtemisActionButtonFactory {
 
     private static void loadSavedConfiguration(keyBoardVirtualControllerElement element,
                                                Context context) {
-        String layoutPreference = PreferenceManager.getDefaultSharedPreferences(context).getString(
+        String layoutPreference = SafePreferenceValues.getString(
+                PreferenceManager.getDefaultSharedPreferences(context),
                 KeyBoardControllerConfigurationLoader.OSC_PREFERENCE,
                 KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);
         SharedPreferences preferences = context.getSharedPreferences(
                 layoutPreference,
                 Context.MODE_PRIVATE);
-        String serialized = preferences.getString(element.elementId, null);
+        String serialized = SafePreferenceValues.getString(preferences, element.elementId, null);
         if (serialized == null) {
             return;
         }
@@ -286,8 +287,7 @@ public final class ArtemisActionButtonFactory {
 
     private static Set<String> getSelectedActionIdsForLayout(Context context, String layout) {
         SharedPreferences preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
-        Set<String> values = preferences.getStringSet(selectionKey(layout), null);
-        return values == null ? new HashSet<>() : new HashSet<>(values);
+        return SafePreferenceValues.getStringSetCopy(preferences, selectionKey(layout));
     }
 
     private static void saveSelectedActionIds(Context context, Set<String> actionIds) {
@@ -350,7 +350,8 @@ public final class ArtemisActionButtonFactory {
 
     private static String activeLayout(Context context) {
         KeyboardProfilesManager.ensureInitialized(context);
-        return PreferenceManager.getDefaultSharedPreferences(context).getString(
+        return SafePreferenceValues.getString(
+                PreferenceManager.getDefaultSharedPreferences(context),
                 KeyBoardControllerConfigurationLoader.OSC_PREFERENCE,
                 KeyBoardControllerConfigurationLoader.OSC_PREFERENCE_VALUE);
     }

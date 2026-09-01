@@ -1,0 +1,202 @@
+name: Patch reconnect lifecycle refinement
+
+on:
+  push:
+    branches:
+      - fix/lifecycle-reconnect-input-teardown-v2
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: github.event.head_commit.message == 'Run guarded reconnect lifecycle refinement'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/lifecycle-reconnect-input-teardown-v2
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Apply guarded lifecycle state-machine refinements
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('app/src/main/java/com/limelight/Game.java')
+          text = path.read_text(encoding='utf-8')
+
+          def replace_once(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '''    protected void onDestroy() {\n        activityDestroyed = true;\n        smartReconnectFence.cancel();\n        cancelPendingCommitText();\n''',
+              '''    protected void onDestroy() {\n        synchronized (smartReconnectFence) {\n            activityDestroyed = true;\n            smartReconnectFence.cancel();\n        }\n        cancelPendingCommitText();\n''',
+              'destroy state fence')
+
+          replace_once(
+              '''    public void stageStarting(final String stage) {\n        runOnUiThread(new Runnable() {\n            @Override\n            public void run() {\n                if (spinner != null) {\n''',
+              '''    public void stageStarting(final String stage) {\n        runOnUiThread(new Runnable() {\n            @Override\n            public void run() {\n                if (activityDestroyed || isFinishing() || !connecting) {\n                    return;\n                }\n                if (spinner != null) {\n''',
+              'stageStarting UI fence')
+
+          replace_once(
+              '''    private void stopConnection(boolean preserveControllerStateForReconnect, Runnable onStopped) {\n        smartReconnectFence.cancel();\n        cancelPendingCommitText();\n        if (reconnectOverlay != null) {\n            reconnectOverlay.hide();\n        }\n        if (connecting || connected) {\n            connecting = connected = false;\n            updatePipAutoEnter();\n''',
+              '''    private void stopConnection(boolean preserveControllerStateForReconnect, Runnable onStopped) {\n        final boolean hadConnection;\n        synchronized (smartReconnectFence) {\n            smartReconnectFence.cancel();\n            hadConnection = connecting || connected;\n            if (hadConnection) {\n                connecting = false;\n                connected = false;\n            }\n        }\n        cancelPendingCommitText();\n        if (reconnectOverlay != null) {\n            reconnectOverlay.hide();\n        }\n        if (hadConnection) {\n            updatePipAutoEnter();\n''',
+              'atomic stop state')
+
+          replace_once(
+              '''                            Game.this.runOnUiThread(() -> Toast.makeText(Game.this, Game.this.getResources().getString(R.string.applist_quit_success) + " " + appName, Toast.LENGTH_LONG).show());\n                        } catch (Exception e) {\n                            Game.this.runOnUiThread(() -> Toast.makeText(Game.this, e.getMessage(), Toast.LENGTH_LONG).show());\n''',
+              '''                            Game.this.runOnUiThread(() -> {\n                                if (!activityDestroyed && !isFinishing()) {\n                                    Toast.makeText(Game.this, Game.this.getResources().getString(R.string.applist_quit_success) + " " + appName, Toast.LENGTH_LONG).show();\n                                }\n                            });\n                        } catch (Exception e) {\n                            Game.this.runOnUiThread(() -> {\n                                if (!activityDestroyed && !isFinishing()) {\n                                    Toast.makeText(Game.this, e.getMessage(), Toast.LENGTH_LONG).show();\n                                }\n                            });\n''',
+              'stop-thread toast fence')
+
+          replace_once(
+              '''    public boolean stageFailed(final String stage, final int portFlags, final int errorCode) {\n        // Perform a connection test if the failure could be due to a blocked port\n''',
+              '''    public boolean stageFailed(final String stage, final int portFlags, final int errorCode) {\n        synchronized (smartReconnectFence) {\n            if (activityDestroyed || isFinishing() || !connecting) {\n                return false;\n            }\n        }\n        // Perform a connection test if the failure could be due to a blocked port\n''',
+              'stageFailed initial fence')
+
+          replace_once(
+              '''        if (errorCode == 0 && portFlags != 0 && (portTestResult == MoonBridge.ML_TEST_RESULT_INCONCLUSIVE || portTestResult == 0)) {\n            spinner.setMessage(getResources().getString(R.string.unlocking_or_starting));\n            return true;\n        }\n\n        // A terminal stage failure ends the current start attempt. Keep this truthful so\n        // teardown/PiP/reconnect logic never mistakes a failed start for an in-flight one.\n        connecting = false;\n        connected = false;\n''',
+              '''        if (errorCode == 0 && portFlags != 0 && (portTestResult == MoonBridge.ML_TEST_RESULT_INCONCLUSIVE || portTestResult == 0)) {\n            synchronized (smartReconnectFence) {\n                if (activityDestroyed || isFinishing() || !connecting) {\n                    return false;\n                }\n            }\n            runOnUiThread(() -> {\n                if (!activityDestroyed && !isFinishing() && connecting && spinner != null) {\n                    spinner.setMessage(getResources().getString(R.string.unlocking_or_starting));\n                }\n            });\n            return true;\n        }\n\n        // A terminal stage failure ends the current start attempt. Keep this truthful so\n        // teardown/PiP/reconnect logic never mistakes a failed start for an in-flight one.\n        synchronized (smartReconnectFence) {\n            if (activityDestroyed || isFinishing() || !connecting) {\n                return false;\n            }\n            connecting = false;\n            connected = false;\n        }\n''',
+              'stageFailed retry and terminal state')
+
+          replace_once(
+              '''    private void finishSecondScreen() {\n        // Otherwise screen stays connected but not working with no way of quitting it\n        if (prefConfig.enableFullExDisplay) {\n            Handler h = new Handler();\n            h.postDelayed(new Runnable() {\n                @Override\n                public void run() {\n                    finish();\n                }\n            }, 2000);\n        }\n    }\n''',
+              '''    private void finishSecondScreen() {\n        // Otherwise screen stays connected but not working with no way of quitting it. Use the\n        // Activity-owned handler so onDestroy() can cancel this delayed lifecycle action.\n        if (prefConfig.enableFullExDisplay) {\n            timerHandler.postDelayed(() -> {\n                if (!activityDestroyed && !isFinishing()) {\n                    finish();\n                }\n            }, 2000);\n        }\n    }\n''',
+              'second-screen delayed finish ownership')
+
+          old_termination_prefix = '''    public void connectionTerminated(final int errorCode) {\n        if (activityDestroyed || isFinishing()) {\n            LimeLog.info("Ignoring connectionTerminated callback after Activity teardown");\n            return;\n        }\n        // The old transport is gone before any reconnect decision is made. In particular,\n        // do not let a stale connected=true make the retry thread report false success.\n        connected = false;\n        connecting = false;\n        runOnUiThread(this::updatePipAutoEnter);\n        // A graceful termination is expected while Fast Resume parks the client stream.\n'''
+          new_termination_prefix = '''    public void connectionTerminated(final int errorCode) {\n        final boolean reconnectAlreadyActive;\n        synchronized (smartReconnectFence) {\n            if (activityDestroyed || isFinishing()) {\n                LimeLog.info("Ignoring connectionTerminated callback after Activity teardown");\n                return;\n            }\n            // The old transport is gone before any reconnect decision is made. In particular,\n            // do not let a stale connected=true make a retry worker report false success.\n            connected = false;\n            connecting = false;\n            reconnectAlreadyActive = smartReconnectFence.hasActiveAttempt();\n        }\n        cancelPendingCommitText();\n        runOnUiThread(() -> {\n            if (!activityDestroyed && !isFinishing()) {\n                updatePipAutoEnter();\n            }\n        });\n\n        // A transport started by the current reconnect sequence may terminate before the worker\n        // advances to its next attempt. Do not recursively create a new six-attempt sequence.\n        if (reconnectAlreadyActive && errorCode != MoonBridge.ML_ERROR_PROTECTED_CONTENT) {\n            LimeLog.info("Reconnect attempt transport terminated; retry owner remains active");\n            return;\n        }\n        if (reconnectAlreadyActive) {\n            smartReconnectFence.cancel();\n        }\n\n        // A graceful termination is expected while Fast Resume parks the client stream.\n'''
+          replace_once(old_termination_prefix, new_termination_prefix, 'termination sequence ownership')
+
+          replace_once(
+              '''        // Attempt smart reconnect: freeze frame is automatic (we don't clear the surface)\n        final int reconnectToken = smartReconnectFence.beginAttempt();\n        LimeLog.info("Connection lost (error " + errorCode + "), attempting smart reconnect...");\n''',
+              '''        // Attempt smart reconnect: freeze frame is automatic (we don't clear the surface).\n        // beginAttemptIfIdle() is an atomic second guard against concurrent termination callbacks.\n        final int reconnectToken = smartReconnectFence.beginAttemptIfIdle();\n        if (reconnectToken == SmartReconnectFence.NO_ATTEMPT) {\n            return;\n        }\n        if (controllerHandler != null) {\n            controllerHandler.suspendForReconnect();\n        }\n        LimeLog.info("Connection lost (error " + errorCode + "), attempting smart reconnect...");\n''',
+              'idle-only reconnect owner')
+
+          replace_once(
+              '''                boolean reconnected = false;\n\n                for (int attempt = 1; attempt <= SMART_RECONNECT_MAX_ATTEMPTS; attempt++) {\n''',
+              '''                for (int attempt = 1; attempt <= SMART_RECONNECT_MAX_ATTEMPTS; attempt++) {\n''',
+              'remove polled success owner')
+
+          replace_once(
+              '''                            decoderRenderer.setRenderTarget(reconnectSurface);\n                            connecting = true;\n                            conn.start(new AndroidAudioRenderer(Game.this, prefConfig.playHostAudio),\n                                    decoderRenderer, Game.this);\n\n                            // Wait briefly to see if connection succeeds\n                            Thread.sleep(2000);\n                            if (!isSmartReconnectAttemptAllowed(reconnectToken)) {\n                                return;\n                            }\n\n                            if (connected) {\n                                reconnected = true;\n                                LimeLog.info("Reconnect succeeded on attempt " + attempt);\n                                break;\n                            }\n''',
+              '''                            decoderRenderer.setRenderTarget(reconnectSurface);\n                            synchronized (smartReconnectFence) {\n                                if (!isSmartReconnectAttemptAllowed(reconnectToken)) {\n                                    return;\n                                }\n                                connecting = true;\n                            }\n                            conn.start(new AndroidAudioRenderer(Game.this, prefConfig.playHostAudio),\n                                    decoderRenderer, Game.this);\n\n                            // A successful connectionStarted() atomically completes this reconnect\n                            // token. If the token remains current after the observation window, the\n                            // attempt did not establish a live transport and the worker may retry.\n                            Thread.sleep(2000);\n                            if (!isSmartReconnectAttemptAllowed(reconnectToken)) {\n                                return;\n                            }\n''',
+              'worker success ownership')
+
+          replace_once(
+              '''                final boolean success = reconnected;\n                runOnUiThread(new Runnable() {\n                    @Override\n                    public void run() {\n                        if (!isSmartReconnectAttemptAllowed(reconnectToken)) {\n                            return;\n                        }\n                        if (reconnectOverlay != null) {\n                            reconnectOverlay.hide();\n                        }\n\n                        if (!success) {\n                            // All attempts failed, fall through to normal disconnect handling\n                            handleConnectionTerminatedFinal(errorCode);\n                        }\n                    }\n                });\n''',
+              '''                runOnUiThread(new Runnable() {\n                    @Override\n                    public void run() {\n                        if (!smartReconnectFence.complete(reconnectToken)) {\n                            return;\n                        }\n                        if (activityDestroyed || isFinishing()) {\n                            return;\n                        }\n                        if (reconnectOverlay != null) {\n                            reconnectOverlay.hide();\n                        }\n                        // No connectionStarted() callback completed the owner during the retry\n                        // budget, so fall through to normal disconnect handling.\n                        handleConnectionTerminatedFinal(errorCode);\n                    }\n                });\n''',
+              'bounded reconnect exhaustion')
+
+          old_started = '''    public void connectionStarted() {\n        if (activityDestroyed || isFinishing()) {\n            LimeLog.info("Ignoring connectionStarted callback after Activity teardown");\n            return;\n        }\n        runOnUiThread(new Runnable() {\n            @Override\n            public void run() {\n                if (activityDestroyed || isFinishing()) {\n                    return;\n                }\n                if (spinner != null) {\n                    spinner.dismiss();\n                    spinner = null;\n                }\n\n                connected = true;\n                connecting = false;\n'''
+          new_started = '''    public void connectionStarted() {\n        synchronized (smartReconnectFence) {\n            if (activityDestroyed || isFinishing() || !connecting) {\n                LimeLog.info("Ignoring stale connectionStarted callback");\n                return;\n            }\n            // Publish transport success before queuing UI work and release any reconnect owner.\n            // stopConnection()/onDestroy() use the same monitor, so a cancelled start cannot\n            // resurrect connected=true after teardown.\n            connected = true;\n            connecting = false;\n            smartReconnectFence.completeActive();\n        }\n        runOnUiThread(new Runnable() {\n            @Override\n            public void run() {\n                if (activityDestroyed || isFinishing() || !connected) {\n                    return;\n                }\n                if (spinner != null) {\n                    spinner.dismiss();\n                    spinner = null;\n                }\n\n'''
+          replace_once(old_started, new_started, 'connectionStarted stale callback gate')
+
+          replace_once(
+              '''    public void connectionStatusUpdate(final int connectionStatus) {\n        runOnUiThread(new Runnable() {\n            @Override\n            public void run() {\n                if (prefConfig.disableWarnings) {\n''',
+              '''    public void connectionStatusUpdate(final int connectionStatus) {\n        runOnUiThread(new Runnable() {\n            @Override\n            public void run() {\n                if (activityDestroyed || isFinishing() || !connected) {\n                    return;\n                }\n                if (prefConfig.disableWarnings) {\n''',
+              'status UI fence')
+
+          replace_once(
+              '''                        runOnUiThread(new Runnable() {\n                            @Override\n                            public void run() {\n                                if (statsOverlay != null) {\n''',
+              '''                        runOnUiThread(new Runnable() {\n                            @Override\n                            public void run() {\n                                if (activityDestroyed || isFinishing() || !connected) {\n                                    return;\n                                }\n                                if (statsOverlay != null) {\n''',
+              'server stats UI fence')
+
+          replace_once(
+              '''                    public void onWifiQualityChanged(int quality, int rssi, int linkSpeed) {\n                        // Update the stats overlay\n''',
+              '''                    public void onWifiQualityChanged(int quality, int rssi, int linkSpeed) {\n                        if (activityDestroyed || !connected) {\n                            return;\n                        }\n                        // Update the stats overlay\n''',
+              'wifi callback fence')
+
+          replace_once(
+              '''    public void displayMessage(final String message) {\n        runOnUiThread(new Runnable() {\n            @Override\n            public void run() {\n                Toast.makeText(Game.this, message, Toast.LENGTH_LONG).show();\n''',
+              '''    public void displayMessage(final String message) {\n        runOnUiThread(new Runnable() {\n            @Override\n            public void run() {\n                if (activityDestroyed || isFinishing()) {\n                    return;\n                }\n                Toast.makeText(Game.this, message, Toast.LENGTH_LONG).show();\n''',
+              'displayMessage UI fence')
+
+          replace_once(
+              '''                @Override\n                public void run() {\n                    Toast.makeText(Game.this, message, Toast.LENGTH_LONG).show();\n                }\n            });\n        }\n    }\n\n    @Override\n    public void rumble(short controllerNumber''',
+              '''                @Override\n                public void run() {\n                    if (activityDestroyed || isFinishing()) {\n                        return;\n                    }\n                    Toast.makeText(Game.this, message, Toast.LENGTH_LONG).show();\n                }\n            });\n        }\n    }\n\n    @Override\n    public void rumble(short controllerNumber''',
+              'transient message UI fence')
+
+          replace_once(
+              '''    public void rumble(short controllerNumber, short lowFreqMotor, short highFreqMotor) {\n        if (prefConfig.enableRumble) {\n''',
+              '''    public void rumble(short controllerNumber, short lowFreqMotor, short highFreqMotor) {\n        if (activityDestroyed || isFinishing() || !connected) {\n            return;\n        }\n        if (prefConfig.enableRumble) {\n''',
+              'rumble callback fence')
+
+          replace_once(
+              '''    public void rumbleTriggers(short controllerNumber, short leftTrigger, short rightTrigger) {\n        LimeLog.info''',
+              '''    public void rumbleTriggers(short controllerNumber, short leftTrigger, short rightTrigger) {\n        if (activityDestroyed || isFinishing() || !connected) {\n            return;\n        }\n        LimeLog.info''',
+              'trigger rumble callback fence')
+
+          replace_once(
+              '''    public void setHdrMode(boolean enabled, byte[] hdrMetadata) {\n        LimeLog.info''',
+              '''    public void setHdrMode(boolean enabled, byte[] hdrMetadata) {\n        if (activityDestroyed || isFinishing() || !connected) {\n            return;\n        }\n        LimeLog.info''',
+              'HDR callback fence')
+
+          replace_once(
+              '''    public void setMotionEventState(short controllerNumber, byte motionType, short reportRateHz) {\n        controllerHandler.handleSetMotionEventState''',
+              '''    public void setMotionEventState(short controllerNumber, byte motionType, short reportRateHz) {\n        if (activityDestroyed || isFinishing() || !connected) {\n            return;\n        }\n        controllerHandler.handleSetMotionEventState''',
+              'motion callback fence')
+
+          replace_once(
+              '''    public void setControllerLED(short controllerNumber, byte r, byte g, byte b) {\n        controllerHandler.handleSetControllerLED''',
+              '''    public void setControllerLED(short controllerNumber, byte r, byte g, byte b) {\n        if (activityDestroyed || isFinishing() || !connected) {\n            return;\n        }\n        controllerHandler.handleSetControllerLED''',
+              'LED callback fence')
+
+          path.write_text(text, encoding='utf-8')
+
+      - name: Enforce narrow lifecycle diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git diff --name-only)" = 'app/src/main/java/com/limelight/Game.java'
+          grep -F 'beginAttemptIfIdle()' app/src/main/java/com/limelight/Game.java >/dev/null
+          grep -F 'Ignoring stale connectionStarted callback' app/src/main/java/com/limelight/Game.java >/dev/null
+          grep -F 'Reconnect attempt transport terminated; retry owner remains active' app/src/main/java/com/limelight/Game.java >/dev/null
+          grep -F 'controllerHandler.suspendForReconnect();' app/src/main/java/com/limelight/Game.java >/dev/null
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: 12266719
+
+      - name: Install SDK and NDK
+        run: sdkmanager "platforms;android-36" "ndk;27.0.12077973"
+
+      - name: Compile and run lifecycle regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew :app:compileNonRoot_gameDebugJavaWithJavac \
+            :app:testNonRoot_gameDebugUnitTest \
+            --tests com.limelight.SmartReconnectFenceTest \
+            --tests com.limelight.GameActivityManifestTest \
+            --tests com.limelight.SidewaysStreamModeTest \
+            --tests com.limelight.preferences.BackgroundStreamingPolicyTest \
+            --stacktrace
+
+      - name: Commit verified refinement and remove runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/patch-lifecycle-reconnect-v2.yml
+          git config user.name 'Artemis Plus Audit Bot'
+          git config user.email 'artemis-plus-audit@users.noreply.github.com'
+          git add app/src/main/java/com/limelight/Game.java .github/workflows/patch-lifecycle-reconnect-v2.yml
+          git diff --cached --check
+          git commit -m 'Bound reconnect ownership and stale callbacks'
+          git push origin HEAD:fix/lifecycle-reconnect-input-teardown-v2

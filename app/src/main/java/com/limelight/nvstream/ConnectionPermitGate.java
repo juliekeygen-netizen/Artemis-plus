@@ -10,45 +10,33 @@ package com.limelight.nvstream;
 final class ConnectionPermitGate {
     private Object owner;
 
-    /**
-     * Acquire connection ownership.
-     *
-     * @return true when this call acquired previously-free ownership, false when an existing owner
-     *         was deliberately reused for reconnect.
-     */
-    synchronized boolean acquire(Object claimant, boolean allowOwnerReuse) throws InterruptedException {
+    /** Acquire previously-free connection ownership, waiting for another owner to stop. */
+    synchronized void acquire(Object claimant) throws InterruptedException {
         if (claimant == null) {
             throw new IllegalArgumentException("claimant must not be null");
         }
-
         if (owner == claimant) {
-            if (!allowOwnerReuse) {
-                throw new IllegalStateException("Connection already owns the global permit");
-            }
-            return false;
+            throw new IllegalStateException("Connection already owns the global permit");
         }
-
         while (owner != null) {
             wait();
             if (owner == claimant) {
-                if (!allowOwnerReuse) {
-                    throw new IllegalStateException("Connection already owns the global permit");
-                }
-                return false;
+                throw new IllegalStateException("Connection already owns the global permit");
             }
         }
-
         owner = claimant;
-        return true;
+    }
+
+    /** Reconnect may reuse the permit only when this exact connection already owns it. */
+    synchronized boolean canReuse(Object claimant) {
+        return owner == claimant;
     }
 
     synchronized boolean isOwnedBy(Object claimant) {
         return owner == claimant;
     }
 
-    /**
-     * Release only when the caller is the current owner. Repeated/stale stop paths are harmless.
-     */
+    /** Release only when the caller is the current owner. Repeated/stale stops are harmless. */
     synchronized boolean release(Object claimant) {
         if (owner != claimant) {
             return false;

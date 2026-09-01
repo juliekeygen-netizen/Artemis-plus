@@ -325,8 +325,8 @@ public final class OscProfilesManager {
         boolean hadProfileMetadata = meta.contains(KEY_PROFILES);
         Object rawSerialized = meta.getAll().get(KEY_PROFILES);
         String serialized = rawSerialized instanceof String ? (String) rawSerialized : null;
-        boolean filteredInvalidEntry = false;
-        boolean topLevelCorrupt = false;
+        boolean metadataNeedsRewrite = false;
+        boolean lostProfileEntry = false;
 
         if (serialized != null && !serialized.trim().isEmpty()) {
             try {
@@ -334,7 +334,8 @@ public final class OscProfilesManager {
                 for (int i = 0; i < array.length(); i++) {
                     JSONObject object = array.optJSONObject(i);
                     if (object == null) {
-                        filteredInvalidEntry = true;
+                        metadataNeedsRewrite = true;
+                        lostProfileEntry = true;
                         continue;
                     }
 
@@ -342,55 +343,61 @@ public final class OscProfilesManager {
                         OscProfile profile = OscProfile.fromJson(object);
                         String id = profile.getId();
                         if (id == null || id.trim().isEmpty()) {
-                            filteredInvalidEntry = true;
+                            metadataNeedsRewrite = true;
+                            lostProfileEntry = true;
                             continue;
                         }
                         if (findById(profiles, id) == null) {
                             profiles.add(profile);
                         } else {
-                            filteredInvalidEntry = true;
+                            // Deduplication repairs metadata but is not evidence that a distinct
+                            // profile vanished, so do not resurrect unrelated stale references.
+                            metadataNeedsRewrite = true;
                         }
                     } catch (JSONException ignored) {
                         // Keep valid sibling entries instead of turning one broken profile into a
                         // catastrophic loss of the complete profile list.
-                        filteredInvalidEntry = true;
+                        metadataNeedsRewrite = true;
+                        lostProfileEntry = true;
                     }
                 }
             } catch (JSONException ignored) {
-                topLevelCorrupt = true;
                 profiles.clear();
+                metadataNeedsRewrite = true;
+                lostProfileEntry = true;
             }
         } else if (hadProfileMetadata) {
             // A present-but-non-string/blank profile value is damaged existing metadata, not the
             // normal first-run state where the key is absent entirely.
-            topLevelCorrupt = true;
+            metadataNeedsRewrite = true;
+            lostProfileEntry = true;
         }
 
-        if (profiles.isEmpty()) {
-            if (hadProfileMetadata && topLevelCorrupt) {
-                profiles = recoverProfilesFromMetadata(meta);
-            } else if (hadProfileMetadata) {
-                // A syntactically valid but empty/all-invalid list still represents damaged
-                // initialized metadata, so use surviving references before giving up on it.
-                profiles = recoverProfilesFromMetadata(meta);
-            } else {
-                // A missing profile list is the normal first-run state. Do not promote stale
-                // mappings left by an old install into real profiles merely because metadata has
-                // never been initialized.
-                profiles.add(defaultProfile());
-            }
+        if (!hadProfileMetadata) {
+            // A missing profile list is the normal first-run state. Do not promote stale mappings
+            // left by an old install into real profiles merely because metadata was never initialized.
+            profiles.add(defaultProfile());
             writeProfiles(context, profiles);
-        } else if (filteredInvalidEntry) {
+        } else if (profiles.isEmpty()) {
+            profiles = recoverProfilesFromMetadata(meta);
+            writeProfiles(context, profiles);
+        } else if (lostProfileEntry) {
+            // Partial corruption is still data loss. Merge IDs proven by active/game references or
+            // initialized snapshots while preserving the names/order of every valid sibling.
+            mergeRecoveredProfiles(profiles, recoverProfilesFromMetadata(meta));
+            ensureDefaultProfile(profiles);
+            writeProfiles(context, profiles);
+        } else if (metadataNeedsRewrite) {
             writeProfiles(context, profiles);
         }
         return profiles;
     }
 
     /**
-     * Reconstruct the minimum safe profile list after catastrophic profile-list loss. Existing
-     * active/game references and true snapshot markers are durable evidence that a profile ID was
-     * user-owned. We only do this when an existing profile list is unusable; ordinary first-run or
-     * stale-reference repair therefore keeps its existing behavior.
+     * Reconstruct the minimum safe profile list after profile-list loss. Existing active/game
+     * references and true snapshot markers are durable evidence that a profile ID was user-owned.
+     * Callers only use these references when stored profile metadata is demonstrably damaged;
+     * ordinary first-run or stale-reference repair therefore keeps its existing behavior.
      */
     private static ArrayList<OscProfile> recoverProfilesFromMetadata(SharedPreferences meta) {
         TreeSet<String> recoveredIds = new TreeSet<>();
@@ -417,6 +424,18 @@ public final class OscProfilesManager {
             profiles.add(new OscProfile(profileId, "Recovered OSC Profile " + recoveredIndex++));
         }
         return profiles;
+    }
+
+    private static void mergeRecoveredProfiles(List<OscProfile> profiles,
+                                               List<OscProfile> recoveredProfiles) {
+        for (OscProfile recovered : recoveredProfiles) {
+            if (recovered.isDefault()) {
+                continue;
+            }
+            if (findById(profiles, recovered.getId()) == null) {
+                profiles.add(recovered);
+            }
+        }
     }
 
     private static void addRecoverableId(Set<String> recoveredIds, Object rawId) {

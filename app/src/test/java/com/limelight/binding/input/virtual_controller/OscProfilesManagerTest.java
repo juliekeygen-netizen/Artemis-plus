@@ -116,6 +116,55 @@ public class OscProfilesManagerTest {
     }
 
     @Test
+    public void partialCorruptionRecoversReferencedMissingProfileAndKeepsValidSibling() throws Exception {
+        SharedPreferences meta = context.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE);
+        String recoveredId = "recovered-from-snapshot";
+        JSONArray profiles = new JSONArray()
+                .put(new JSONObject().put("id", OscProfile.DEFAULT_ID).put("name", "Default"))
+                .put(new JSONObject().put("id", "still-valid").put("name", "Still valid"))
+                .put(new JSONObject().put("name", "Damaged missing id"));
+        meta.edit()
+                .putString(KEY_PROFILES, profiles.toString())
+                .putString(KEY_ACTIVE_PROFILE, recoveredId)
+                .putBoolean(KEY_SNAPSHOT_INITIALIZED_PREFIX + recoveredId, true)
+                .commit();
+
+        List<OscProfile> repaired = OscProfilesManager.getProfiles(context);
+
+        assertEquals(3, repaired.size());
+        assertTrue(containsId(repaired, OscProfile.DEFAULT_ID));
+        assertTrue(containsId(repaired, "still-valid"));
+        OscProfile recovered = findById(repaired, recoveredId);
+        assertNotNull(recovered);
+        assertTrue(recovered.getName().startsWith("Recovered OSC Profile "));
+        assertEquals(recoveredId, OscProfilesManager.getActiveProfileId(context));
+        assertEquals(3, new JSONArray(meta.getString(KEY_PROFILES, "[]")).length());
+    }
+
+    @Test
+    public void duplicateMetadataDoesNotResurrectUnrelatedStaleMapping() throws Exception {
+        SharedPreferences meta = context.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE);
+        String staleGame = "stale-duplicate-game";
+        JSONArray profiles = new JSONArray()
+                .put(new JSONObject().put("id", OscProfile.DEFAULT_ID).put("name", "Default"))
+                .put(new JSONObject().put("id", "valid").put("name", "Valid"))
+                .put(new JSONObject().put("id", "valid").put("name", "Duplicate"));
+        meta.edit()
+                .putString(KEY_PROFILES, profiles.toString())
+                .putString(KEY_GAME_PROFILE_PREFIX + staleGame, "stale-only")
+                .commit();
+
+        List<OscProfile> repaired = OscProfilesManager.getProfiles(context);
+
+        assertEquals(2, repaired.size());
+        assertTrue(containsId(repaired, OscProfile.DEFAULT_ID));
+        assertTrue(containsId(repaired, "valid"));
+        assertFalse(containsId(repaired, "stale-only"));
+        assertNull(OscProfilesManager.getProfileForGame(context, staleGame));
+        assertFalse(meta.contains(KEY_GAME_PROFILE_PREFIX + staleGame));
+    }
+
+    @Test
     public void wrongTypeMetadataIsRepairedWithoutClassCastCrashes() {
         SharedPreferences meta = context.getSharedPreferences(META_PREFS, Context.MODE_PRIVATE);
         String gameKey = "wrong-type-game";

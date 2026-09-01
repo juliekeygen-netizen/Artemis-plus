@@ -189,7 +189,10 @@ public final class QuickMenuConfig {
             String type = item.optString("type", "");
             if (TYPE_ACTION.equals(type)) {
                 String actionId = item.optString("actionId", "");
-                if (StreamActionRegistry.contains(actionId)) {
+                // Persisted IDs from a newer Artemis Plus build must remain opaque rather than
+                // being destroyed by an older build. Runtime/editor lookup already treats unknown
+                // IDs as unavailable/inert. Interactive addAction() remains registry-gated below.
+                if (!actionId.trim().isEmpty()) {
                     page.items.add(Node.action(actionId));
                     counter.nodes++;
                 }

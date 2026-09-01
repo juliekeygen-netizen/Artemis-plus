@@ -325,6 +325,8 @@ public final class OscProfilesManager {
         boolean hadProfileMetadata = meta.contains(KEY_PROFILES);
         Object rawSerialized = meta.getAll().get(KEY_PROFILES);
         String serialized = rawSerialized instanceof String ? (String) rawSerialized : null;
+        boolean filteredInvalidEntry = false;
+        boolean topLevelCorrupt = false;
 
         if (serialized != null && !serialized.trim().isEmpty()) {
             try {
@@ -332,25 +334,44 @@ public final class OscProfilesManager {
                 for (int i = 0; i < array.length(); i++) {
                     JSONObject object = array.optJSONObject(i);
                     if (object == null) {
+                        filteredInvalidEntry = true;
                         continue;
                     }
 
-                    OscProfile profile = OscProfile.fromJson(object);
-                    String id = profile.getId();
-                    if (id == null || id.trim().isEmpty()) {
-                        continue;
-                    }
-                    if (findById(profiles, id) == null) {
-                        profiles.add(profile);
+                    try {
+                        OscProfile profile = OscProfile.fromJson(object);
+                        String id = profile.getId();
+                        if (id == null || id.trim().isEmpty()) {
+                            filteredInvalidEntry = true;
+                            continue;
+                        }
+                        if (findById(profiles, id) == null) {
+                            profiles.add(profile);
+                        } else {
+                            filteredInvalidEntry = true;
+                        }
+                    } catch (JSONException ignored) {
+                        // Keep valid sibling entries instead of turning one broken profile into a
+                        // catastrophic loss of the complete profile list.
+                        filteredInvalidEntry = true;
                     }
                 }
             } catch (JSONException ignored) {
+                topLevelCorrupt = true;
                 profiles.clear();
             }
+        } else if (hadProfileMetadata) {
+            // A present-but-non-string/blank profile value is damaged existing metadata, not the
+            // normal first-run state where the key is absent entirely.
+            topLevelCorrupt = true;
         }
 
         if (profiles.isEmpty()) {
-            if (hadProfileMetadata) {
+            if (hadProfileMetadata && topLevelCorrupt) {
+                profiles = recoverProfilesFromMetadata(meta);
+            } else if (hadProfileMetadata) {
+                // A syntactically valid but empty/all-invalid list still represents damaged
+                // initialized metadata, so use surviving references before giving up on it.
                 profiles = recoverProfilesFromMetadata(meta);
             } else {
                 // A missing profile list is the normal first-run state. Do not promote stale
@@ -358,6 +379,8 @@ public final class OscProfilesManager {
                 // never been initialized.
                 profiles.add(defaultProfile());
             }
+            writeProfiles(context, profiles);
+        } else if (filteredInvalidEntry) {
             writeProfiles(context, profiles);
         }
         return profiles;

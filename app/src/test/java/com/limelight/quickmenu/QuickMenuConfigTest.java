@@ -76,20 +76,77 @@ public class QuickMenuConfigTest {
     }
 
     @Test
-    public void unknownActionIsSanitizedWithoutDiscardingValidSiblings() throws Exception {
+    public void unknownPersistedActionIsPreservedWithValidSiblings() throws Exception {
         JSONObject root = new JSONObject();
         root.put("id", "root");
         root.put("title", "Quick Menu");
         JSONArray items = new JSONArray();
-        items.put(new JSONObject().put("type", "action").put("actionId", "removed.future.action"));
+        items.put(new JSONObject().put("type", "action").put("actionId", "future.action.from.newer.client"));
         items.put(new JSONObject().put("type", "action").put("actionId", StreamActionRegistry.TASK_MANAGER));
         root.put("items", items);
         JSONObject object = new JSONObject().put("version", QuickMenuConfig.CURRENT_VERSION).put("root", root);
 
         QuickMenuConfig parsed = QuickMenuConfig.fromJson(object);
         assertNotNull(parsed);
+        assertEquals(2, parsed.root.items.size());
+        assertEquals("future.action.from.newer.client", parsed.root.items.get(0).actionId);
+        assertEquals(StreamActionRegistry.TASK_MANAGER, parsed.root.items.get(1).actionId);
+    }
+
+    @Test
+    public void unknownPersistedActionSurvivesRepeatedPreferenceRoundTrips() throws Exception {
+        String futureId = "future.action.from.newer.client";
+        JSONObject root = new JSONObject()
+                .put("id", "root")
+                .put("title", "Quick Menu")
+                .put("items", new JSONArray()
+                        .put(new JSONObject()
+                                .put("type", QuickMenuConfig.TYPE_ACTION)
+                                .put("actionId", futureId))
+                        .put(new JSONObject()
+                                .put("type", QuickMenuConfig.TYPE_ACTION)
+                                .put("actionId", StreamActionRegistry.TASK_MANAGER)));
+        QuickMenuConfig imported = QuickMenuConfig.fromJson(new JSONObject()
+                .put("version", QuickMenuConfig.CURRENT_VERSION)
+                .put("root", root));
+        assertNotNull(imported);
+
+        QuickMenuConfig.save(context, imported);
+        QuickMenuConfig firstLoad = QuickMenuConfig.load(context);
+        assertEquals(futureId, firstLoad.root.items.get(0).actionId);
+        assertEquals(StreamActionRegistry.TASK_MANAGER, firstLoad.root.items.get(1).actionId);
+
+        QuickMenuConfig.save(context, firstLoad);
+        QuickMenuConfig secondLoad = QuickMenuConfig.load(context);
+        assertEquals(2, secondLoad.root.items.size());
+        assertEquals(futureId, secondLoad.root.items.get(0).actionId);
+        assertEquals(StreamActionRegistry.TASK_MANAGER, secondLoad.root.items.get(1).actionId);
+    }
+
+    @Test
+    public void blankPersistedActionsAreDiscardedButInteractiveUnknownActionsStayRejected() throws Exception {
+        JSONObject root = new JSONObject()
+                .put("id", "root")
+                .put("title", "Quick Menu")
+                .put("items", new JSONArray()
+                        .put(new JSONObject()
+                                .put("type", QuickMenuConfig.TYPE_ACTION)
+                                .put("actionId", ""))
+                        .put(new JSONObject()
+                                .put("type", QuickMenuConfig.TYPE_ACTION)
+                                .put("actionId", "   "))
+                        .put(new JSONObject()
+                                .put("type", QuickMenuConfig.TYPE_ACTION)
+                                .put("actionId", StreamActionRegistry.TASK_MANAGER)));
+        QuickMenuConfig parsed = QuickMenuConfig.fromJson(new JSONObject()
+                .put("version", QuickMenuConfig.CURRENT_VERSION)
+                .put("root", root));
+
+        assertNotNull(parsed);
         assertEquals(1, parsed.root.items.size());
         assertEquals(StreamActionRegistry.TASK_MANAGER, parsed.root.items.get(0).actionId);
+        assertFalse(QuickMenuConfig.addAction(parsed.root, "future.action.from.newer.client"));
+        assertFalse(QuickMenuConfig.addAction(parsed.root, ""));
     }
 
     @Test

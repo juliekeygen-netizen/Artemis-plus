@@ -102,7 +102,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git diff --check
+          git -c core.whitespace=cr-at-eol diff --check
           git diff --numstat
           unexpected="$(git diff --name-only | grep -Ev '^app/src/main/res/values-[^/]+/[^/]+\.xml$' || true)"
           if [[ -n "$unexpected" ]]; then
@@ -159,7 +159,7 @@ jobs:
           git config user.name 'Artemis Plus Audit Bot'
           git config user.email 'actions@users.noreply.github.com'
           git add app/src/main/res .github/workflows/resource-warning-cleanup-v2.yml
-          git diff --cached --check
+          git -c core.whitespace=cr-at-eol diff --cached --check
           total_changes="$(git diff --cached --numstat | awk '$3 !~ /^\.github\/workflows\// {a+=$1; d+=$2} END {print a+d+0}')"
           if (( total_changes > 40 )); then
             echo "Final resource diff unexpectedly large (${total_changes} changed lines)." >&2

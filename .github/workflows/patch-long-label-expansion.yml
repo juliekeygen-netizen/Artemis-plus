@@ -1,0 +1,77 @@
+name: Patch long-label expansion topology
+
+on:
+  push:
+    branches:
+      - fix/long-label-connected-expansion
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Run guarded long-label topology patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/long-label-connected-expansion
+      - name: Apply guarded source and regression patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          helper_path = Path('app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/LayoutSnappingHelper.java')
+          controller_path = Path('app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardController.java')
+          test_path = Path('app/src/test/java/com/limelight/binding/input/virtual_controller/keyboard/LayoutSnappingHelperTest.java')
+
+          helper = helper_path.read_text()
+          import_anchor = 'import android.widget.FrameLayout;\n'
+          util_imports = '''import android.widget.FrameLayout;\n\nimport java.util.ArrayDeque;\nimport java.util.HashSet;\nimport java.util.Set;\n'''
+          if helper.count(import_anchor) != 1:
+              raise SystemExit('Unexpected LayoutSnappingHelper import anchor count')
+          helper = helper.replace(import_anchor, util_imports, 1)
+
+          method_anchor = '    public static SnapResult calculateSnappedPosition(View movingView, View[] otherViews,\n'
+          follower_method = '''    /**\n     * Return the controls that must move right when {@code expandingView} grows horizontally.\n     *\n     * The graph is evaluated entirely from the pre-expansion geometry. Only controls attached to\n     * the expanding control's right edge seed traversal; the expanding control itself is then a\n     * traversal boundary. This preserves offset descendants connected through the right-side\n     * component without dragging branches that are attached only to the left or below.\n     */\n    static Set<View> findRightExpansionFollowers(View expandingView, View[] connectedGroup) {\n        Set<View> followers = new HashSet<>();\n        if (!isGroupCandidate(expandingView) || connectedGroup == null) {\n            return followers;\n        }\n\n        FrameLayout.LayoutParams source =\n                (FrameLayout.LayoutParams) expandingView.getLayoutParams();\n        int sourceWidth = Math.max(1, source.width);\n        int sourceHeight = Math.max(1, source.height);\n        int sourceRight = source.leftMargin + sourceWidth;\n        int sourceBottom = source.topMargin + sourceHeight;\n        ArrayDeque<View> pending = new ArrayDeque<>();\n\n        // Seed only direct neighbors on the old right edge. Using the same proportional tolerance\n        // as areGrouped() keeps uniformly scaled 4px snap gaps connected.\n        for (View candidate : connectedGroup) {\n            if (candidate == expandingView || !isGroupCandidate(candidate)) {\n                continue;\n            }\n            FrameLayout.LayoutParams params =\n                    (FrameLayout.LayoutParams) candidate.getLayoutParams();\n            int candidateWidth = Math.max(1, params.width);\n            int candidateHeight = Math.max(1, params.height);\n            int verticalOverlap = overlap(source.topMargin, sourceBottom,\n                    params.topMargin, params.topMargin + candidateHeight);\n            int minHeight = Math.min(sourceHeight, candidateHeight);\n            int horizontalTolerance = Math.max(\n                    SNAP_THRESHOLD,\n                    Math.round(Math.min(sourceWidth, candidateWidth) *\n                            GROUP_SIZE_TOLERANCE_RATIO));\n            boolean directRightNeighbor = params.leftMargin >= source.leftMargin &&\n                    verticalOverlap >= minHeight * GROUP_PARALLEL_OVERLAP &&\n                    Math.abs(sourceRight - params.leftMargin) <= horizontalTolerance;\n            if (directRightNeighbor && followers.add(candidate)) {\n                pending.addLast(candidate);\n            }\n        }\n\n        // Traverse the old connected graph from those right-edge seeds. Never cross back through\n        // the expanding control, otherwise a left/below-only branch would be translated too.\n        while (!pending.isEmpty()) {\n            View current = pending.removeFirst();\n            for (View candidate : connectedGroup) {\n                if (candidate == expandingView || followers.contains(candidate) ||\n                        !isGroupCandidate(candidate)) {\n                    continue;\n                }\n                if (areGrouped(current, candidate)) {\n                    followers.add(candidate);\n                    pending.addLast(candidate);\n                }\n            }\n        }\n        return followers;\n    }\n\n    private static boolean isGroupCandidate(View view) {\n        return view != null && view.getVisibility() == View.VISIBLE &&\n                view.getLayoutParams() instanceof FrameLayout.LayoutParams;\n    }\n\n'''
+          if helper.count(method_anchor) != 1:
+              raise SystemExit('Unexpected LayoutSnappingHelper method anchor count')
+          helper = helper.replace(method_anchor, follower_method + method_anchor, 1)
+          helper_path.write_text(helper)
+
+          controller = controller_path.read_text()
+          old_block = '''        int oldRight = params.leftMargin + params.width;\n        int delta = targetWidth - params.width;\n        int elementTop = params.topMargin;\n        int elementBottom = params.topMargin + params.height;\n        params.width = targetWidth;\n        element.requestLayout();\n\n        for (keyBoardVirtualControllerElement other : group) {\n            if (other == element || !(other.getLayoutParams() instanceof FrameLayout.LayoutParams)) {\n                continue;\n            }\n            FrameLayout.LayoutParams otherParams = (FrameLayout.LayoutParams) other.getLayoutParams();\n            int overlap = Math.min(elementBottom, otherParams.topMargin + otherParams.height) -\n                    Math.max(elementTop, otherParams.topMargin);\n            int minHeight = Math.min(params.height, otherParams.height);\n            if (otherParams.leftMargin >= oldRight - 6 && overlap >= minHeight * 0.35f) {\n                otherParams.leftMargin += delta;\n                other.requestLayout();\n            }\n        }\n'''
+          new_block = '''        Set<View> expansionFollowers = LayoutSnappingHelper.findRightExpansionFollowers(\n                element, group.toArray(new View[0]));\n        int delta = targetWidth - params.width;\n        params.width = targetWidth;\n        element.requestLayout();\n\n        for (keyBoardVirtualControllerElement other : group) {\n            if (!expansionFollowers.contains(other) ||\n                    !(other.getLayoutParams() instanceof FrameLayout.LayoutParams)) {\n                continue;\n            }\n            FrameLayout.LayoutParams otherParams =\n                    (FrameLayout.LayoutParams) other.getLayoutParams();\n            otherParams.leftMargin += delta;\n            otherParams.rightMargin = 0;\n            other.requestLayout();\n        }\n'''
+          if controller.count(old_block) != 1:
+              raise SystemExit('Old long-label expansion block did not match exactly once')
+          controller = controller.replace(old_block, new_block, 1)
+          controller_path.write_text(controller)
+
+          test = test_path.read_text()
+          test_import_anchor = 'import org.robolectric.annotation.Config;\n'
+          test_import_replacement = 'import org.robolectric.annotation.Config;\n\nimport java.util.Set;\n'
+          if test.count(test_import_anchor) != 1:
+              raise SystemExit('Unexpected test import anchor count')
+          test = test.replace(test_import_anchor, test_import_replacement, 1)
+
+          test_anchor = '    @Test\n    public void moveLockUsesReleaseHysteresisAndCanReattach() {\n'
+          regression = '''    @Test\n    public void longLabelExpansionFollowsOldRightSideTopology() {\n        Context context = ApplicationProvider.getApplicationContext();\n        View expanding = sizedView(context, 100, 100, 40, 40);\n        View directRight = sizedView(context, 144, 100, 40, 40);\n        // This descendant is attached below directRight, but its left edge is deliberately less\n        // than oldRight - 6 (140 - 6). The rejected threshold-only implementation stranded it.\n        View offsetDescendant = sizedView(context, 125, 144, 40, 40);\n        View leftOnly = sizedView(context, 56, 100, 40, 40);\n        View belowOnly = sizedView(context, 100, 144, 40, 40);\n\n        Set<View> followers = LayoutSnappingHelper.findRightExpansionFollowers(\n                expanding,\n                new View[]{expanding, directRight, offsetDescendant, leftOnly, belowOnly});\n\n        assertTrue(followers.contains(directRight));\n        assertTrue(followers.contains(offsetDescendant));\n        assertFalse(followers.contains(expanding));\n        assertFalse(followers.contains(leftOnly));\n        assertFalse(followers.contains(belowOnly));\n    }\n\n    @Test\n    public void longLabelExpansionWithoutRightSeedDoesNotMoveStackedBranch() {\n        Context context = ApplicationProvider.getApplicationContext();\n        View expanding = sizedView(context, 100, 100, 40, 40);\n        View below = sizedView(context, 100, 144, 40, 40);\n        View belowChild = sizedView(context, 144, 144, 40, 40);\n\n        Set<View> followers = LayoutSnappingHelper.findRightExpansionFollowers(\n                expanding, new View[]{expanding, below, belowChild});\n\n        assertTrue(followers.isEmpty());\n    }\n\n'''
+          if test.count(test_anchor) != 1:
+              raise SystemExit('Unexpected LayoutSnappingHelperTest anchor count')
+          test = test.replace(test_anchor, regression + test_anchor, 1)
+          test_path.write_text(test)
+          PY
+
+          rm .github/workflows/patch-long-label-expansion.yml
+          git diff --check
+          git diff --stat
+          git config user.name 'Artemis Plus Audit Bot'
+          git config user.email 'artemis-plus-audit@users.noreply.github.com'
+          git add app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/LayoutSnappingHelper.java \
+                  app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardController.java \
+                  app/src/test/java/com/limelight/binding/input/virtual_controller/keyboard/LayoutSnappingHelperTest.java \
+                  .github/workflows/patch-long-label-expansion.yml
+          git commit -m 'Preserve connected controls during label expansion'
+          git push origin HEAD:fix/long-label-connected-expansion

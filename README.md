@@ -141,7 +141,7 @@ The native **floating Quick Menu button** and **Zoom/Pan button** now remember w
 
 ## Existing deposited controls
 
-The Marssvoodoo base already contained much of Diana's useful keyboard-OSC work, including the **Add Keys** flow for depositing keyboard keys, mouse controls, joysticks/D-pads, and imported custom key combinations into the movable on-screen layer. Artemis Plus keeps that code and extends the same layer with **Add Actions** rather than replacing it.
+The Marssvoodoo base already contained much of Diana's useful keyboard-OSC work, including the **Add Keys** flow for depositing keyboard keys, mouse controls, joysticks/D-pads, triggers, and imported custom key combinations into the movable on-screen layer. Artemis Plus keeps that code and extends the same layer with **Add Actions** rather than replacing it.
 
 ## Not ported yet
 
@@ -161,16 +161,18 @@ Artemis Plus is primarily intended for [Apollo](https://github.com/ClassicOldSon
 
 The easiest download is the rolling [**Artemis Plus Debug (Latest)**](https://github.com/juliekeygen-netizen/Artemis-plus/releases/tag/debug-latest) prerelease.
 
-Every successful build of `main` automatically refreshes that same release and moves the `debug-latest` tag to the newly built commit, so the URL stays stable instead of creating hundreds of release entries.
+Every successful verified build of `main` refreshes that same release and moves the `debug-latest` tag to the newly built commit, so the URL stays stable instead of creating hundreds of release entries.
 
 1. Open **Releases** and choose **Artemis Plus Debug (Latest)**.
 2. Download the APK matching your device CPU.
 3. For almost all modern Android phones/tablets, choose **`app-nonRoot_game-arm64-v8a-debug.apk`**.
 4. Install the APK on Android.
 
-The release also contains `INSTALL.txt` and `SHA256SUMS.txt`. These are debug-signed test builds, and the debug application ID is separate from the normal release application ID, so the build can normally coexist with a regular Artemis installation.
+The rolling release contains four ABI-specific APKs plus `INSTALL.txt`, `SIGNING.txt`, and `SHA256SUMS.txt`. Although these are debug-variant test builds, the rolling artifacts use the persistent Artemis Plus project signing identity rather than an arbitrary per-machine debug key. The release workflow verifies every APK certificate before publication. The debug application ID is separate from the normal release application ID, so the build can normally coexist with a regular Artemis installation.
 
 The workflow also keeps the **Artemis-Plus-debug-APKs** GitHub Actions artifact for 30 days as a secondary download method.
+
+See `SIGNING.md` for the established certificate fingerprint, restore/backup rules, and release-verification details.
 
 ### Trigger a cloud build manually
 
@@ -181,15 +183,17 @@ You do **not** need Android Studio just to get a test APK:
 3. Click **Run workflow** and run it from `main`.
 4. When the build succeeds, the **Artemis Plus Debug (Latest)** Release is refreshed automatically and the Actions artifact is uploaded too.
 
+The persistent signed release path is intentionally main-only. Feature/audit branches use the normal Android CI workflow rather than producing rolling signed APKs.
+
 ### Local build
 
-For the simplest Windows workflow after the SDK/JDK are configured, run from the repository root:
+For the simplest Windows workflow after the SDK/JDK are configured and the backed-up Artemis Plus signing identity has been restored/verified, run from the repository root:
 
 ```powershell
 .\build-apk.ps1
 ```
 
-That builds the non-root debug variant, selects the ARM64 APK, and copies it to the repository root as `Artemis-Plus-debug-arm64.apk`. Use `-OpenFolder` if you want Explorer to open with the result selected.
+That verifies the local certificate, builds the non-root debug variant, selects the ARM64 APK, and copies it to the repository root as `Artemis-Plus-debug-arm64.apk`. Use `-OpenFolder` if you want Explorer to open with the result selected. If this is a fresh clone or the private signing folder was moved, restore `.artemis-signing` and run `setup-signing.ps1`; the script deliberately refuses to invent a replacement identity. See `SIGNING.md`.
 
 For a manual Gradle build instead:
 
@@ -213,6 +217,8 @@ On Windows PowerShell use:
 .\gradlew.bat :app:assembleNonRoot_gameDebug
 ```
 
+A direct manual Gradle invocation only uses the persistent Artemis Plus signer when its signing configuration is present. For an installable build intended to update an established Artemis Plus debug installation, prefer `build-apk.ps1` because it verifies the certificate before building.
+
 The generated APKs are placed under `app/build/outputs/apk/`.
 
 ## Verification
@@ -222,7 +228,7 @@ GitHub Actions uses the non-root debug variant as the main verification target:
 - Java compilation is a hard gate.
 - Artemis Plus OSC/profile/action regression tests are hard gates.
 - The complete inherited Artemis/Marssvoodoo Robolectric suite is also run and its reports are uploaded for diagnostics.
-- The debug APK workflow performs a full installable APK assembly in addition to Java compilation.
+- The main-only debug APK workflow performs a full installable APK assembly, requires the established keystore certificate, verifies the four expected ABI outputs, checks every APK certificate with `apksigner`, then gives only the separate publish job write access to refresh `debug-latest`.
 
 The inherited test baseline currently contains five known Robolectric failures across `LayoutInflationTest`, `SimpleStartupTest`, `StartupTest`, and `ProfilesNavigationTest`. The second audit reproduced the same five failures from the **pre-OSC base commit** (`f5587a81d73bf2501b68f1e5a48ca736aa5520a2`), proving they were not introduced by the Artemis Plus OSC changes. They remain visible in CI reports instead of being hidden, but do not make unrelated OSC commits fail their gate.
 
@@ -237,19 +243,3 @@ Artemis Plus builds on substantial work by many people. In particular:
 - **Marssvoodoo/artemis-android** — Marssvoodoo, including the newer Artemis reliability/streaming work used as this project's base
 - **Diana OSC Suite** — ZDPepos, whose OSC profile, snapping, paired-sizing, deposited-control, and foldable-control experiments are important references for this project
 - **Lucide Icons and Tabler Icons** — source designs for the Artemis Plus local-action icon set; several icons are adapted or combined for Artemis-specific meanings
-
-Please preserve upstream copyright and attribution notices when redistributing modified builds.
-
-## License
-
-This project inherits the **GNU General Public License v3.0** licensing of the upstream Moonlight/Artemis codebase. See [LICENSE.txt](LICENSE.txt) for the full license text.
-
-## Artemis Plus troubleshooting
-
-### Stream works but touch / mouse / keyboard / controller input does nothing
-
-Apollo permissions are per paired client. A newly paired client can have permission to view a
-stream while its input permissions remain disabled. In Apollo's **PIN / paired clients** page,
-grant the Artemis client **Mouse Input**, **Keyboard Input**, **Touch Input**, and **Controller
-Input** (plus **Launch Apps** when needed). This is especially easy to hit after uninstalling the
-Android app because the reinstall pairs as a new client.

@@ -1,10 +1,6 @@
 # Artemis Plus — Codex Review Handoff
 
-This is the **rolling review packet** for the latest coherent Codex/agent task.
-
-`AGENTS.md` requires this file to be refreshed at the end of coherent work so a future reviewer can recover the exact intent, risks, validation, and durable repository state without relying on old chat context.
-
-Git history preserves earlier versions. Keep the working copy focused on the latest task and verify live source/history before acting on any SHA recorded here.
+This is the rolling review packet for the latest coherent Codex/agent task. Verify live GitHub state before relying on any recorded SHA because the final handoff commit itself necessarily advances the branch.
 
 ---
 
@@ -12,204 +8,179 @@ Git history preserves earlier versions. Keep the working copy focused on the lat
 
 ### Task
 
-Continuum independent audit, merge-safety repair, regression strengthening, and post-merge durable-state synchronization.
+Release/signing/workflow security and reliability audit.
+
+### User goal
+
+Continue the Continuum audit autonomously, fix important defects rather than merely report them, keep the established Android update signer safe, and continue into further useful audits instead of stopping for routine guidance.
 
 ### Repository state
 
-- Product/audit baseline before this documentation-sync branch: `main` at `9c01289095c5ef65631d794a8b608febebf50347`
-- Task branch: `audit/postmerge-state-sync`
-- `PROJECT_STATE.md` refresh commit on this branch: `b5c0c5dc394cdf48c027aeb64620fa6dd41dde63`
-- Current branch head: the commit containing this handoff or a later audit-only successor; inspect the live branch before review.
-- No Android application/build/signing behavior is intentionally changed by this state-sync task.
+- Base branch: `main`
+- Base commit: `bc7bf204371290a7c1051773bddbcca3ce39a02f` (`Sync durable state after Continuum audit (#19)`)
+- Task branch: `audit/release-signing-hardening`
+- Last implementation/state commit before this handoff write: `c3e2345c49739cd4dd286bea3f02636b540a6467`
+- Pull request: not yet opened at the time this handoff text was written; publish after final diff/CI review.
 
-### Scope completed in the Continuum audit
+### Scope completed
 
-The independent audit reviewed the parallel work that followed PR #9, corrected unsafe or misleading pieces, normalized merge-conflicting handoff changes out of parallel PRs, reran CI on corrected heads, and merged the clean pieces in dependency-safe order.
+#### GitHub Actions release path
 
-Merged audit sequence:
+`.github/workflows/build-debug-apk.yml` was audited against the actual current Actions/release behavior.
 
-- **#18 — Remove accidental Repo AutoPull artifacts** → `1ceb0b17976f760bb6ad1fd4870a25560ce9713b`
-- **#12 — Audit keyboard profile Action bundles** → `9673142c93cf8d3afbe1e8865e774b8ba1b36a58`
-- **#14 — Polish Artemis editor dialogs/localization infrastructure** → `58ec2d38132b5d30793c23a0165766bb1590891d`
-- **#13 — Make keyboard layout snapping deterministic** → `e4187081d4663ad261354c9fdfe9a1e605e4be56`
-- **#15 — Quick Menu/OSC profile boundary regressions** → `4eec6f0d2178e0dac96521cd4c9961ffcc1e63d3`
-- **#16 — Sideways-stream layout invariants** → `544c57494661bae5854e38325a67241a67c84666`
-- **#17 — Diana foldable feasibility audit** → `9c01289095c5ef65631d794a8b608febebf50347`
+The old workflow:
 
-### Most important audit findings and corrections
+- ran automatically on `main` **and `audit/**`** pushes;
+- granted `contents: write` to the whole workflow;
+- referenced the persistent project signing repository secrets on audit-branch runs;
+- computed the signer fingerprint but did not require the established fingerprint before publication;
+- did not independently verify the certificate on every output APK;
+- deleted the entire rolling `debug-latest` release before recreating it.
 
-#### 1. Repository contamination was removed
+The hardened branch now:
 
-A direct `main` commit (`de32c77770346c7029dcde8011157b3ab302ed13`) accidentally added nine RepoAutoPull artifacts unrelated to Artemis Plus, including generated Windows executables/shortcuts, a helper script/readme, and config containing a machine-local absolute repository path.
+- automatically runs the signed release workflow only on `main`;
+- skips the privileged build job for a non-main manual dispatch;
+- uses `contents: read` by default and grants `contents: write` only to the separate publish job after verification;
+- requires all persistent signing values and has no ephemeral/throwaway rolling-release signer fallback;
+- uses one workflow-level public expected certificate fingerprint so signing/build/publish checks cannot drift independently;
+- rejects the reconstructed keystore unless it matches the established Artemis Plus certificate;
+- requires exactly one APK for each configured ABI (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`) and exactly four APKs total;
+- uses exact ABI filename matching so `x86` cannot accidentally count `x86_64`;
+- independently verifies every APK certificate with Android `apksigner`;
+- creates checksums/install/signing metadata only after package verification;
+- moves the rolling tag only after the package is verified;
+- updates an existing `debug-latest` release in place with `gh release upload --clobber` + `gh release edit` rather than deleting the whole release first;
+- creates the release only when it does not already exist.
 
-PR #18 was verified as the exact inverse of that commit and removed exactly those nine paths without touching Artemis application/build/signing code. A later root-tree check found no RepoAutoPull leftovers.
+#### Local signing tooling
 
-#### 2. Artemis Action profile import/export was already substantially implemented
+New `signing-common.ps1` centralizes local certificate inspection and stable-fingerprint enforcement.
 
-The audit confirmed the modern `artemis-plus-keyboard-profiles` format already round-trips profile layout, custom-key definitions, and Artemis Action selections. The stale README claim that Action support was still wholly planned was corrected.
+`setup-signing.ps1` previously generated a new JKS when `.artemis-signing` was absent, then could upload that incompatible identity over the GitHub repository secrets. Because Artemis Plus now has an established update identity, that behavior was unsafe.
 
-#12 also hardened compatibility:
+It now:
 
-- unknown/future Action IDs survive older-client import/export inertly;
-- unknown IDs are never instantiated/executed by a build that does not know them;
-- editing known Actions preserves opaque IDs;
-- known Action export order is deterministic, followed by sorted unknown IDs;
-- unsupported modern bundle format/version is rejected;
-- modern bundle structure is validated before profile writes;
-- legacy single-layout geometry import remains compatible and intentionally geometry-only.
+- requires an existing/restored keystore + properties pair;
+- rejects partial/missing local signing state;
+- refuses automatic replacement-key generation;
+- verifies the actual certificate against the established fingerprint before changing anything;
+- repairs only the local absolute `storeFile` path after a valid backup is restored to another clone/PC;
+- uploads values to GitHub only after identity verification.
 
-A deeper audit traced the downstream key/action importers before accepting the partial-write claim.
+`build-apk.ps1` now also verifies the actual local certificate before Gradle starts and refuses machine-specific debug-keystore fallback.
 
-#### 3. An unsafe snapping/text-expansion implementation was removed before merge
-
-The original #13 branch attempted to shift a connected control group when a long custom-key label widened. Audit found a topology defect: a direct right-edge neighbor could move while an offset descendant connected through it stayed behind because the descendant's own X coordinate failed a simple threshold test.
-
-The unsafe controller/text-expansion behavior was removed completely instead of shipping a known-bad fix. `KeyBoardController.java` remained on the safe baseline for that behavior.
-
-What did merge from #13:
-
-- deterministic tie-breaking for equal-score snap candidates;
-- mixed-size/no-resize, center, gap, nearest-candidate, grouping and hysteresis regressions;
-- a pure helper exposing the existing sticky-axis release comparison for tests without changing the release rule.
-
-Future connected long-label expansion must use **pre-expansion graph traversal**, not the rejected threshold-only translation. See `PROJECT_STATE.md` for the required topology/regression shape.
-
-#### 4. Parallel #12/#14 Action-picker overlap was neutralized
-
-#12 and #14 originally changed the same Action-picker file from the same old base. During audit, #14's `ArtemisActionButtonFactory.java` was replaced with the audited #12 version before #12 merged. After #12 merged, the #14 branch file was byte-identical to `main`, preventing #14 from accidentally undoing forward-compatible unknown-ID behavior.
-
-#### 5. Localization scope was corrected
-
-#14 improved `ArtemisEditorUi` consistency, resource-backed shell strings/plurals, and compact-dialog scrolling. It does **not** finish Artemis Plus localization.
-
-Two important display catalogs remain hard-coded English:
-
-- `ArtemisAction` labels;
-- `StreamActionRegistry` labels/categories/descriptions.
-
-Stable IDs are persistence/runtime contracts and must never be translated or renamed as part of display localization.
-
-#### 6. Sideways stream coverage improved, native validation remains
-
-#16 added layout-level regression coverage without changing production behavior. Physical-device validation is still required for TextureView/MediaCodec Surface transitions, CW/CCW input transforms, PiP/fallback UX, IME/system-window behavior, and Keep Alive handoff.
-
-#### 7. Diana foldable work is not a hidden feature to port wholesale
-
-The independent audit checked cited Diana history, including foldable/configuration compatibility commits, and found no reusable full cover-screen controller, virtual analog-trigger subsystem, or cover-profile UI. `DIANA_FOLDABLE_FEASIBILITY.md` records the evidence and proposes capability-gated POC boundaries.
-
-### Tests and CI actually observed
-
-Corrected audit PR heads were green in Android CI before merge, including the narrowed #13 snapping head and cross-PR-safe #14 head. #15/#16 regression-only heads and #17 documentation head also had successful CI in the audit session.
-
-Important precision: immediate checks of some squash-merge commit SHAs did **not** expose a separate post-merge workflow run at that moment. Do not claim every squash merge itself had a new CI run unless current Actions history proves it.
-
-No signing material was rotated during the audit.
-
-### Current unresolved / high-risk areas
-
-- connected long-label expansion across mixed-size/offset control topology;
-- final resource-backed display metadata for Action and Quick Menu registries;
-- real-device Sideways/TextureView/MediaCodec behavior;
-- Keep Alive / Fast Resume / Surface/controller lifecycle races that Robolectric cannot fully model;
-- release/signing/workflow drift and whether rolling `debug-latest` still targets current `main` after the audit merges;
-- repository hygiene after the accidental RepoAutoPull direct commit.
-
-### Next audit priority
-
-Continue in audit mode with **release/signing/workflow drift** first:
-
-- inspect `.github/workflows/` triggers and gates;
-- determine intended PR vs `main` post-merge CI behavior;
-- inspect rolling `debug-latest` publication flow and current tag/release target;
-- compare `SIGNING.md` to actual workflow behavior;
-- verify signer-check/checksum mechanisms;
-- scan tracked source for signing secrets, generated binaries, machine-local paths, temporary diagnostics and release outputs.
-
-Read-only first. Do not regenerate or rotate signing identity.
-
-After that, audit persisted-state robustness and lifecycle/race regressions as prioritized in `PROJECT_STATE.md`.
+`SIGNING.md` now documents the project as being in the long-term preserve-the-established-identity phase rather than initial key creation.
 
 ### Stable signing invariant
 
-Previously verified certificate SHA-256:
+Expected certificate SHA-256:
 
 `88c430db21b298bab7b654ce3b9300e33bf1917df4bf1a73047c9590f0080083`
 
-Rolling prerelease tag:
+This is public certificate identity metadata. The private keystore/passwords remain secrets.
 
-`debug-latest`
+### Important residual security limitation
 
-Never expose signing secrets or replace the established signer casually.
+The four signing values are still repository-level GitHub Actions secrets:
+
+- `ARTEMIS_PLUS_KEYSTORE_BASE64`
+- `ARTEMIS_PLUS_KEYSTORE_PASSWORD`
+- `ARTEMIS_PLUS_KEY_ALIAS`
+- `ARTEMIS_PLUS_KEY_PASSWORD`
+
+Trigger and token hardening reduce accidental exposure, but repository-level secrets are not the strongest boundary against same-repository workflow edits.
+
+The stronger end state is a protected GitHub Actions environment (for example `release-signing`) restricted to `main`, followed by deletion of the repository-level copies. Do **not** switch the workflow to environment-only references until the real values have been migrated from the backed-up private signing material; GitHub does not reveal existing secret values for copying.
+
+This connector session cannot recover those secret values, so the branch intentionally preserves the functioning repository-secret references while documenting the safer migration path.
+
+### Files materially changed
+
+- `.github/workflows/build-debug-apk.yml`
+- `signing-common.ps1` — new
+- `setup-signing.ps1`
+- `build-apk.ps1`
+- `SIGNING.md`
+- `AGENTS.md` — signing safety + stale roadmap correction
+- `PROJECT_STATE.md` — durable release audit state/next priorities
+- `CODEX_HANDOFF.md` — this review packet
+
+No Android application source, product persistence format, native streaming code, Gradle configuration, or private signing material is intentionally changed.
+
+### Compatibility / safety behavior
+
+- Existing stable signer is preserved; no key material was rotated.
+- Existing repository secret names remain unchanged so the current release setup can continue working.
+- Rolling tag remains `debug-latest`.
+- Build target remains `:app:assembleNonRoot_gameDebug`.
+- Expected release APK set remains the four configured ABI splits already produced by `app/build.gradle`.
+- Android update compatibility is now explicitly fail-closed on signer mismatch.
+- Local users with a valid backed-up `.artemis-signing` directory can restore it on a new path; only `storeFile` is normalized after certificate verification.
+
+### Audit defects found during implementation itself
+
+Independent self-review caught and fixed two would-be pipeline regressions before PR publication:
+
+1. the first ABI validator used a broad `*x86*`-style glob that would also count `x86_64`; it was replaced with exact `*-<abi>-debug.apk` suffix matching;
+2. one manually duplicated expected-fingerprint literal briefly contained an extra `008`; the workflow now has a single top-level expected-fingerprint value used by all three stages, removing that drift class.
+
+These findings are why the workflow should still receive a final diff review and real post-merge main run before the audit is considered complete.
+
+### Tests / CI actually observed so far
+
+- Pre-hardening merged baseline `bc7bf204...`:
+  - Android CI #156 — PASS
+  - old Build Debug APK #109 — PASS
+- Current audit branch ordinary Android CI:
+  - run #161 on intermediate head `5f9187ed...` — PASS
+  - later Android CI runs were triggered by additional workflow/docs hardening commits; inspect the final branch head and require its latest run to pass before merge.
+
+The privileged Build Debug APK workflow intentionally does **not** execute on this audit branch anymore. Therefore its new signing/APK/publish path cannot be honestly declared proven until the patch merges to `main` and the new main workflow is observed end-to-end.
+
+### Post-merge verification required
+
+After this PR is audited and merged:
+
+1. verify main Android CI passes;
+2. verify the new `Build Debug APK` run has both `build` and `publish` jobs successful;
+3. inspect job steps/logs for signer/ABI/APK-verification success;
+4. verify `debug-latest` points to the merged main commit;
+5. verify release assets are exactly four ABI APKs plus `INSTALL.txt`, `SIGNING.txt`, `SHA256SUMS.txt`;
+6. verify release/signing metadata reports the stable fingerprint above;
+7. if the workflow fails, fix it immediately on a follow-up audit branch rather than weakening signer checks.
+
+### Audit hotspots
+
+Review especially:
+
+- GitHub Actions YAML job-level `if`, permissions and outputs;
+- bash exact-ABI matching and SDK/apksigner discovery;
+- `keytool -exportcert` fingerprint calculation vs `apksigner` fingerprint format;
+- rolling tag force-update followed by release asset/metadata update;
+- PowerShell native-process handling in `signing-common.ps1`;
+- restored `signing.properties` path repair without credential mutation;
+- absence of any key-generation path in `setup-signing.ps1`;
+- absence of secrets/private key material in the diff.
+
+### Deferred work
+
+- protected GitHub Actions environment + migration/removal of repository-level signing secrets;
+- persisted-state robustness audit;
+- lifecycle/race audit;
+- remaining localization display metadata;
+- unresolved graph-based long-label connected-control expansion.
+
+### PROJECT_STATE update
+
+`PROJECT_STATE.md` now records `bc7bf204...` as the latest merged baseline, describes this release hardening as pending review rather than merged, records the remaining environment-secret limitation, and makes post-merge release verification the immediate audit priority before persisted-state work.
 
 ### Suggested reviewer action
 
-Audit this state-sync branch against current source/history. If the two durable documents accurately describe the merged state and no unrelated file changed, merge it. Then continue the Continuum audit from the release/signing/workflow priority rather than returning to normal feature implementation.
+Audit this branch and merge only after the final branch Android CI is green and the diff contains no unrelated/private material. After merge, observe the new main release workflow end-to-end before declaring the signing/release audit complete.
 
 ---
 
-# Required template for future coherent tasks
+## Required shape for the next coherent handoff
 
-Replace the **Current handoff** section above with concrete information for each completed coherent task. Do not leave placeholders in a completed handoff.
-
-## Task
-
-Short feature/fix/audit name.
-
-## User goal
-
-Describe the requested user-visible behavior and important constraints.
-
-## Repository state
-
-- Base branch / commit
-- Task branch
-- Current head or durable task checkpoint
-- Pull request number/URL and state
-
-## Scope completed
-
-Explain exactly what was implemented/fixed/audited. Group by subsystem when useful.
-
-## Key implementation decisions
-
-Record what a reviewer needs to know about state ownership, lifecycle timing, compatibility/migration, fallbacks, malformed/stale data, and why existing architecture was reused rather than duplicated.
-
-## Files changed
-
-List materially changed paths. Remove unrelated/generated/temp files before handoff.
-
-## Persistence / compatibility
-
-State what existing preferences/layouts/profiles/import formats continue to work and how migrations or repairs behave.
-
-## Lifecycle / race / safety review
-
-Include only relevant checks: recreation, configuration, PiP/multi-window, background/foreground, Surface/TextureView, controller/input suspend-resume, delayed callbacks/teardown, idempotence, corrupt SharedPreferences, performance/UI-thread concerns.
-
-## Tests actually run
-
-State exact commands/suites and real outcomes. If not run, say `NOT RUN` and why.
-
-## GitHub Actions / release
-
-Record workflow/run result, APK publication, `debug-latest`, and signing checks only if actually observed.
-
-## Known limitations / real-device validation
-
-Name anything CI cannot prove, especially OEM orientation, MediaCodec Surface switching, PiP appearance, touch transforms, foreground-service/battery behavior, and hardware-specific features.
-
-## Audit hotspots
-
-Name files/functions/state transitions where failure is most plausible and the invariants to check.
-
-## Deferred work
-
-List intentionally deferred items and why they were not mixed into the patch.
-
-## PROJECT_STATE update
-
-Explain what durable state changed, or explicitly state that none was required.
-
-## Suggested reviewer action
-
-Use one of: audit/merge if clean; audit named risks; real-device test before merge; further implementation required before review.
+Replace the current section with the next task's real branch/base/head/PR, exact scope, files, compatibility/state ownership, lifecycle/persistence considerations, tests actually run, Actions/release state, limitations, audit hotspots, deferred work, and suggested reviewer action. Do not claim external or device validation that was not observed.

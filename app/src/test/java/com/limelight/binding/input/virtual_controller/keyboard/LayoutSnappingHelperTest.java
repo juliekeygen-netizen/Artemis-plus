@@ -15,6 +15,8 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 
+import java.util.Set;
+
 @Config(sdk = {33})
 @RunWith(RobolectricTestRunner.class)
 public class LayoutSnappingHelperTest {
@@ -199,6 +201,41 @@ public class LayoutSnappingHelperTest {
         assertEquals(40, result.newWidth);
         assertEquals(60, result.newHeight);
         assertFalse(result.didResize);
+    }
+
+    @Test
+    public void longLabelExpansionFollowsOldRightSideTopology() {
+        Context context = ApplicationProvider.getApplicationContext();
+        View expanding = sizedView(context, 100, 100, 40, 40);
+        View directRight = sizedView(context, 144, 100, 40, 40);
+        // This descendant is attached below directRight, but its left edge is deliberately less
+        // than oldRight - 6 (140 - 6). The rejected threshold-only implementation stranded it.
+        View offsetDescendant = sizedView(context, 125, 144, 40, 40);
+        View leftOnly = sizedView(context, 56, 100, 40, 40);
+        View belowOnly = sizedView(context, 100, 144, 40, 40);
+
+        Set<View> followers = LayoutSnappingHelper.findRightExpansionFollowers(
+                expanding,
+                new View[]{expanding, directRight, offsetDescendant, leftOnly, belowOnly});
+
+        assertTrue(followers.contains(directRight));
+        assertTrue(followers.contains(offsetDescendant));
+        assertFalse(followers.contains(expanding));
+        assertFalse(followers.contains(leftOnly));
+        assertFalse(followers.contains(belowOnly));
+    }
+
+    @Test
+    public void longLabelExpansionWithoutRightSeedDoesNotMoveStackedBranch() {
+        Context context = ApplicationProvider.getApplicationContext();
+        View expanding = sizedView(context, 100, 100, 40, 40);
+        View below = sizedView(context, 100, 144, 40, 40);
+        View belowChild = sizedView(context, 144, 144, 40, 40);
+
+        Set<View> followers = LayoutSnappingHelper.findRightExpansionFollowers(
+                expanding, new View[]{expanding, below, belowChild});
+
+        assertTrue(followers.isEmpty());
     }
 
     @Test

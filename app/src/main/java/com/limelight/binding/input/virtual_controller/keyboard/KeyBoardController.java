@@ -451,25 +451,22 @@ public class KeyBoardController {
         if (group.isEmpty()) {
             group.add(element);
         }
-        int oldRight = params.leftMargin + params.width;
+        Set<View> expansionFollowers = LayoutSnappingHelper.findRightExpansionFollowers(
+                element, group.toArray(new View[0]));
         int delta = targetWidth - params.width;
-        int elementTop = params.topMargin;
-        int elementBottom = params.topMargin + params.height;
         params.width = targetWidth;
         element.requestLayout();
 
         for (keyBoardVirtualControllerElement other : group) {
-            if (other == element || !(other.getLayoutParams() instanceof FrameLayout.LayoutParams)) {
+            if (!expansionFollowers.contains(other) ||
+                    !(other.getLayoutParams() instanceof FrameLayout.LayoutParams)) {
                 continue;
             }
-            FrameLayout.LayoutParams otherParams = (FrameLayout.LayoutParams) other.getLayoutParams();
-            int overlap = Math.min(elementBottom, otherParams.topMargin + otherParams.height) -
-                    Math.max(elementTop, otherParams.topMargin);
-            int minHeight = Math.min(params.height, otherParams.height);
-            if (otherParams.leftMargin >= oldRight - 6 && overlap >= minHeight * 0.35f) {
-                otherParams.leftMargin += delta;
-                other.requestLayout();
-            }
+            FrameLayout.LayoutParams otherParams =
+                    (FrameLayout.LayoutParams) other.getLayoutParams();
+            otherParams.leftMargin += delta;
+            otherParams.rightMargin = 0;
+            other.requestLayout();
         }
 
         int parentWidth = frame_layout.getWidth() > 0

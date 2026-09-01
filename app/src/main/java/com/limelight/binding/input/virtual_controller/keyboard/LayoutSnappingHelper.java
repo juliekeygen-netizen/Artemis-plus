@@ -3,6 +3,10 @@ package com.limelight.binding.input.virtual_controller.keyboard;
 import android.view.View;
 import android.widget.FrameLayout;
 
+import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.Set;
+
 public class LayoutSnappingHelper {
     private static final int SNAP_THRESHOLD = 10;
     private static final int SPACING_MIN = 4;
@@ -109,6 +113,76 @@ public class LayoutSnappingHelper {
                 (Math.abs(aBottom - bTop) <= verticalTolerance ||
                         Math.abs(bBottom - aTop) <= verticalTolerance);
         return sideBySide || stacked;
+    }
+
+    /**
+     * Return the controls that must move right when {@code expandingView} grows horizontally.
+     *
+     * The graph is evaluated entirely from the pre-expansion geometry. Only controls attached to
+     * the expanding control's right edge seed traversal; the expanding control itself is then a
+     * traversal boundary. This preserves offset descendants connected through the right-side
+     * component without dragging branches that are attached only to the left or below.
+     */
+    static Set<View> findRightExpansionFollowers(View expandingView, View[] connectedGroup) {
+        Set<View> followers = new HashSet<>();
+        if (!isGroupCandidate(expandingView) || connectedGroup == null) {
+            return followers;
+        }
+
+        FrameLayout.LayoutParams source =
+                (FrameLayout.LayoutParams) expandingView.getLayoutParams();
+        int sourceWidth = Math.max(1, source.width);
+        int sourceHeight = Math.max(1, source.height);
+        int sourceRight = source.leftMargin + sourceWidth;
+        int sourceBottom = source.topMargin + sourceHeight;
+        ArrayDeque<View> pending = new ArrayDeque<>();
+
+        // Seed only direct neighbors on the old right edge. Using the same proportional tolerance
+        // as areGrouped() keeps uniformly scaled 4px snap gaps connected.
+        for (View candidate : connectedGroup) {
+            if (candidate == expandingView || !isGroupCandidate(candidate)) {
+                continue;
+            }
+            FrameLayout.LayoutParams params =
+                    (FrameLayout.LayoutParams) candidate.getLayoutParams();
+            int candidateWidth = Math.max(1, params.width);
+            int candidateHeight = Math.max(1, params.height);
+            int verticalOverlap = overlap(source.topMargin, sourceBottom,
+                    params.topMargin, params.topMargin + candidateHeight);
+            int minHeight = Math.min(sourceHeight, candidateHeight);
+            int horizontalTolerance = Math.max(
+                    SNAP_THRESHOLD,
+                    Math.round(Math.min(sourceWidth, candidateWidth) *
+                            GROUP_SIZE_TOLERANCE_RATIO));
+            boolean directRightNeighbor = params.leftMargin >= source.leftMargin &&
+                    verticalOverlap >= minHeight * GROUP_PARALLEL_OVERLAP &&
+                    Math.abs(sourceRight - params.leftMargin) <= horizontalTolerance;
+            if (directRightNeighbor && followers.add(candidate)) {
+                pending.addLast(candidate);
+            }
+        }
+
+        // Traverse the old connected graph from those right-edge seeds. Never cross back through
+        // the expanding control, otherwise a left/below-only branch would be translated too.
+        while (!pending.isEmpty()) {
+            View current = pending.removeFirst();
+            for (View candidate : connectedGroup) {
+                if (candidate == expandingView || followers.contains(candidate) ||
+                        !isGroupCandidate(candidate)) {
+                    continue;
+                }
+                if (areGrouped(current, candidate)) {
+                    followers.add(candidate);
+                    pending.addLast(candidate);
+                }
+            }
+        }
+        return followers;
+    }
+
+    private static boolean isGroupCandidate(View view) {
+        return view != null && view.getVisibility() == View.VISIBLE &&
+                view.getLayoutParams() instanceof FrameLayout.LayoutParams;
     }
 
     public static SnapResult calculateSnappedPosition(View movingView, View[] otherViews,

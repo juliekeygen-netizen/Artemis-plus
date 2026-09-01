@@ -154,29 +154,18 @@ jobs:
           "$APKSIGNER" version
 
           for apk in dist/*.apk; do
-            # `apksigner verify` is the cryptographic gate. Parse the printed certificate line
-            # defensively because build-tools versions have varied whitespace around the label's
-            # colon. Preserve support for colon-separated fingerprints while still requiring one
-            # exact 32-byte SHA-256 digest before comparison.
+            # `apksigner verify` remains the cryptographic gate. The digest extraction helper is
+            # fixture-tested in ordinary Android CI against the exact V2 Signer output observed in
+            # live release run #112 plus older/colon-separated variants.
             cert_output="$($APKSIGNER verify --print-certs "$apk")"
-            cert_line="$(printf '%s\n' "$cert_output" \
-              | grep -i -m1 'certificate[[:space:]].*SHA-256.*digest' || true)"
-            cert_sha256="${cert_line#*:}"
-            cert_sha256="$(printf '%s' "$cert_sha256" \
-              | tr -d '[:space:]:' \
-              | tr '[:upper:]' '[:lower:]')"
+            cert_sha256="$(printf '%s\n' "$cert_output" | bash .github/scripts/extract-apksigner-sha256.sh)"
 
-            if [[ ! "$cert_sha256" =~ ^[0-9a-f]{64}$ ]]; then
-              echo "Unable to read a 64-hex certificate SHA-256 fingerprint from $apk" >&2
-              echo "Certificate line: ${cert_line:-<missing>}" >&2
-              printf '%s\n' "$cert_output" >&2
-              exit 1
-            fi
             echo "Verified APK signer: $apk -> $cert_sha256"
             if [[ "$cert_sha256" != "$EXPECTED_SIGNER_SHA256" ]]; then
               echo "APK signer mismatch for $apk" >&2
               echo "Expected: $EXPECTED_SIGNER_SHA256" >&2
               echo "Actual:   $cert_sha256" >&2
+              printf '%s\n' "$cert_output" >&2
               exit 1
             fi
           done

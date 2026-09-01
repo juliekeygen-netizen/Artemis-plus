@@ -67,6 +67,14 @@ $fingerprint = Assert-ArtemisPlusSigningIdentity `
     -StorePassword $signingProps["storePassword"] `
     -KeyAlias $signingProps["keyAlias"]
 
+# Bind Gradle to the exact keystore that was just verified instead of trusting the storeFile value
+# persisted in signing.properties. A restored/stale properties file must never be able to make the
+# helper verify one key and silently build with another.
+$env:ARTEMIS_PLUS_KEYSTORE_PATH = $SigningKeystore
+$env:ARTEMIS_PLUS_KEYSTORE_PASSWORD = $signingProps["storePassword"]
+$env:ARTEMIS_PLUS_KEY_ALIAS = $signingProps["keyAlias"]
+$env:ARTEMIS_PLUS_KEY_PASSWORD = $signingProps["keyPassword"]
+
 Write-Host "Java : $env:JAVA_HOME" -ForegroundColor DarkGray
 Write-Host "Sign : $SigningKeystore" -ForegroundColor DarkGray
 Write-Host "Cert : $fingerprint (verified)" -ForegroundColor Green

@@ -9,7 +9,7 @@ assert_parses() {
   local name="$1"
   local input="$2"
   local actual
-  actual="$(printf '%s\n' "$input" | "$PARSER")"
+  actual="$(printf '%s\n' "$input" | bash "$PARSER")"
   if [[ "$actual" != "$EXPECTED" ]]; then
     echo "[$name] expected $EXPECTED, got $actual" >&2
     exit 1
@@ -19,7 +19,7 @@ assert_parses() {
 assert_rejects() {
   local name="$1"
   local input="$2"
-  if printf '%s\n' "$input" | "$PARSER" >/dev/null 2>&1; then
+  if printf '%s\n' "$input" | bash "$PARSER" >/dev/null 2>&1; then
     echo "[$name] parser unexpectedly accepted malformed input" >&2
     exit 1
   fi

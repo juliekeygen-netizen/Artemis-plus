@@ -4206,9 +4206,17 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             return true;
         }
 
+        // A terminal stage failure ends the current start attempt. Keep this truthful so
+        // teardown/PiP/reconnect logic never mistakes a failed start for an in-flight one.
+        connecting = false;
+        connected = false;
+
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                if (activityDestroyed || isFinishing()) {
+                    return;
+                }
                 if (spinner != null) {
                     spinner.dismiss();
                     spinner = null;
@@ -4277,6 +4285,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             LimeLog.info("Ignoring connectionTerminated callback after Activity teardown");
             return;
         }
+        // The old transport is gone before any reconnect decision is made. In particular,
+        // do not let a stale connected=true make the retry thread report false success.
+        connected = false;
+        connecting = false;
+        runOnUiThread(this::updatePipAutoEnter);
         // A graceful termination is expected while Fast Resume parks the client stream.
         // Do not let that callback finish the retained Activity or cancel its timeout.
         if (errorCode == MoonBridge.ML_ERROR_GRACEFUL_TERMINATION &&
@@ -4300,6 +4313,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                if (!isSmartReconnectAttemptAllowed(reconnectToken)) {
+                    return;
+                }
                 if (reconnectOverlay != null) {
                     reconnectOverlay.show(SMART_RECONNECT_MAX_ATTEMPTS);
                 }
@@ -4322,6 +4338,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
+                            if (!isSmartReconnectAttemptAllowed(reconnectToken)) {
+                                return;
+                            }
                             if (reconnectOverlay != null) {
                                 reconnectOverlay.setAttempt(currentAttempt);
                             }
@@ -4434,6 +4453,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                if (activityDestroyed || isFinishing()) {
+                    return;
+                }
                 // Let the display go to sleep now
                 getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
@@ -4559,6 +4581,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                if (activityDestroyed || isFinishing()) {
+                    return;
+                }
                 if (spinner != null) {
                     spinner.dismiss();
                     spinner = null;

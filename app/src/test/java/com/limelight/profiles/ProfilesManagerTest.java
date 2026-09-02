@@ -168,6 +168,27 @@ public class ProfilesManagerTest {
         assertEquals(p.getUuid(), manager.getProfiles().get(0).getUuid());
     }
 
+    @Test
+    public void duplicateProfileIds_doNotReplaceLiveProfiles() throws Exception {
+        SettingsProfile p = new SettingsProfile(UUID.randomUUID(), "KeepMe", System.currentTimeMillis(), System.currentTimeMillis(), null);
+        manager.add(p);
+        assertEquals(1, manager.getProfiles().size());
+
+        UUID duplicateId = UUID.randomUUID();
+        String duplicateJson = "{\"profiles\":[" +
+                "{\"uuid\":\"" + duplicateId + "\",\"name\":\"First\",\"createdUtc\":1,\"modifiedUtc\":1,\"options\":{}}," +
+                "{\"uuid\":\"" + duplicateId + "\",\"name\":\"Second\",\"createdUtc\":2,\"modifiedUtc\":2,\"options\":{}}" +
+                "],\"activeProfileId\":null}";
+        File profilesFile = new File(profilesDir, "profiles.json");
+        try (FileOutputStream output = new FileOutputStream(profilesFile, false)) {
+            output.write(duplicateJson.getBytes(StandardCharsets.UTF_8));
+        }
+
+        assertFalse(manager.load(context));
+        assertEquals(1, manager.getProfiles().size());
+        assertEquals(p.getUuid(), manager.getProfiles().get(0).getUuid());
+    }
+
     private ProfilesManager reloadManager() {
         ProfilesManager.instance = null;
         ProfilesManager fresh = ProfilesManager.getInstance();

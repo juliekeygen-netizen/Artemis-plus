@@ -85,7 +85,9 @@ public class ProfilesManager {
                         if (p == null || p.getUuid() == null) {
                             throw new IllegalArgumentException("Profile data contains a missing UUID");
                         }
-                        loadedProfiles.put(p.getUuid(), p);
+                        if (loadedProfiles.put(p.getUuid(), p) != null) {
+                            throw new IllegalArgumentException("Profile data contains a duplicate UUID: " + p.getUuid());
+                        }
                     }
                     UUID loadedActiveProfileId = data.activeProfileId;
                     if (loadedActiveProfileId != null && !loadedProfiles.containsKey(loadedActiveProfileId)) {

@@ -76,6 +76,17 @@ public class QuickMenuConfigTest {
     }
 
     @Test
+    public void wrongTypedStoredConfigFallsBackToDefault() {
+        context.getSharedPreferences("quick_menu_config", Context.MODE_PRIVATE)
+                .edit().putInt("config_v1", 42).commit();
+
+        QuickMenuConfig loaded = QuickMenuConfig.load(context);
+
+        assertEquals("Quick Menu", loaded.root.title);
+        assertEquals(StreamActionRegistry.DISCONNECT, loaded.root.items.get(0).actionId);
+    }
+
+    @Test
     public void unknownPersistedActionIsPreservedWithValidSiblings() throws Exception {
         JSONObject root = new JSONObject();
         root.put("id", "root");

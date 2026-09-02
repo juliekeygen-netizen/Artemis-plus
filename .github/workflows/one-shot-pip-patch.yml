@@ -18,7 +18,7 @@ jobs:
         with:
           ref: fix/android11-pip-entry-guard
 
-      - name: Apply exact source and focused-CI edits
+      - name: Apply exact Game source edit
         shell: bash
         run: |
           set -euo pipefail
@@ -40,27 +40,16 @@ jobs:
           if count != 1:
               raise SystemExit(f'Expected exactly one Android R PiP block, found {count}')
           game_path.write_text(game.replace(old, new, 1), encoding='utf-8')
-
-          ci_path = Path('.github/workflows/android-ci.yml')
-          ci = ci_path.read_text(encoding='utf-8')
-          needle = '          --tests "com.limelight.PipAspectRatioHelperTest"\n'
-          replacement = needle + '          --tests "com.limelight.PipManualEntryGuardTest"\n'
-          count = ci.count(needle)
-          if count != 1:
-              raise SystemExit(f'Expected exactly one PiP focused-test anchor, found {count}')
-          ci_path.write_text(ci.replace(needle, replacement, 1), encoding='utf-8')
-
-          Path('.github/workflows/one-shot-pip-patch.yml').unlink()
           PY
 
-      - name: Commit patched source and remove one-shot workflow
+      - name: Commit patched Game source
         shell: bash
         run: |
           set -euo pipefail
           git diff --check
-          git diff -- app/src/main/java/com/limelight/Game.java .github/workflows/android-ci.yml .github/workflows/one-shot-pip-patch.yml
+          git diff -- app/src/main/java/com/limelight/Game.java
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/src/main/java/com/limelight/Game.java .github/workflows/android-ci.yml .github/workflows/one-shot-pip-patch.yml
+          git add app/src/main/java/com/limelight/Game.java
           git commit -m 'fix: guard Android 11 manual PiP entry'
           git push origin HEAD:fix/android11-pip-entry-guard

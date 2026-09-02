@@ -1,8 +1,9 @@
 package com.limelight.preferences;
 
-
 import android.content.Context;
 import android.content.SharedPreferences;
+
+import java.util.Map;
 
 public class GlPreferences {
     private static final String PREF_NAME = "GlPreferences";
@@ -22,10 +23,16 @@ public class GlPreferences {
         SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, 0);
         GlPreferences glPrefs = new GlPreferences(prefs);
 
-        glPrefs.glRenderer = prefs.getString(GL_RENDERER_PREF_STRING, "");
-        glPrefs.savedFingerprint = prefs.getString(FINGERPRINT_PREF_STRING, "");
+        glPrefs.glRenderer = getStringSafely(prefs, GL_RENDERER_PREF_STRING, "");
+        glPrefs.savedFingerprint = getStringSafely(prefs, FINGERPRINT_PREF_STRING, "");
 
         return glPrefs;
+    }
+
+    private static String getStringSafely(SharedPreferences prefs, String key, String fallback) {
+        Map<String, ?> values = prefs.getAll();
+        Object value = values.get(key);
+        return value instanceof String ? (String) value : fallback;
     }
 
     public boolean writePreferences() {

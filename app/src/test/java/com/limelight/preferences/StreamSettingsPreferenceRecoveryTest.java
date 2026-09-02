@@ -1,5 +1,8 @@
 package com.limelight.preferences;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Bundle;
@@ -37,6 +40,19 @@ public class StreamSettingsPreferenceRecoveryTest {
         }
     }
 
+    public static class InspectingSettingsFragment extends StreamSettings.SettingsFragment {
+        private SharedPreferences capturedPrefs;
+
+        @Override
+        public void initializePreferences() {
+            capturedPrefs = getPrefs();
+        }
+
+        SharedPreferences getCapturedPrefs() {
+            return capturedPrefs;
+        }
+    }
+
     @Before
     public void setUp() {
         Context context = ApplicationProvider.getApplicationContext();
@@ -50,7 +66,7 @@ public class StreamSettingsPreferenceRecoveryTest {
     }
 
     @Test
-    public void wrongTypedBaseIntegerDoesNotCrashSettingsPreRead() {
+    public void wrongTypedBaseIntegerFallsBackBeforeSettingsInflation() {
         basePrefs.edit()
                 .putString(PreferenceConfiguration.BITRATE_PREF_STRING, "corrupt")
                 .commit();
@@ -58,12 +74,16 @@ public class StreamSettingsPreferenceRecoveryTest {
         try (ActivityController<PreferenceHostActivity> controller =
                      Robolectric.buildActivity(PreferenceHostActivity.class)) {
             PreferenceHostActivity activity = controller.create().start().resume().get();
-            StreamSettings.SettingsFragment fragment = new StreamSettings.SettingsFragment();
+            InspectingSettingsFragment fragment = new InspectingSettingsFragment();
 
             activity.getSupportFragmentManager()
                     .beginTransaction()
                     .replace(android.R.id.content, fragment)
                     .commitNow();
+
+            SharedPreferences prefs = fragment.getCapturedPrefs();
+            assertNotNull(prefs);
+            assertEquals(1234, prefs.getInt(PreferenceConfiguration.BITRATE_PREF_STRING, 1234));
         }
     }
 }

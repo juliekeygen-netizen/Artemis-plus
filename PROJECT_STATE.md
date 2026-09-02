@@ -10,7 +10,7 @@
 
 Artemis Plus is an Android streaming client derived from the newer Marssvoodoo Artemis base. The project keeps that streaming/reliability base while adding Artemis-specific control editing, profiles, Quick Menu actions, OSC management, orientation/PiP/background-stream behavior, experimental sideways streaming, and a stable signed rolling debug release.
 
-Primary architectural rule: extend the existing Artemis ownership model rather than creating parallel state systems. Prefer narrow, tested fixes over broad rewrites.
+Primary architectural rule: extend the existing Artemis ownership model rather than creating parallel state systems. Prefer narrow, demonstrated, regression-tested fixes over broad rewrites.
 
 ---
 
@@ -18,64 +18,75 @@ Primary architectural rule: extend the existing Artemis ownership model rather t
 
 Latest verified merged `main` at this refresh:
 
-`e7b338638c069e1648d40e579e19be81bdc323ae`
+`47c58451186d8c6b55811d9f7a193a740e996f08`
 
-Commit:
+Latest merge:
 
-`fix: make settings profile storage atomic (#38)`
+`Reject keyboard profiles that alias the same storage (#51)`
 
 Post-merge verification on this exact SHA:
 
-- Android CI run #289 (`33637261255`) — success;
-- Build Debug APK run #125 (`33637261090`) — success.
+- Android CI run `33676129443` — success.
 
-Current Android build stack observed in the repository:
+The #51 branch and PR also passed exact-head compile, focused Artemis regressions, and the full inherited unit suite before merge.
+
+Current Android build stack:
 
 - Android Gradle Plugin: **8.13.0**;
 - Gradle wrapper: **8.14.2**;
 - Java: **17**;
-- NDK: **27.0.12077973**.
+- NDK: **27.0.12077973**;
+- Android platform: **36**.
 
-The debuggable+minified build warning is currently informational by design; do not disable shrinking merely to silence it without measuring the intended build behavior.
+Established APK signing certificate SHA-256:
+
+`88c430db21b298bab7b654ce3b9300e33bf1917df4bf1a73047c9590f0080083`
+
+Never regenerate/replace the signing identity casually and never commit signing secrets. The debuggable+minified warning is informational by design; do not disable shrinking merely to silence it.
 
 ---
 
-## 3. Important merged audit work after the 2026-09-01 state sync
+## 3. Important merged audit work
 
 Do not restart these from stale handoffs.
 
 ### Release / workflow / build maintenance
 
-- **#20** `9de0df8c…` — hardened rolling release signing identity/workflow, main-only privileged publication, signer verification, safer rolling-release updates, and local signing fail-closed behavior.
-- **#21** `90189675…` — fixed live `apksigner` SHA-256 parsing.
-- **#22** `0cd8ca73…` — fixture-tested fail-closed signer digest extraction.
-- **#27** `0ad4292c…` — moved GitHub-hosted actions to Node-24-capable majors while pinning the proven Android command-line tools/runtime assumptions.
-- **#28** `2c8c494c…` — removed stale localized Performance Charts resources and fixed static percent-bearing resource warnings without line-ending churn.
-- **#34** `794398a6…` — replaced the seven repository-owned deprecated Gradle Groovy property setter forms with assignment syntax. Full warning audit afterward showed those Gradle deprecations gone.
-
-Established APK signing certificate SHA-256 remains:
-
-`88c430db21b298bab7b654ce3b9300e33bf1917df4bf1a73047c9590f0080083`
-
-Never regenerate/replace the signing identity casually and never commit signing secrets.
+- **#20–#22** — hardened rolling-release signing identity/workflow, main-only privileged publication, signer verification, safer rolling-release updates, local signing fail-closed behavior, and fixture-tested `apksigner` SHA-256 parsing.
+- **#27** — moved GitHub-hosted actions to Node-24-capable majors while preserving the proven Android toolchain assumptions.
+- **#28** — cleaned stale resource/localization warnings without line-ending churn.
+- **#34** — replaced repository-owned deprecated Gradle Groovy property setter forms with assignment syntax and re-audited warnings.
 
 ### Quick Menu / OSC / keyboard persistence
 
-- **#23** `423eb27b…` — preserves unknown/future Quick Menu action IDs inertly and round-trippably.
-- **#25** `4228653a…` — recovers OSC profiles from damaged metadata while preserving valid siblings and avoiding stale duplicate resurrection.
-- **#29** `2ad7ae35…` — hardens keyboard/profile persistence against wrong-typed and partially malformed state while preserving valid siblings and unknown future fields.
+- **#23** — preserves unknown/future Quick Menu action IDs inertly and round-trippably.
+- **#25** — recovers OSC profiles from damaged metadata while preserving valid siblings and avoiding stale duplicate resurrection.
+- **#29** — hardens keyboard/profile persistence against wrong-typed and partially malformed state while preserving valid siblings and unknown future fields.
+- **#40** — makes Quick Menu persisted preference reads tolerant of stale/wrong stored types.
+- **#51** — rejects keyboard profile metadata entries that alias the same backing SharedPreferences storage. The first valid storage owner survives, backing layout data is preserved, and the active profile is repaired through the existing recovery path.
 
-### Editor geometry / floating controls / settings corruption recovery
+### Editor geometry / floating controls / orientation
 
-- **#30** `9fc934f6…` — **completed the connected long-label expansion fix** using pre-expansion graph topology. It translates the complete connected follower component, including offset descendants, while leaving left/below-only branches fixed. Do not reimplement this from older notes.
-- **#32** `bf7635a0…` — rejects non-finite floating-control coordinates and recovers wrong-typed stored positions instead of crashing.
-- **#33** `4560b76d…` — recovers malformed outside-stream orientation preference to Follow System.
-- **#35** `8caa1f1d…` — recovers malformed floating-control reset-between-sessions preference without discarding valid saved positions.
+- **#30** — completed connected long-label expansion using pre-expansion graph topology. The full connected follower component, including offset descendants, moves with expansion while left/below-only branches remain fixed.
+- **#32** — rejects non-finite floating-control coordinates and recovers wrong-typed stored positions.
+- **#33** — recovers malformed outside-stream orientation preference to Follow System.
+- **#35** — recovers malformed floating-control reset-between-sessions state without discarding valid saved positions.
 
-### Settings profile recovery
+### Settings/profile persistence and Settings UI
 
-- **#37** `838edcb7…` — normalizes Gson-restored string sets and makes typed profile/base preference reads fall back safely when persisted values have stale/wrong types.
-- **#38** `e7b33863…` — stores `profiles.json` through Android `AtomicFile`, serializes file access, validates a complete deserialized map before replacing live state, clears dangling active profile IDs, and adds interrupted-write/malformed-commit regressions.
+- **#37** — normalizes Gson-restored string sets and makes typed profile/base preference reads fall back safely when persisted values have stale/wrong types.
+- **#38** — stores `profiles.json` through Android `AtomicFile`, serializes file access, validates a complete deserialized map before replacing live state, clears dangling active profile IDs, and adds interrupted-write/malformed-commit regressions.
+- **#42** — protects base/default preference reads even when no settings profile is active.
+- **#43** — recovers malformed string-backed preferences instead of propagating wrong stored types.
+- **#44** — makes settings-profile listener dispatch mutation-safe.
+- **#45** — rejects duplicate settings-profile UUIDs transactionally during recovery instead of silently overwriting an earlier profile.
+- **#48** — fixes profile-editor Gson boundary mismatches: JSON numbers restored as `Double`, string sets restored as `List`, and rotation/saved-state preservation for these values.
+- **#49** — hardens the separate named `GlPreferences` store against wrong-typed `Renderer`/`Fingerprint` values and verifies later writes repair them.
+- **#50** — routes normal/global Settings through a recovering base SharedPreferences/`PreferenceDataStore` adapter before pre-reads and XML inflation, while preserving the profile editor's in-memory data-store isolation.
+
+### PiP / lifecycle correctness
+
+- **#41** — guards Android 11 manual PiP entry so OEM/runtime exceptions do not crash the stream Activity while preserving the O–Q manual and Android 12+ auto-enter version split.
 
 ---
 
@@ -120,36 +131,27 @@ Never regenerate/replace the signing identity casually and never commit signing 
 
 ---
 
-## 5. Current audit conclusions and remaining work
+## 5. Current audit conclusions
 
-### 5.1 Gradle deprecation audit is resolved
+### 5.1 Persisted-state sweep is substantially hardened
 
-The repository-owned Gradle property assignment warnings found under `--warning-mode all` were fixed in #34. Do not perform a Gradle/AGP upgrade just because the older handoff mentioned deprecations.
+The current audit has covered the principal Artemis-owned persistence boundaries: settings profiles/default overlays, profile-editor serialization, Quick Menu, OSC metadata, keyboard profile/key/action metadata, GL preferences, floating controls, and outside-stream orientation.
 
-### 5.2 Settings/profile persistence is materially hardened, but audit continues
+The post-#51 focused sweep found no additional reproducible corruption defect in `ArtemisActionButtonFactory` or the remaining independent Artemis preference owners. Action selections already use the keyboard-safe raw-map helpers, malformed saved button geometry is discarded, and the top-level action state reader is runtime-only.
 
-Recent work now covers:
+Do not manufacture a broad persistence refactor merely because old handoffs still list these areas as unaudited. Re-open a persistence path only when a concrete invariant/failure is demonstrated.
 
-- keyboard/profile malformed-state recovery;
-- OSC damaged metadata recovery;
-- floating-control malformed state;
-- outside-stream orientation malformed state;
-- profile overlay wrong-type recovery;
-- atomic settings-profile file writes and transactional reload.
+### 5.2 Deliberately unresolved keyboard recovery edge
 
-Continue auditing remaining persisted owners rather than redoing these paths. Priority candidates include:
+If the entire keyboard-profile metadata blob is destroyed, inactive **geometry-only** dynamic backing stores can become unreachable. The active dynamic store is preserved, and key/action metadata can identify some inactive stores, but there is no deterministic ownership signal for geometry-only stores.
 
-- `QuickMenuConfig` storage and malformed-version recovery;
-- `KeyComboManager` and other JSON/SharedPreferences stores;
-- active-reference repair and duplicate/stale ID handling;
-- apply-order/listener races;
-- any direct non-atomic file stores still carrying user state.
+Do **not** add a heuristic SharedPreferences scan that may resurrect cleared, orphaned, partial-import, or unrelated stores. A recovery patch needs an authoritative ownership marker or migration scheme first.
 
 ### 5.3 Background streaming implementation is already substantial
 
-Current `Game` code includes Keep Alive and Fast Resume lifecycle ownership, foreground keep-alive service handling, headless output switching, wake-lock timeout behavior, PiP exclusions, and fallback logic. Treat this as an audit surface, not an unimplemented feature.
+Current `Game` code includes Keep Alive and Fast Resume lifecycle ownership, foreground keep-alive service handling, headless output switching, wake-lock timeout behavior, PiP exclusions, fallback logic, and visible-surface restoration. Treat this as an audit/test surface, not an unimplemented feature.
 
-Still prioritize regressions for:
+High-value remaining lifecycle work is evidence-driven regression coverage around:
 
 - background park/resume and reconnect failure;
 - delayed Keep Alive teardown ownership;
@@ -157,31 +159,23 @@ Still prioritize regressions for:
 - controller detach/reconcile while parked;
 - Activity destruction while delayed lifecycle callbacks remain queued.
 
-### 5.4 Concrete PiP reliability gap found on Android 11
+### 5.4 PiP version split is now guarded
 
-The manual PiP path is version-split correctly:
-
-- Android O–Q: `onUserLeaveHint()` manually enters PiP;
-- Android R: `onPictureInPictureRequested()` manually enters PiP;
-- Android S+: system auto-enter is used when enabled.
-
-The O–Q path already catches OEM exceptions because manual `enterPictureInPictureMode()` has historically thrown on some devices. The Android R callback currently performs the same manual entry **without** that guard. A narrow next patch should make Android R manual entry fail gracefully rather than crash, while preserving callback semantics and the Android S+ auto-enter path.
-
-Prefer a small testable helper/entry boundary instead of a broad `Game` lifecycle rewrite.
+Android O–Q manual entry, Android R manual callback entry, and Android S+ system auto-enter remain intentionally distinct. The Android 11 manual exception gap identified in the previous documentation was fixed in #41. Older notes calling this the next patch are stale.
 
 ### 5.5 Localization remains incomplete
 
-Editor shell localization improved earlier, but display metadata such as Artemis Action / Quick Menu registry labels/categories/descriptions still contains hard-coded English. Stable persisted/runtime IDs must never be translated; resource-back display metadata only.
+Display metadata such as Artemis Action / Quick Menu registry labels, categories, and descriptions still contains hard-coded English. Stable persisted/runtime IDs must never be translated; resource-back display metadata only.
 
-### 5.6 Sideways/foldable behavior remains hardware-sensitive
+### 5.6 Hardware-sensitive behavior still needs physical validation
 
-Robolectric/emulator success does not prove OEM MediaCodec/TextureView/orientation/PiP/foldable behavior. Real-device validation remains necessary for:
+Robolectric/emulator success does not prove OEM MediaCodec/TextureView/orientation/PiP/foldable behavior. Real-device validation remains important for:
 
 - MediaCodec output-surface switching;
 - TextureView restoration timing;
 - Keep Alive headless-output transitions;
 - PiP enter/exit appearance;
-- CW/CCW input transforms;
+- Sideways CW/CCW video and input transforms;
 - IME/system-window behavior;
 - foldable cover/posture behavior.
 
@@ -193,12 +187,13 @@ The Diana audit did not find a complete reusable cover-screen controller/analog-
 
 Keep unrelated fixes in separate coherent PRs.
 
-1. **Android 11 PiP manual-entry exception hardening** with focused regression coverage.
-2. **Remaining persisted-state robustness**: Quick Menu, key combos, other state owners, listener/apply ordering, stale references, direct file writes.
-3. **Lifecycle/race coverage**: background park/resume, Keep Alive fallback/teardown, surface restoration, controller detach, delayed callbacks after teardown.
-4. **Repository/security hygiene**: generated binaries, local configs, secrets, temporary diagnostics, unrelated helper artifacts.
-5. **UI/localization debt** once correctness work is exhausted.
-6. **Useful contained feature work** only after the current correctness/lifecycle queue is exhausted.
+1. **Lifecycle/race coverage** — background park/resume, Keep Alive fallback/teardown, surface restoration, controller detach, and delayed callbacks after teardown.
+2. **Repository/security hygiene** — generated binaries, machine-local config/path artifacts, secrets/signing material, temporary diagnostics, and unrelated helper artifacts.
+3. **UI/localization debt** — resource-back user-facing Artemis Action / Quick Menu display metadata while preserving stable IDs.
+4. **Performance/ownership review** — only where profiling or a concrete lifecycle/state invariant identifies a problem.
+5. **Useful contained feature work** after correctness/lifecycle work is exhausted.
+
+Persisted-state work should no longer be treated as a generic open-ended priority; revisit specific owners only when new evidence warrants it.
 
 ---
 

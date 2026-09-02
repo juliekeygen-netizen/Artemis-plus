@@ -1,13 +1,19 @@
 package com.limelight.ui;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.view.View;
+import android.widget.FrameLayout;
 
 import androidx.preference.PreferenceManager;
 import androidx.test.core.app.ApplicationProvider;
+
+import com.limelight.Game;
+import com.limelight.SidewaysStreamMode;
 
 import org.junit.After;
 import org.junit.Before;
@@ -24,6 +30,7 @@ public class FloatingControlPositionStoreTest {
     @Before
     public void setUp() {
         context = ApplicationProvider.getApplicationContext();
+        Game.instance = null;
         context.getSharedPreferences(FloatingControlPositionStore.PREFS, Context.MODE_PRIVATE)
                 .edit().clear().commit();
         PreferenceManager.getDefaultSharedPreferences(context).edit()
@@ -32,6 +39,7 @@ public class FloatingControlPositionStoreTest {
 
     @After
     public void tearDown() {
+        Game.instance = null;
         context.getSharedPreferences(FloatingControlPositionStore.PREFS, Context.MODE_PRIVATE)
                 .edit().clear().commit();
         PreferenceManager.getDefaultSharedPreferences(context).edit()
@@ -108,5 +116,88 @@ public class FloatingControlPositionStoreTest {
         assertFalse(preferences.contains(id + "_sideways_ccw_saved"));
         assertFalse(preferences.contains(id + "_sideways_ccw_x"));
         assertFalse(preferences.contains(id + "_sideways_ccw_y"));
+    }
+
+    @Test
+    public void restoreRejectsNonFiniteCoordinatesAndClearsCorruptSlot() {
+        String id = "floatingMenuButton";
+        String prefix = currentSlotPrefix(id);
+        SharedPreferences preferences = positionPreferences();
+        preferences.edit()
+                .putBoolean(prefix + "_saved", true)
+                .putFloat(prefix + "_x", Float.NaN)
+                .putFloat(prefix + "_y", .5f)
+                .commit();
+        View view = createView(35f, 45f);
+
+        assertFalse(FloatingControlPositionStore.restore(view, id));
+
+        assertEquals(35f, view.getX(), 0f);
+        assertEquals(45f, view.getY(), 0f);
+        assertFalse(preferences.contains(prefix + "_saved"));
+        assertFalse(preferences.contains(prefix + "_x"));
+        assertFalse(preferences.contains(prefix + "_y"));
+    }
+
+    @Test
+    public void restoreRejectsWrongPreferenceTypeAndClearsCorruptSlot() {
+        String id = "keyboardSettingsButton";
+        String prefix = currentSlotPrefix(id);
+        SharedPreferences preferences = positionPreferences();
+        preferences.edit()
+                .putBoolean(prefix + "_saved", true)
+                .putString(prefix + "_x", "not-a-float")
+                .putFloat(prefix + "_y", .5f)
+                .commit();
+        View view = createView(20f, 30f);
+
+        assertFalse(FloatingControlPositionStore.restore(view, id));
+
+        assertEquals(20f, view.getX(), 0f);
+        assertEquals(30f, view.getY(), 0f);
+        assertFalse(preferences.contains(prefix + "_saved"));
+        assertFalse(preferences.contains(prefix + "_x"));
+        assertFalse(preferences.contains(prefix + "_y"));
+    }
+
+    @Test
+    public void saveDoesNotOverwriteStoredPositionWithNonFiniteCoordinates() {
+        String id = "floatingMenuButton";
+        String prefix = currentSlotPrefix(id);
+        SharedPreferences preferences = positionPreferences();
+        preferences.edit()
+                .putBoolean(prefix + "_saved", true)
+                .putFloat(prefix + "_x", .25f)
+                .putFloat(prefix + "_y", .75f)
+                .commit();
+        View view = createView(Float.NaN, 30f);
+
+        FloatingControlPositionStore.save(view, id);
+
+        assertTrue(preferences.getBoolean(prefix + "_saved", false));
+        assertEquals(.25f, preferences.getFloat(prefix + "_x", -1f), 0f);
+        assertEquals(.75f, preferences.getFloat(prefix + "_y", -1f), 0f);
+    }
+
+    private SharedPreferences positionPreferences() {
+        return context.getSharedPreferences(FloatingControlPositionStore.PREFS, Context.MODE_PRIVATE);
+    }
+
+    private String currentSlotPrefix(String id) {
+        String slot = SidewaysStreamMode.positionSlot(
+                SidewaysStreamMode.MODE_OFF,
+                context.getResources().getConfiguration().orientation);
+        return id + "_" + slot;
+    }
+
+    private View createView(float x, float y) {
+        FrameLayout parent = new FrameLayout(context);
+        View view = new View(context);
+        parent.addView(view, new FrameLayout.LayoutParams(100, 80));
+        parent.layout(0, 0, 500, 400);
+        view.layout(0, 0, 100, 80);
+        view.setX(x);
+        view.setY(y);
+        return view;
     }
 }

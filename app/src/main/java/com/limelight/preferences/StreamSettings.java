@@ -190,11 +190,15 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
         private boolean nativeFramerateShown = false;
 
         private PreferenceConfiguration prevPrefConfig;
+        private RecoveringPreferenceDataStore globalPreferenceStore;
 
         public SettingsFragment() {
         }
 
         protected SharedPreferences getPrefs() {
+            if (globalPreferenceStore != null) {
+                return globalPreferenceStore;
+            }
             return getPreferenceManager().getSharedPreferences();
         }
 
@@ -352,6 +356,16 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
 
         @Override
         public void onCreatePreferences(Bundle bundle, String s) {
+            // Normal Settings edits the global/base preferences even while a settings profile is
+            // active. Route both the Artemis pre-read and AndroidX preference inflation through a
+            // wrong-type-tolerant adapter without overlaying the active profile. The profile editor
+            // installs its own in-memory PreferenceDataStore before calling this method, so leave
+            // that isolated storage untouched.
+            if (getPreferenceManager().getPreferenceDataStore() == null) {
+                globalPreferenceStore = new RecoveringPreferenceDataStore(
+                        getPreferenceManager().getSharedPreferences());
+                getPreferenceManager().setPreferenceDataStore(globalPreferenceStore);
+            }
             initializePreferences();
         }
 

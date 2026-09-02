@@ -22,6 +22,8 @@ import org.robolectric.annotation.Config;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 33)
 public class StreamSettingsPreferenceRecoveryTest {
+    private static final String ENABLE_PIP_KEY = "checkbox_enable_pip";
+
     private SharedPreferences basePrefs;
 
     @Before
@@ -39,7 +41,7 @@ public class StreamSettingsPreferenceRecoveryTest {
     @Test
     public void wrongTypedBaseBooleanDoesNotCrashSettingsInflation() {
         basePrefs.edit()
-                .putString(PreferenceConfiguration.ENABLE_PIP_PREF_STRING, "corrupt")
+                .putString(ENABLE_PIP_KEY, "corrupt")
                 .commit();
 
         try (ActivityController<StreamSettings> controller = Robolectric.buildActivity(StreamSettings.class)) {
@@ -51,7 +53,7 @@ public class StreamSettingsPreferenceRecoveryTest {
                     .replace(R.id.stream_settings, fragment)
                     .commitNow();
 
-            assertNotNull(fragment.findPreference(PreferenceConfiguration.ENABLE_PIP_PREF_STRING));
+            assertNotNull(fragment.findPreference(ENABLE_PIP_KEY));
         }
     }
 }

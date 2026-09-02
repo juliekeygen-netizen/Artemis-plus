@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch:
-    if: ${{ github.actor == 'juliekeygen-netizen' && github.event.head_commit.message == 'ci: apply malformed preference parser integration' }}
+    if: github.actor == 'juliekeygen-netizen'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout exact branch head

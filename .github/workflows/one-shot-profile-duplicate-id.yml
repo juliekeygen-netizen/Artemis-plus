@@ -1,0 +1,34 @@
+name: One-shot duplicate profile id recovery patch
+
+on:
+  push:
+    branches:
+      - fix/profile-duplicate-id-recovery
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor == 'juliekeygen-netizen'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+        with:
+          ref: fix/profile-duplicate-id-recovery
+
+      - name: Apply exact patch
+        run: python3 .github/patch-profile-duplicate-id.py
+
+      - name: Commit product and regression files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff -- app/src/main/java/com/limelight/profiles/ProfilesManager.java app/src/test/java/com/limelight/profiles/ProfilesManagerTest.java
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/limelight/profiles/ProfilesManager.java app/src/test/java/com/limelight/profiles/ProfilesManagerTest.java
+          git commit -m 'fix: reject duplicate settings profile ids'
+          git push origin HEAD:fix/profile-duplicate-id-recovery

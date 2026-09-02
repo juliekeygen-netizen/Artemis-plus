@@ -505,9 +505,12 @@ public class PreferenceConfiguration {
     }
 
     public static int getDefaultBitrate(String resString, String fpsString) {
-        int width = getWidthFromResolutionString(resString);
-        int height = getHeightFromResolutionString(resString);
-        int fps = Math.round(Float.parseFloat(fpsString));
+        PreferenceStringValues.Resolution resolution =
+                PreferenceStringValues.parseResolution(resString, DEFAULT_RESOLUTION);
+        int width = resolution.width;
+        int height = resolution.height;
+        int fps = Math.round(PreferenceStringValues.parsePositiveFiniteFloat(
+                fpsString, Float.parseFloat(DEFAULT_FPS)));
 
         // This logic is shamelessly stolen from Moonlight Qt:
         // https://github.com/moonlight-stream/moonlight-qt/blob/master/app/settings/streamingpreferences.cpp
@@ -806,9 +809,13 @@ private static int getFramePacingValue(Context context) {
                 prefs.edit().putString(RESOLUTION_PREF_STRING, resStr).apply();
             }
 
-            config.width = PreferenceConfiguration.getWidthFromResolutionString(resStr);
-            config.height = PreferenceConfiguration.getHeightFromResolutionString(resStr);
-            config.fps = Float.parseFloat(prefs.getString(FPS_PREF_STRING, PreferenceConfiguration.DEFAULT_FPS));
+            PreferenceStringValues.Resolution resolution = PreferenceStringValues.parseResolution(
+                    resStr, PreferenceConfiguration.DEFAULT_RESOLUTION);
+            config.width = resolution.width;
+            config.height = resolution.height;
+            config.fps = PreferenceStringValues.parsePositiveFiniteFloat(
+                    prefs.getString(FPS_PREF_STRING, PreferenceConfiguration.DEFAULT_FPS),
+                    Float.parseFloat(PreferenceConfiguration.DEFAULT_FPS));
         }
 
         if (prefs.contains(LEGACY_STRETCH_PREF_STRING)) {
@@ -900,12 +907,11 @@ private static int getFramePacingValue(Context context) {
         config.fullScreen = prefs.getBoolean(FULL_SCREEN_PREF_STRING, DEFAULT_FULL_SCREEN);
 
         String renderMode = prefs.getString("render_mode_list", "0");
-        int renderModeInt = Integer.parseInt(renderMode);
-        config.renderMode = renderModeInt;
+        config.renderMode = PreferenceStringValues.parseBoundedInt(renderMode, 0, 0, 2);
 
         // Read mouse mode and set touch settings accordingly
         String mouseMode = prefs.getString("mouse_mode_list", "0");
-        int mouseModeInt = Integer.parseInt(mouseMode);
+        int mouseModeInt = PreferenceStringValues.parseBoundedInt(mouseMode, 0, 0, 5);
         switch (mouseModeInt) {
             case 0: // Multi-touch
                 config.enableMultiTouchScreen = true;

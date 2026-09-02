@@ -1,0 +1,77 @@
+name: One-shot Android 11 PiP source patch
+
+on:
+  push:
+    branches:
+      - fix/android11-pip-entry-guard
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor == 'juliekeygen-netizen' && github.event.head_commit.message == 'ci: apply one-shot PiP patch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v7
+        with:
+          ref: fix/android11-pip-entry-guard
+
+      - name: Apply exact source and focused-CI edits
+        shell: python
+        run: |
+          from pathlib import Path
+
+          game_path = Path('app/src/main/java/com/limelight/Game.java')
+          game = game_path.read_text(encoding='utf-8')
+          old = '''    @Override
+              @TargetApi(Build.VERSION_CODES.R)
+              public boolean onPictureInPictureRequested() {
+                  // Enter PiP when requested unless we're on Android 12 which supports auto-enter.
+                  if (autoEnterPip && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                      enterPictureInPictureMode(getPictureInPictureParams(false));
+                  }
+                  return true;
+              }
+          '''
+          # The source uses four-space indentation. Keep the multiline literal readable above, then
+          # normalize the incidental YAML block indentation before matching.
+          old = '\n'.join(line[10:] if line.startswith('          ') else line for line in old.splitlines()) + '\n'
+          new = '''    @Override
+              @TargetApi(Build.VERSION_CODES.R)
+              public boolean onPictureInPictureRequested() {
+                  // Enter PiP when requested unless we're on Android 12 which supports auto-enter.
+                  if (autoEnterPip && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                      PipManualEntryGuard.tryEnter(() ->
+                              enterPictureInPictureMode(getPictureInPictureParams(false)));
+                  }
+                  return true;
+              }
+          '''
+          new = '\n'.join(line[10:] if line.startswith('          ') else line for line in new.splitlines()) + '\n'
+          if game.count(old) != 1:
+              raise SystemExit(f'Expected exactly one Android R PiP block, found {game.count(old)}')
+          game_path.write_text(game.replace(old, new, 1), encoding='utf-8')
+
+          ci_path = Path('.github/workflows/android-ci.yml')
+          ci = ci_path.read_text(encoding='utf-8')
+          needle = '          --tests "com.limelight.PipAspectRatioHelperTest"\n'
+          replacement = needle + '          --tests "com.limelight.PipManualEntryGuardTest"\n'
+          if ci.count(needle) != 1:
+              raise SystemExit(f'Expected exactly one PiP focused-test anchor, found {ci.count(needle)}')
+          ci_path.write_text(ci.replace(needle, replacement, 1), encoding='utf-8')
+
+          Path('.github/workflows/one-shot-pip-patch.yml').unlink()
+
+      - name: Commit patched source and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff -- app/src/main/java/com/limelight/Game.java .github/workflows/android-ci.yml .github/workflows/one-shot-pip-patch.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/limelight/Game.java .github/workflows/android-ci.yml .github/workflows/one-shot-pip-patch.yml
+          git commit -m 'fix: guard Android 11 manual PiP entry'
+          git push origin HEAD:fix/android11-pip-entry-guard

@@ -3,6 +3,7 @@ package com.limelight.profiles;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.OnSharedPreferenceChangeListener;
+import android.util.AtomicFile;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -13,12 +14,15 @@ import com.limelight.LimeLog;
 import com.limelight.preferences.PreferenceConfiguration;
 
 import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.io.Reader;
 import java.io.Writer;
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -47,7 +51,7 @@ public class ProfilesManager {
         return instance;
     }
 
-    public boolean load(Context context) {
+    public synchronized boolean load(Context context) {
         LimeLog.info("ArtemisProfile: Loading profile...");
         if (context == null) {
             return false;
@@ -70,22 +74,30 @@ public class ProfilesManager {
             if (!dir.exists() && !dir.mkdirs()) {
                 return false;
             }
-            File file = new File(dir, PROFILES_FILE);
-            if (!file.exists()) {
-                // We don't want to warn user about profile not exist
-                return true;
-            }
-            try (Reader reader = new FileReader(file)) {
+            AtomicFile file = new AtomicFile(new File(dir, PROFILES_FILE));
+            try (Reader reader = new InputStreamReader(file.openRead(), StandardCharsets.UTF_8)) {
                 Gson gson = new Gson();
                 Type type = new TypeToken<ProfilesData>(){}.getType();
                 ProfilesData data = gson.fromJson(reader, type);
                 if (data != null && data.profiles != null) {
-                    profiles.clear();
+                    Map<UUID, SettingsProfile> loadedProfiles = new LinkedHashMap<>();
                     for (SettingsProfile p : data.profiles) {
-                        profiles.put(p.getUuid(), p);
+                        if (p == null || p.getUuid() == null) {
+                            throw new IllegalArgumentException("Profile data contains a missing UUID");
+                        }
+                        loadedProfiles.put(p.getUuid(), p);
                     }
-                    activeProfileId = data.activeProfileId;
+                    UUID loadedActiveProfileId = data.activeProfileId;
+                    if (loadedActiveProfileId != null && !loadedProfiles.containsKey(loadedActiveProfileId)) {
+                        loadedActiveProfileId = null;
+                    }
+                    profiles.clear();
+                    profiles.putAll(loadedProfiles);
+                    activeProfileId = loadedActiveProfileId;
                 }
+            } catch (FileNotFoundException e) {
+                // We don't want to warn the user when profiles have never been created.
+                return true;
             } catch (IOException e) {
                 LimeLog.warning("ArtemisProfile: Failed to load profiles from file:" + e);
                 e.printStackTrace();
@@ -100,35 +112,37 @@ public class ProfilesManager {
         return true;
     }
 
-    public boolean save(Context context) {
+    public synchronized boolean save(Context context) {
         if (context == null) {
             return false;
         }
 
+        AtomicFile file = null;
+        FileOutputStream output = null;
         try {
             File dir = new File(context.getFilesDir(), PROFILES_DIR);
             if (!dir.exists() && !dir.mkdirs()) {
                 return false;
             }
-            File file = new File(dir, PROFILES_FILE);
-            try (Writer writer = new FileWriter(file)) {
-                Gson gson = new Gson();
-                ProfilesData data = new ProfilesData();
-                data.profiles = new ArrayList<>(profiles.values());
-                data.activeProfileId = activeProfileId;
-                gson.toJson(data, writer);
-            } catch (IOException e) {
-                LimeLog.warning("ArtemisProfile: Failed to save profiles to file:" + e);
-                e.printStackTrace();
-                return false;
-            }
+            file = new AtomicFile(new File(dir, PROFILES_FILE));
+            output = file.startWrite();
+            Writer writer = new OutputStreamWriter(output, StandardCharsets.UTF_8);
+            Gson gson = new Gson();
+            ProfilesData data = new ProfilesData();
+            data.profiles = new ArrayList<>(profiles.values());
+            data.activeProfileId = activeProfileId;
+            gson.toJson(data, writer);
+            writer.flush();
+            file.finishWrite(output);
+            return true;
         } catch (Exception e) {
-            LimeLog.warning("ArtemisProfile: Failed to save profiles:" + e);
+            if (file != null && output != null) {
+                file.failWrite(output);
+            }
+            LimeLog.warning("ArtemisProfile: Failed to save profiles to file:" + e);
             e.printStackTrace();
             return false;
         }
-
-        return true;
     }
 
     public List<SettingsProfile> getProfiles() {

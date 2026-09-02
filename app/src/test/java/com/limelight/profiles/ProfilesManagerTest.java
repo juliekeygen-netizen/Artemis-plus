@@ -1,6 +1,7 @@
 package com.limelight.profiles;
 
 import android.content.Context;
+import android.util.AtomicFile;
 
 import androidx.test.core.app.ApplicationProvider;
 
@@ -13,6 +14,8 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import static org.junit.Assert.*;
@@ -43,6 +46,7 @@ public class ProfilesManagerTest {
 
     @After
     public void tearDown() {
+        ProfilesManager.instance = null;
         deleteRecursively(profilesDir);
     }
 
@@ -59,9 +63,8 @@ public class ProfilesManagerTest {
         SettingsProfile p = new SettingsProfile(UUID.randomUUID(), "Active", System.currentTimeMillis(), System.currentTimeMillis(), null);
         manager.add(p);
         manager.setActive(p.getUuid());
-        // Reload from disk to verify persistence
-        ProfilesManager fresh = ProfilesManager.getInstance();
-        fresh.load(context);
+
+        ProfilesManager fresh = reloadManager();
         assertNotNull(fresh.getActive());
         assertEquals(p.getUuid(), fresh.getActive().getUuid());
     }
@@ -73,8 +76,7 @@ public class ProfilesManagerTest {
         p.setName("Updated");
         manager.update(p);
 
-        ProfilesManager fresh = ProfilesManager.getInstance();
-        fresh.load(context);
+        ProfilesManager fresh = reloadManager();
         assertEquals("Updated", fresh.getProfiles().get(0).getName());
     }
 
@@ -98,10 +100,53 @@ public class ProfilesManagerTest {
         manager.delete(p.getUuid());
         assertNull(manager.getActive());
 
-        // Verify persistence
-        ProfilesManager fresh = ProfilesManager.getInstance();
-        fresh.load(context);
+        ProfilesManager fresh = reloadManager();
         assertNull(fresh.getActive());
+    }
+
+    @Test
+    public void interruptedWrite_restoresLastCommittedProfiles() throws Exception {
+        SettingsProfile p = new SettingsProfile(UUID.randomUUID(), "Stable", System.currentTimeMillis(), System.currentTimeMillis(), null);
+        manager.add(p);
+        manager.setActive(p.getUuid());
+        assertTrue(manager.save(context));
+
+        File profilesFile = new File(profilesDir, "profiles.json");
+        AtomicFile atomicFile = new AtomicFile(profilesFile);
+        FileOutputStream interrupted = atomicFile.startWrite();
+        interrupted.write("{\"profiles\":[".getBytes(StandardCharsets.UTF_8));
+        interrupted.flush();
+        // Simulate process death after a partial write: the descriptor is closed without commit.
+        interrupted.close();
+
+        ProfilesManager fresh = reloadManager();
+        assertEquals(1, fresh.getProfiles().size());
+        assertEquals(p.getUuid(), fresh.getProfiles().get(0).getUuid());
+        assertNotNull(fresh.getActive());
+        assertEquals(p.getUuid(), fresh.getActive().getUuid());
+    }
+
+    @Test
+    public void malformedCommittedData_doesNotReplaceLiveProfiles() throws Exception {
+        SettingsProfile p = new SettingsProfile(UUID.randomUUID(), "KeepMe", System.currentTimeMillis(), System.currentTimeMillis(), null);
+        manager.add(p);
+        assertEquals(1, manager.getProfiles().size());
+
+        File profilesFile = new File(profilesDir, "profiles.json");
+        try (FileOutputStream output = new FileOutputStream(profilesFile, false)) {
+            output.write("{\"profiles\":[null],\"activeProfileId\":null}".getBytes(StandardCharsets.UTF_8));
+        }
+
+        assertFalse(manager.load(context));
+        assertEquals(1, manager.getProfiles().size());
+        assertEquals(p.getUuid(), manager.getProfiles().get(0).getUuid());
+    }
+
+    private ProfilesManager reloadManager() {
+        ProfilesManager.instance = null;
+        ProfilesManager fresh = ProfilesManager.getInstance();
+        assertTrue(fresh.load(context));
+        return fresh;
     }
 
     private void deleteRecursively(File f) {

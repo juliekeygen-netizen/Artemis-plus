@@ -355,7 +355,9 @@ final class KeyComboManager {
                         dialogContext.getString(R.string.artemis_key_unknown, code), code)));
             }
         }
-        if (keyRows.isEmpty()) {
+        // New combos start with one normal-key row for convenience. Existing modifier-only
+        // combos intentionally reopen with no normal-key row so editing them does not invent a key.
+        if (keyRows.isEmpty() && existing == null) {
             keyRows.add(new KeyRowModel(null));
         }
 
@@ -440,17 +442,6 @@ final class KeyComboManager {
                     return;
                 }
 
-                for (KeyRowModel row : keyRows) {
-                    if (row.selected == null) {
-                        if (row.field != null) {
-                            row.field.setError(context.getString(R.string.artemis_key_selection_required));
-                            row.field.requestFocus();
-                            row.field.showDropDown();
-                        }
-                        return;
-                    }
-                }
-
                 List<Integer> modifiers = new ArrayList<>(4);
                 if (ctrl.isChecked()) modifiers.add(KeyEvent.KEYCODE_CTRL_LEFT);
                 if (alt.isChecked()) modifiers.add(KeyEvent.KEYCODE_ALT_LEFT);
@@ -459,7 +450,38 @@ final class KeyComboManager {
 
                 List<Integer> regular = new ArrayList<>(keyRows.size());
                 for (KeyRowModel row : keyRows) {
-                    regular.add(row.selected.code);
+                    if (row.selected != null) {
+                        regular.add(row.selected.code);
+                        continue;
+                    }
+
+                    // Untouched regular-key rows are optional. This lets a user simply check Win,
+                    // Ctrl, Alt, or Shift and save a modifier-only button without first deleting
+                    // the convenience row. Non-empty text that is not a valid selected key still
+                    // blocks saving so typos cannot silently disappear.
+                    String typed = row.field == null ? "" : row.field.getText().toString().trim();
+                    if (!typed.isEmpty()) {
+                        row.field.setError(context.getString(R.string.artemis_key_selection_required));
+                        row.field.requestFocus();
+                        row.field.showDropDown();
+                        return;
+                    }
+                }
+
+                // Do not persist an inert button. If all rows were removed, recreate the normal-key
+                // convenience row so the user has an obvious place to make a valid selection.
+                if (!hasAnySelection(modifiers.size(), regular.size())) {
+                    if (keyRows.isEmpty()) {
+                        keyRows.add(new KeyRowModel(null));
+                        rerenderRows[0].run();
+                    }
+                    KeyRowModel first = keyRows.get(0);
+                    if (first.field != null) {
+                        first.field.setError(context.getString(R.string.artemis_key_selection_required));
+                        first.field.requestFocus();
+                        first.field.showDropDown();
+                    }
+                    return;
                 }
 
                 Definition updated = new Definition(
@@ -513,6 +535,11 @@ final class KeyComboManager {
             }
         });
         dialog.show();
+    }
+
+    /** Save-policy helper kept package-visible for focused regression tests. */
+    static boolean hasAnySelection(int modifierCount, int regularKeyCount) {
+        return modifierCount > 0 || regularKeyCount > 0;
     }
 
     static String buildSummary(boolean ctrl,
@@ -670,7 +697,10 @@ final class KeyComboManager {
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     1f));
 
-            if (rowIndex > 0) {
+            // Every regular-key row can be removed. With at least one modifier selected,
+            // removing the final row creates a valid modifier-only chord. Save restores a blank
+            // row if the user tries to leave both modifiers and regular keys empty.
+            if (!rows.isEmpty()) {
                 TextView remove = label(context, "×", 25f, 0xFFFF8A80);
                 remove.setGravity(Gravity.CENTER);
                 remove.setContentDescription(context.getString(

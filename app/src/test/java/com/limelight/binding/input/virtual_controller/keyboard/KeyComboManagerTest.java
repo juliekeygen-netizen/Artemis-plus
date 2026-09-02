@@ -36,6 +36,52 @@ public class KeyComboManagerTest {
     }
 
     @Test
+    public void singleModifierWithoutRegularKeysRoundTrips() throws Exception {
+        KeyComboManager.Definition original = new KeyComboManager.Definition(
+                "ctrl-only",
+                "Ctrl",
+                new int[]{KeyEvent.KEYCODE_CTRL_LEFT},
+                new int[0]);
+
+        KeyComboManager.Definition restored =
+                KeyComboManager.Definition.fromJson(original.toJson());
+
+        assertArrayEquals(new int[]{KeyEvent.KEYCODE_CTRL_LEFT}, restored.modifiers);
+        assertArrayEquals(new int[0], restored.keys);
+    }
+
+    @Test
+    public void multipleModifiersWithoutRegularKeysRoundTripInOrder() throws Exception {
+        KeyComboManager.Definition original = new KeyComboManager.Definition(
+                "ctrl-shift-alt",
+                "Modifiers",
+                new int[]{
+                        KeyEvent.KEYCODE_CTRL_LEFT,
+                        KeyEvent.KEYCODE_SHIFT_LEFT,
+                        KeyEvent.KEYCODE_ALT_LEFT},
+                new int[0]);
+
+        KeyComboManager.Definition restored =
+                KeyComboManager.Definition.fromJson(original.toJson());
+
+        assertArrayEquals(
+                new int[]{
+                        KeyEvent.KEYCODE_CTRL_LEFT,
+                        KeyEvent.KEYCODE_SHIFT_LEFT,
+                        KeyEvent.KEYCODE_ALT_LEFT},
+                restored.modifiers);
+        assertArrayEquals(new int[0], restored.keys);
+    }
+
+    @Test
+    public void savePolicyAcceptsModifierOnlyAndRejectsTrulyEmptyButtons() {
+        assertTrue(KeyComboManager.hasAnySelection(1, 0));
+        assertTrue(KeyComboManager.hasAnySelection(0, 1));
+        assertTrue(KeyComboManager.hasAnySelection(2, 3));
+        assertFalse(KeyComboManager.hasAnySelection(0, 0));
+    }
+
+    @Test
     public void regularKeyOrderAndOptionalModifiersArePreserved() throws Exception {
         KeyComboManager.Definition original = new KeyComboManager.Definition(
                 "ordered",

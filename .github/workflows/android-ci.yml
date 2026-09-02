@@ -100,6 +100,7 @@ jobs:
           --tests "com.limelight.preferences.PreferenceStringValuesTest"
           --tests "com.limelight.GameActivityManifestTest"
           --tests "com.limelight.preferences.StreamSettingsFragmentLifecycleTest"
+          --tests "com.limelight.preferences.StreamSettingsPreferenceRecoveryTest"
           --tests "com.limelight.profiles.OverlayPreferencesTest"
           --tests "com.limelight.profiles.ProfilesManagerTest"
           --tests "com.limelight.quickmenu.QuickMenuConfigTest"

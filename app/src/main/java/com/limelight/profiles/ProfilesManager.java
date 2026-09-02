@@ -195,7 +195,9 @@ public class ProfilesManager {
     }
 
     private void notifyListeners() {
-        for (ProfileChangeListener listener : listeners) {
+        // Dispatch from a snapshot so callbacks may safely add/remove listeners without
+        // invalidating this notification pass or causing later listeners to be skipped.
+        for (ProfileChangeListener listener : new ArrayList<>(listeners)) {
             listener.onProfilesChanged();
         }
     }

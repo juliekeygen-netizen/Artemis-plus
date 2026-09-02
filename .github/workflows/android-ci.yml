@@ -96,6 +96,7 @@ jobs:
           --tests "com.limelight.nvstream.http.PairingManagerRetryTest"
           --tests "com.limelight.ui.FloatingControlPositionStoreTest"
           --tests "com.limelight.preferences.BackgroundStreamingPolicyTest"
+          --tests "com.limelight.preferences.GlPreferencesTest"
           --tests "com.limelight.preferences.PreferenceStringValuesTest"
           --tests "com.limelight.GameActivityManifestTest"
           --tests "com.limelight.preferences.StreamSettingsFragmentLifecycleTest"

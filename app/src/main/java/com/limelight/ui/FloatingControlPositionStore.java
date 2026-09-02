@@ -44,11 +44,14 @@ public final class FloatingControlPositionStore {
         int maxX = Math.max(0, parentView.getWidth() - view.getWidth());
         int maxY = Math.max(0, parentView.getHeight() - view.getHeight());
         if (maxX <= 0 || maxY <= 0) return;
+        float normalizedX = view.getX() / maxX;
+        float normalizedY = view.getY() / maxY;
+        if (!isFinite(normalizedX) || !isFinite(normalizedY)) return;
         String id = identity == null ? identityForView(view) : identity;
         prefs(view.getContext()).edit()
                 .putBoolean(key(view.getContext(), id, "saved"), true)
-                .putFloat(key(view.getContext(), id, "x"), clamp(view.getX() / maxX))
-                .putFloat(key(view.getContext(), id, "y"), clamp(view.getY() / maxY))
+                .putFloat(key(view.getContext(), id, "x"), clamp(normalizedX))
+                .putFloat(key(view.getContext(), id, "y"), clamp(normalizedY))
                 .apply();
     }
 
@@ -57,14 +60,27 @@ public final class FloatingControlPositionStore {
         if (!(parent instanceof View) || view.getWidth() <= 0 || view.getHeight() <= 0) return false;
         String id = identity == null ? identityForView(view) : identity;
         SharedPreferences preferences = prefs(view.getContext());
-        if (!preferences.getBoolean(key(view.getContext(), id, "saved"), false)) return false;
-        View parentView = (View) parent;
-        int maxX = Math.max(0, parentView.getWidth() - view.getWidth());
-        int maxY = Math.max(0, parentView.getHeight() - view.getHeight());
-        if (maxX <= 0 || maxY <= 0) return false;
-        view.setX(clamp(preferences.getFloat(key(view.getContext(), id, "x"), 0f)) * maxX);
-        view.setY(clamp(preferences.getFloat(key(view.getContext(), id, "y"), 0f)) * maxY);
-        return true;
+        try {
+            if (!preferences.getBoolean(key(view.getContext(), id, "saved"), false)) return false;
+            View parentView = (View) parent;
+            int maxX = Math.max(0, parentView.getWidth() - view.getWidth());
+            int maxY = Math.max(0, parentView.getHeight() - view.getHeight());
+            if (maxX <= 0 || maxY <= 0) return false;
+            float normalizedX = preferences.getFloat(key(view.getContext(), id, "x"), 0f);
+            float normalizedY = preferences.getFloat(key(view.getContext(), id, "y"), 0f);
+            if (!isFinite(normalizedX) || !isFinite(normalizedY)) {
+                clearCurrentOrientation(view.getContext(), id);
+                return false;
+            }
+            view.setX(clamp(normalizedX) * maxX);
+            view.setY(clamp(normalizedY) * maxY);
+            return true;
+        } catch (ClassCastException malformedPreference) {
+            // A stale backup, downgrade, or partial write can leave a key with the wrong type.
+            // Recover this control's current slot instead of crashing from a posted restore callback.
+            clearCurrentOrientation(view.getContext(), id);
+            return false;
+        }
     }
 
     public static void clearCurrentOrientation(Context context, String identity) {
@@ -105,6 +121,10 @@ public final class FloatingControlPositionStore {
                 : SidewaysStreamMode.MODE_OFF;
         String orientationName = SidewaysStreamMode.positionSlot(mode, orientation);
         return identity + "_" + orientationName + "_" + axis;
+    }
+
+    private static boolean isFinite(float value) {
+        return !Float.isNaN(value) && !Float.isInfinite(value);
     }
 
     private static float clamp(float value) {

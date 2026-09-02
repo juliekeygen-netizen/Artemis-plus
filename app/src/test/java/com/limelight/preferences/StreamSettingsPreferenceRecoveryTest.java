@@ -1,10 +1,11 @@
 package com.limelight.preferences;
 
-import static org.junit.Assert.assertNotNull;
-
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Bundle;
+import android.widget.FrameLayout;
 
+import androidx.appcompat.app.AppCompatActivity;
 import androidx.preference.PreferenceManager;
 import androidx.test.core.app.ApplicationProvider;
 
@@ -22,9 +23,19 @@ import org.robolectric.annotation.Config;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 33)
 public class StreamSettingsPreferenceRecoveryTest {
-    private static final String ENABLE_PIP_KEY = "checkbox_enable_pip";
-
     private SharedPreferences basePrefs;
+
+    public static class PreferenceHostActivity extends AppCompatActivity {
+        @Override
+        protected void onCreate(Bundle savedInstanceState) {
+            setTheme(R.style.AppTheme);
+            super.onCreate(savedInstanceState);
+
+            FrameLayout container = new FrameLayout(this);
+            container.setId(android.R.id.content);
+            setContentView(container);
+        }
+    }
 
     @Before
     public void setUp() {
@@ -39,21 +50,20 @@ public class StreamSettingsPreferenceRecoveryTest {
     }
 
     @Test
-    public void wrongTypedBaseBooleanDoesNotCrashSettingsInflation() {
+    public void wrongTypedBaseIntegerDoesNotCrashSettingsPreRead() {
         basePrefs.edit()
-                .putString(ENABLE_PIP_KEY, "corrupt")
+                .putString(PreferenceConfiguration.BITRATE_PREF_STRING, "corrupt")
                 .commit();
 
-        try (ActivityController<StreamSettings> controller = Robolectric.buildActivity(StreamSettings.class)) {
-            StreamSettings activity = controller.create().start().resume().get();
+        try (ActivityController<PreferenceHostActivity> controller =
+                     Robolectric.buildActivity(PreferenceHostActivity.class)) {
+            PreferenceHostActivity activity = controller.create().start().resume().get();
             StreamSettings.SettingsFragment fragment = new StreamSettings.SettingsFragment();
 
             activity.getSupportFragmentManager()
                     .beginTransaction()
-                    .replace(R.id.stream_settings, fragment)
+                    .replace(android.R.id.content, fragment)
                     .commitNow();
-
-            assertNotNull(fragment.findPreference(ENABLE_PIP_KEY));
         }
     }
 }

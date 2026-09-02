@@ -39,7 +39,7 @@ subprojects { subProj ->
         // Verbose console output for test status
         testLogging {
             events "passed", "failed", "skipped"
-            exceptionFormat "full"
+            exceptionFormat = "full"
             showStandardStreams = true
         }
     }

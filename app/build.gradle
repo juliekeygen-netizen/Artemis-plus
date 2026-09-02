@@ -40,11 +40,11 @@ def artemisVersionName = requestedVersionName == null || requestedVersionName.tr
         : requestedVersionName
 
 android {
-    ndkVersion "27.0.12077973"
+    ndkVersion = "27.0.12077973"
 
     compileSdk = 36
 
-    namespace 'com.limelight'
+    namespace = 'com.limelight'
 
     defaultConfig {
         minSdk 21
@@ -113,15 +113,15 @@ android {
     }
 
     compileOptions {
-        encoding "UTF-8"
+        encoding = "UTF-8"
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
 
     lint {
         disable 'MissingTranslation'
-        lintConfig file('lint.xml')
-        checkReleaseBuilds false
+        lintConfig = file('lint.xml')
+        checkReleaseBuilds = false
     }
 
     bundle {
@@ -197,7 +197,7 @@ android {
 
     splits {
         abi {
-            enable true
+            enable = true
             reset()
             include "x86", "x86_64", "armeabi-v7a", "arm64-v8a"
         }

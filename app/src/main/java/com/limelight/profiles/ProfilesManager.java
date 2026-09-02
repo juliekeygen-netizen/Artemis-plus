@@ -21,6 +21,7 @@ import java.io.Writer;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -222,28 +223,95 @@ public class ProfilesManager {
             return combined;
         }
         @Override public String getString(String key, String defValue) {
-            if (patch.containsKey(key)) return (String) patch.get(key);
-            return base.getString(key, defValue);
+            if (patch.containsKey(key)) {
+                Object value = patch.get(key);
+                if (value instanceof String) {
+                    return (String) value;
+                }
+            }
+            try {
+                return base.getString(key, defValue);
+            } catch (ClassCastException e) {
+                return defValue;
+            }
         }
         @Override public int getInt(String key, int defValue) {
-            if (patch.containsKey(key)) return ((Number) patch.get(key)).intValue();
-            return base.getInt(key, defValue);
+            if (patch.containsKey(key)) {
+                Object value = patch.get(key);
+                if (value instanceof Number) {
+                    return ((Number) value).intValue();
+                }
+            }
+            try {
+                return base.getInt(key, defValue);
+            } catch (ClassCastException e) {
+                return defValue;
+            }
         }
         @Override public long getLong(String key, long defValue) {
-            if (patch.containsKey(key)) return ((Number) patch.get(key)).longValue();
-            return base.getLong(key, defValue);
+            if (patch.containsKey(key)) {
+                Object value = patch.get(key);
+                if (value instanceof Number) {
+                    return ((Number) value).longValue();
+                }
+            }
+            try {
+                return base.getLong(key, defValue);
+            } catch (ClassCastException e) {
+                return defValue;
+            }
         }
         @Override public float getFloat(String key, float defValue) {
-            if (patch.containsKey(key)) return ((Number) patch.get(key)).floatValue();
-            return base.getFloat(key, defValue);
+            if (patch.containsKey(key)) {
+                Object value = patch.get(key);
+                if (value instanceof Number) {
+                    return ((Number) value).floatValue();
+                }
+            }
+            try {
+                return base.getFloat(key, defValue);
+            } catch (ClassCastException e) {
+                return defValue;
+            }
         }
         @Override public boolean getBoolean(String key, boolean defValue) {
-            if (patch.containsKey(key)) return (Boolean) patch.get(key);
-            return base.getBoolean(key, defValue);
+            if (patch.containsKey(key)) {
+                Object value = patch.get(key);
+                if (value instanceof Boolean) {
+                    return (Boolean) value;
+                }
+            }
+            try {
+                return base.getBoolean(key, defValue);
+            } catch (ClassCastException e) {
+                return defValue;
+            }
         }
         @Override public Set<String> getStringSet(String key, Set<String> defValues) {
-            if (patch.containsKey(key)) return (Set<String>) patch.get(key);
-            return base.getStringSet(key, defValues);
+            if (patch.containsKey(key)) {
+                Set<String> value = toStringSet(patch.get(key));
+                if (value != null) {
+                    return value;
+                }
+            }
+            try {
+                return base.getStringSet(key, defValues);
+            } catch (ClassCastException e) {
+                return defValues;
+            }
+        }
+        private static Set<String> toStringSet(Object value) {
+            if (!(value instanceof Iterable<?>)) {
+                return null;
+            }
+            Set<String> strings = new LinkedHashSet<>();
+            for (Object item : (Iterable<?>) value) {
+                if (!(item instanceof String)) {
+                    return null;
+                }
+                strings.add((String) item);
+            }
+            return strings;
         }
         @Override public boolean contains(String key) {
             return patch.containsKey(key) || base.contains(key);

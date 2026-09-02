@@ -1527,7 +1527,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     public boolean onPictureInPictureRequested() {
         // Enter PiP when requested unless we're on Android 12 which supports auto-enter.
         if (autoEnterPip && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            enterPictureInPictureMode(getPictureInPictureParams(false));
+            PipManualEntryGuard.tryEnter(() ->
+                    enterPictureInPictureMode(getPictureInPictureParams(false)));
         }
         return true;
     }

@@ -3,6 +3,9 @@ package com.limelight;
 import android.os.Bundle;
 
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -11,7 +14,10 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
+@Config(sdk = 33)
+@RunWith(RobolectricTestRunner.class)
 public class ProfileEditorPreferenceValuesTest {
     @Test
     public void gsonNumericAndListValuesRemainReadable() {
@@ -45,6 +51,6 @@ public class ProfileEditorPreferenceValuesTest {
         values.put("mixed", Arrays.asList("alpha", 7));
         Map<String, Object> decoded = ProfileEditorPreferenceValues.decodeState(
                 ProfileEditorPreferenceValues.encodeState(values));
-        assertEquals(false, decoded.containsKey("mixed"));
+        assertFalse(decoded.containsKey("mixed"));
     }
 }

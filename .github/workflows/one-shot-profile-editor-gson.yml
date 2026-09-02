@@ -1,0 +1,41 @@
+name: One-shot profile editor Gson patch
+
+on:
+  push:
+    branches:
+      - fix/profile-editor-gson-values
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply guarded source patch
+        run: python .github/patch-profile-editor-gson.py
+
+      - name: Verify only EditProfileActivity changed
+        shell: bash
+        run: |
+          changed="$(git status --short --untracked-files=no | awk '{print $2}')"
+          if [ "$changed" != "app/src/main/java/com/limelight/EditProfileActivity.java" ]; then
+            echo "Unexpected changed files:"
+            git status --short
+            exit 1
+          fi
+
+      - name: Commit source patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/limelight/EditProfileActivity.java
+          git commit -m "Fix profile editor Gson-backed values"
+          git push

@@ -415,7 +415,9 @@ public final class KeyboardProfilesManager {
             JSONObject object = (JSONObject) value;
             try {
                 Profile profile = Profile.fromJson(object);
-                if (profile.id.isEmpty() || profile.storageName.isEmpty() || findById(profiles, profile.id) != null) {
+                if (profile.id.isEmpty() || profile.storageName.isEmpty()
+                        || findById(profiles, profile.id) != null
+                        || findByStorageName(profiles, profile.storageName) != null) {
                     corruptedEntry = true;
                     continue;
                 }
@@ -471,6 +473,18 @@ public final class KeyboardProfilesManager {
         }
         for (Profile profile : profiles) {
             if (profile.id.equals(id)) {
+                return profile;
+            }
+        }
+        return null;
+    }
+
+    private static Profile findByStorageName(List<Profile> profiles, String storageName) {
+        if (storageName == null) {
+            return null;
+        }
+        for (Profile profile : profiles) {
+            if (profile.storageName.equals(storageName)) {
                 return profile;
             }
         }

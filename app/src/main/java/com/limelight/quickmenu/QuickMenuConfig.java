@@ -75,7 +75,12 @@ public final class QuickMenuConfig {
 
     public static QuickMenuConfig load(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        String raw = prefs.getString(KEY_CONFIG, null);
+        String raw;
+        try {
+            raw = prefs.getString(KEY_CONFIG, null);
+        } catch (ClassCastException e) {
+            return createDefault();
+        }
         if (raw == null || raw.trim().isEmpty()) {
             return createDefault();
         }

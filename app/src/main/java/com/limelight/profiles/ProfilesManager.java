@@ -215,10 +215,10 @@ public class ProfilesManager {
     public SharedPreferences getOverlayingSharedPreferences(Context context) {
         SharedPreferences base = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context);
         SettingsProfile active = getActive();
-        if (active == null || active.getOptions() == null) {
-            return base;
-        }
-        return new OverlaySharedPreferences(base, active.getOptions());
+        Map<String, Object> patch = active == null || active.getOptions() == null
+                ? java.util.Collections.emptyMap()
+                : active.getOptions();
+        return new OverlaySharedPreferences(base, patch);
     }
 
     /**

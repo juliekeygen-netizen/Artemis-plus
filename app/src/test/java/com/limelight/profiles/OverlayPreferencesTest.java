@@ -140,6 +140,26 @@ public class OverlayPreferencesTest {
     }
 
     /**
+     * The type-tolerant wrapper must also protect ordinary base preferences when no
+     * settings profile is active. This is the common startup path for most users.
+     */
+    @Test
+    public void overlayPref_InvalidBaseTypeFallsBackWithoutActiveProfile() {
+        SharedPreferences base = PreferenceManager.getDefaultSharedPreferences(ctx);
+        base.edit().putString("checkbox_enable_pip", "not-a-boolean").commit();
+        try {
+            ProfilesManager pm = ProfilesManager.getInstance();
+            SharedPreferences sp = pm.getOverlayingSharedPreferences(ctx);
+            assertFalse(sp.getBoolean("checkbox_enable_pip", false));
+
+            PreferenceConfiguration cfg = PreferenceConfiguration.readPreferences(ctx);
+            assertFalse(cfg.enablePip);
+        } finally {
+            base.edit().remove("checkbox_enable_pip").commit();
+        }
+    }
+
+    /**
      * Verify that the overlay zoom toggle visibility and zoom\\pan remembering options
      * are persisted with the profile and correctly reloaded across sessions.
      */

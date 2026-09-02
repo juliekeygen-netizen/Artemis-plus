@@ -1,8 +1,10 @@
 package com.limelight;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 import android.app.Activity;
+import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 
 import androidx.preference.PreferenceManager;
@@ -40,5 +42,20 @@ public class OutsideStreamOrientationPolicyTest {
 
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
                 activity.getRequestedOrientation());
+    }
+
+    @Test
+    public void malformedPreferenceRecoversToFollowSystemWithoutCrashingActivityApply() {
+        Activity activity = Robolectric.buildActivity(Activity.class).setup().get();
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(activity);
+        preferences.edit()
+                .putBoolean(OutsideStreamOrientationPolicy.PREF_KEY, true)
+                .commit();
+
+        OutsideStreamOrientationPolicy.apply(activity);
+
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_FULL_USER,
+                activity.getRequestedOrientation());
+        assertFalse(preferences.contains(OutsideStreamOrientationPolicy.PREF_KEY));
     }
 }

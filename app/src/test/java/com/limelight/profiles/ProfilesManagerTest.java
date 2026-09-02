@@ -105,6 +105,32 @@ public class ProfilesManagerTest {
     }
 
     @Test
+    public void listenerCanRemoveItselfWithoutSkippingLaterListeners() {
+        int[] firstCalls = {0};
+        int[] secondCalls = {0};
+        ProfilesManager.ProfileChangeListener[] first = new ProfilesManager.ProfileChangeListener[1];
+        first[0] = () -> {
+            firstCalls[0]++;
+            manager.removeListener(first[0]);
+        };
+        ProfilesManager.ProfileChangeListener second = () -> secondCalls[0]++;
+        manager.addListener(first[0]);
+        manager.addListener(second);
+
+        SettingsProfile profile = new SettingsProfile(
+                UUID.randomUUID(), "ListenerTest", System.currentTimeMillis(),
+                System.currentTimeMillis(), null);
+        manager.add(profile);
+
+        assertEquals(1, firstCalls[0]);
+        assertEquals(1, secondCalls[0]);
+
+        manager.update(profile);
+        assertEquals(1, firstCalls[0]);
+        assertEquals(2, secondCalls[0]);
+    }
+
+    @Test
     public void interruptedWrite_restoresLastCommittedProfiles() throws Exception {
         SettingsProfile p = new SettingsProfile(UUID.randomUUID(), "Stable", System.currentTimeMillis(), System.currentTimeMillis(), null);
         manager.add(p);

@@ -55,6 +55,22 @@ public class FloatingControlPositionStoreTest {
     }
 
     @Test
+    public void malformedResetPreferenceRecoversWithoutClearingSavedPositions() {
+        SharedPreferences resetPreferences = PreferenceManager.getDefaultSharedPreferences(context);
+        resetPreferences.edit()
+                .putString(FloatingControlPositionStore.RESET_BETWEEN_SESSIONS_KEY, "wrong-type")
+                .commit();
+        SharedPreferences positions = context.getSharedPreferences(
+                FloatingControlPositionStore.PREFS, Context.MODE_PRIVATE);
+        positions.edit().putBoolean("floatingMenuButton_portrait_saved", true).commit();
+
+        FloatingControlPositionStore.beginStreamSession(context);
+
+        assertFalse(resetPreferences.contains(FloatingControlPositionStore.RESET_BETWEEN_SESSIONS_KEY));
+        assertTrue(positions.contains("floatingMenuButton_portrait_saved"));
+    }
+
+    @Test
     public void beginStreamSessionKeepsPositionsWhenResetIsDisabled() {
         SharedPreferences preferences = context.getSharedPreferences(
                 FloatingControlPositionStore.PREFS, Context.MODE_PRIVATE);

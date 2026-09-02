@@ -2,6 +2,7 @@ package com.limelight;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 
 import androidx.preference.PreferenceManager;
@@ -17,8 +18,16 @@ public final class OutsideStreamOrientationPolicy {
     private OutsideStreamOrientationPolicy() {}
 
     public static String getMode(Context context) {
-        return PreferenceManager.getDefaultSharedPreferences(context)
-                .getString(PREF_KEY, MODE_FOLLOW_SYSTEM);
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
+        try {
+            return preferences.getString(PREF_KEY, MODE_FOLLOW_SYSTEM);
+        } catch (ClassCastException malformedPreference) {
+            // A restored backup or downgrade can leave this key with a stale non-string type.
+            // Every normal Activity reads it on create/resume, so recover to the safe default
+            // instead of letting one malformed preference crash the non-stream UI repeatedly.
+            preferences.edit().remove(PREF_KEY).apply();
+            return MODE_FOLLOW_SYSTEM;
+        }
     }
 
     public static void apply(Activity activity) {

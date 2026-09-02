@@ -74,7 +74,11 @@ jobs:
         run: chmod +x gradlew
 
       - name: Compile non-root debug variant
-        run: ./gradlew :app:compileNonRoot_gameDebugJavaWithJavac --stacktrace
+        run: >-
+          ./gradlew :app:compileNonRoot_gameDebugJavaWithJavac
+          --warning-mode all
+          --stacktrace
+          2>&1 | tee gradle-deprecation-audit.log
 
       - name: Run Artemis Plus regression tests
         run: >-
@@ -97,12 +101,18 @@ jobs:
           --tests "com.limelight.GameActivityManifestTest"
           --tests "com.limelight.preferences.StreamSettingsFragmentLifecycleTest"
           --tests "com.limelight.quickmenu.QuickMenuConfigTest"
+          --warning-mode all
           --stacktrace
+          2>&1 | tee -a gradle-deprecation-audit.log
 
       - name: Run full inherited unit suite (diagnostic)
         id: inherited_tests
         continue-on-error: true
-        run: ./gradlew :app:testNonRoot_gameDebugUnitTest --stacktrace
+        run: >-
+          ./gradlew :app:testNonRoot_gameDebugUnitTest
+          --warning-mode all
+          --stacktrace
+          2>&1 | tee -a gradle-deprecation-audit.log
 
       - name: Note inherited baseline failures
         if: steps.inherited_tests.outcome == 'failure'
@@ -110,6 +120,15 @@ jobs:
           echo "The inherited Artemis/Marssvoodoo test baseline currently contains known Robolectric failures."
           echo "These same failures were reproduced from the pre-OSC base commit f5587a81d73bf2501b68f1e5a48ca736aa5520a2."
           echo "See the uploaded full test report for details."
+
+      - name: Upload Gradle deprecation audit
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gradle-deprecation-audit
+          path: gradle-deprecation-audit.log
+          if-no-files-found: warn
+          retention-days: 3
 
       - name: Upload unit test reports
         if: always()

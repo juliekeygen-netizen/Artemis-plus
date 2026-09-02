@@ -20,8 +20,16 @@ public final class FloatingControlPositionStore {
     private FloatingControlPositionStore() {}
 
     public static boolean shouldResetBetweenSessions(Context context) {
-        return PreferenceManager.getDefaultSharedPreferences(context)
-                .getBoolean(RESET_BETWEEN_SESSIONS_KEY, false);
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
+        try {
+            return preferences.getBoolean(RESET_BETWEEN_SESSIONS_KEY, false);
+        } catch (ClassCastException malformedPreference) {
+            // A restored backup or downgrade can leave this checkbox key with a stale type.
+            // Stream startup calls this before any control restore, so recover to the safe default
+            // instead of letting one malformed preference prevent Game from opening.
+            preferences.edit().remove(RESET_BETWEEN_SESSIONS_KEY).apply();
+            return false;
+        }
     }
 
     /**

@@ -48,7 +48,7 @@ jobs:
           git diff --check
           git diff -- app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardController.java app/src/test/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardControllerCallbackLifecycleTest.java .github/workflows/android-ci.yml
 
-      - name: Commit focused fix
+      - name: Commit focused fix locally
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -56,4 +56,8 @@ jobs:
           git add app/src/test/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardControllerCallbackLifecycleTest.java
           git add .github/workflows/android-ci.yml
           git commit -m "Cancel stale keyboard callbacks on layout refresh"
-          git push origin HEAD:fix/keyboard-refresh-callback-lifecycle
+
+      - name: Publish prepared commit as temporary tag
+        run: |
+          git tag -f artemis-audit-keyboard-refresh-callback-fix HEAD
+          git push --force origin refs/tags/artemis-audit-keyboard-refresh-callback-fix

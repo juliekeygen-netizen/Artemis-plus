@@ -59,6 +59,7 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
     private StreamMode renderMode = null;
     private InputCallbacks mInputCallbacks;
     private boolean commitTextEnabled = false;
+    private volatile boolean destroyed = false;
 
     private double desiredAspectRatio;
     private boolean fillDisplay = false;
@@ -124,11 +125,17 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
         mTextureView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
             @Override
             public void onSurfaceTextureAvailable(SurfaceTexture surfaceTexture, int width, int height) {
+                if (destroyed) {
+                    return;
+                }
                 attachSidewaysTexture(surfaceTexture, width, height);
             }
 
             @Override
             public void onSurfaceTextureSizeChanged(SurfaceTexture surfaceTexture, int width, int height) {
+                if (destroyed) {
+                    return;
+                }
                 if (mCurrentSurface != null && mCurrentSurface.isValid()) {
                     game.streamSurfaceChanged(PixelFormat.RGBA_8888, width, height);
                 }
@@ -136,6 +143,9 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
 
             @Override
             public boolean onSurfaceTextureDestroyed(SurfaceTexture surfaceTexture) {
+                if (destroyed) {
+                    return true;
+                }
                 // Ignore a stale destroy callback for a producer that is no longer our active
                 // render target. This is defensive against vendor TextureView callback ordering.
                 if (mAttachedSurfaceTexture != surfaceTexture) {
@@ -169,7 +179,7 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
      * the Java Surface wrapper underneath a live decoder, so duplicate callbacks are idempotent.
      */
     private void attachSidewaysTexture(SurfaceTexture surfaceTexture, int width, int height) {
-        if (surfaceTexture == null) {
+        if (destroyed || surfaceTexture == null) {
             return;
         }
         if (mAttachedSurfaceTexture == surfaceTexture && mTextureSurface != null &&
@@ -310,6 +320,9 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
     }
 
     public void setOnSurfaceAvailable(Runnable callback) {
+        if (destroyed) {
+            return;
+        }
         this.onSurfaceAvailable = callback;
         if (isSurfaceReady && onSurfaceAvailable != null) {
             onSurfaceAvailable.run();
@@ -340,29 +353,44 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
     }
 
     private void notifySurfaceReady() {
+        if (destroyed) {
+            return;
+        }
         isSurfaceReady = true;
-        if (onSurfaceAvailable != null) {
-            onSurfaceAvailable.run();
+        Runnable callback = onSurfaceAvailable;
+        if (!destroyed && callback != null) {
+            callback.run();
         }
     }
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
+        if (destroyed) {
+            return;
+        }
         game.surfaceCreated(holder);
     }
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+        if (destroyed) {
+            return;
+        }
         if (renderMode == StreamMode.MODE_2D && width > 0 && height > 0) {
             mCurrentSurface = holder.getSurface();
             notifySurfaceReady();
         }
 
-        game.surfaceChanged(holder, format, width, height);
+        if (!destroyed) {
+            game.surfaceChanged(holder, format, width, height);
+        }
     }
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
+        if (destroyed) {
+            return;
+        }
         if (renderMode == StreamMode.MODE_2D) {
             isSurfaceReady = false;
             mCurrentSurface = null;
@@ -370,15 +398,22 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
             mStereoRenderer.onSurfaceDestroyed();
         }
 
-        game.surfaceDestroyed(holder);
+        if (!destroyed) {
+            game.surfaceDestroyed(holder);
+        }
     }
 
     @Override
     public void onStereo3DSurfaceReady(Surface surface) {
-        if (renderMode != StreamMode.MODE_2D) {
-            mCurrentSurface = surface;
-            notifySurfaceReady();
+        if (destroyed || renderMode == StreamMode.MODE_2D) {
+            return;
         }
+        mCurrentSurface = surface;
+        if (destroyed) {
+            mCurrentSurface = null;
+            return;
+        }
+        notifySurfaceReady();
     }
 
     private void closeTextureSurface() {
@@ -393,11 +428,25 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
     }
 
     public void onDestroy() {
+        if (destroyed) {
+            return;
+        }
+        // Mark teardown before detaching producer listeners so already-queued callbacks become
+        // harmless even if Android delivers them after removeCallback()/setListener(null).
+        destroyed = true;
+        onSurfaceAvailable = null;
+
         // BaseInputConnection instances can outlive this View. Drop the Activity callback target so
         // late IME commits/deletes cannot reach a destroyed Game instance.
         mInputCallbacks = null;
         commitTextEnabled = false;
 
+        if (mSurfaceView != null) {
+            mSurfaceView.getHolder().removeCallback(this);
+        }
+        if (mTextureView != null) {
+            mTextureView.setSurfaceTextureListener(null);
+        }
         if (mStereoRenderer != null) {
             mStereoRenderer.onSurfaceDestroyed();
         }

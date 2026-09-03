@@ -280,6 +280,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private WifiMonitor wifiMonitor;
     private boolean smartReconnectEnabled = true;
     private static final int SMART_RECONNECT_MAX_ATTEMPTS = 6;
+    private final SmartReconnectAttemptGuard smartReconnectAttemptGuard =
+            new SmartReconnectAttemptGuard();
+    private Thread smartReconnectThread;
 
     private WifiManager.WifiLock highPerfWifiLock;
     private WifiManager.WifiLock lowLatencyWifiLock;
@@ -1866,6 +1869,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     protected void onDestroy() {
+        // Reconnect owns global MoonBridge state, so invalidate and interrupt it before any other
+        // Activity-owned stream resources are torn down. A stale worker must never restart or
+        // clean up the bridge after a replacement Game instance has taken ownership.
+        cancelSmartReconnectWorker(true);
         super.onDestroy();
 
         instance = null;
@@ -4259,17 +4266,156 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
     }
 
+    private boolean isSmartReconnectAttemptActive(long reconnectToken) {
+        return smartReconnectAttemptGuard.isAttemptActive(reconnectToken);
+    }
+
+    private void cancelSmartReconnectWorker(boolean destroying) {
+        Thread worker;
+        synchronized (smartReconnectAttemptGuard) {
+            if (destroying) {
+                smartReconnectAttemptGuard.destroy();
+            } else {
+                smartReconnectAttemptGuard.cancelActiveAttempt();
+            }
+            worker = smartReconnectThread;
+            smartReconnectThread = null;
+        }
+        if (worker != null && worker != Thread.currentThread()) {
+            worker.interrupt();
+        }
+    }
+
+    private void clearSmartReconnectWorker(long reconnectToken, Thread worker) {
+        synchronized (smartReconnectAttemptGuard) {
+            if (smartReconnectAttemptGuard.isAttemptActive(reconnectToken) &&
+                    smartReconnectThread == worker) {
+                smartReconnectThread = null;
+            }
+        }
+    }
+
+    private void runSmartReconnect(final int errorCode, final long reconnectToken) {
+        boolean reconnected = false;
+        Thread worker = Thread.currentThread();
+        try {
+            for (int attempt = 1; attempt <= SMART_RECONNECT_MAX_ATTEMPTS; attempt++) {
+                if (!isSmartReconnectAttemptActive(reconnectToken)) {
+                    return;
+                }
+
+                final int currentAttempt = attempt;
+                LimeLog.info("Reconnect attempt " + attempt + "/" + SMART_RECONNECT_MAX_ATTEMPTS);
+                runOnUiThread(() -> {
+                    if (isSmartReconnectAttemptActive(reconnectToken) && reconnectOverlay != null) {
+                        reconnectOverlay.setAttempt(currentAttempt);
+                    }
+                });
+
+                try {
+                    Thread.sleep(500L * attempt);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+
+                if (!isSmartReconnectAttemptActive(reconnectToken)) {
+                    return;
+                }
+                if (!isNetworkAvailable()) {
+                    LimeLog.info("No network available, skipping attempt " + attempt);
+                    continue;
+                }
+
+                try {
+                    synchronized (MoonBridge.class) {
+                        if (!isSmartReconnectAttemptActive(reconnectToken)) {
+                            return;
+                        }
+                        MoonBridge.stopConnection();
+                        MoonBridge.cleanupBridge();
+                    }
+
+                    if (!isSmartReconnectAttemptActive(reconnectToken)) {
+                        return;
+                    }
+
+                    Surface reconnectSurface = null;
+                    if ((keepAliveBackgrounded || keepAliveLifecycleArmed) &&
+                            keepAliveSurface != null && keepAliveSurface.isValid()) {
+                        reconnectSurface = keepAliveSurface.getSurface();
+                    } else if (surfaceCreated && streamContainer != null &&
+                            streamContainer.getSurface() != null && streamContainer.getSurface().isValid()) {
+                        reconnectSurface = streamContainer.getSurface();
+                    }
+
+                    if (conn != null && decoderRenderer != null && reconnectSurface != null &&
+                            isSmartReconnectAttemptActive(reconnectToken)) {
+                        decoderRenderer.setRenderTarget(reconnectSurface);
+                        if (!isSmartReconnectAttemptActive(reconnectToken)) {
+                            return;
+                        }
+                        conn.start(new AndroidAudioRenderer(Game.this, prefConfig.playHostAudio),
+                                decoderRenderer, Game.this);
+
+                        try {
+                            Thread.sleep(2000);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            return;
+                        }
+
+                        if (!isSmartReconnectAttemptActive(reconnectToken)) {
+                            return;
+                        }
+                        if (connected) {
+                            reconnected = true;
+                            LimeLog.info("Reconnect succeeded on attempt " + attempt);
+                            break;
+                        }
+                    }
+                } catch (Exception e) {
+                    if (!isSmartReconnectAttemptActive(reconnectToken)) {
+                        return;
+                    }
+                    LimeLog.warning("Reconnect attempt " + attempt + " failed: " + e.getMessage());
+                }
+            }
+
+            if (!isSmartReconnectAttemptActive(reconnectToken)) {
+                return;
+            }
+
+            final boolean success = reconnected;
+            runOnUiThread(() -> {
+                if (!isSmartReconnectAttemptActive(reconnectToken)) {
+                    return;
+                }
+                if (reconnectOverlay != null) {
+                    reconnectOverlay.hide();
+                }
+                if (!success) {
+                    handleConnectionTerminatedFinal(errorCode);
+                }
+            });
+        } finally {
+            clearSmartReconnectWorker(reconnectToken, worker);
+        }
+    }
+
     @Override
     public void connectionTerminated(final int errorCode) {
-        // A graceful termination is expected while Fast Resume parks the client stream.
-        // Do not let that callback finish the retained Activity or cancel its timeout.
+        if (smartReconnectAttemptGuard.isDestroyed()) {
+            LimeLog.info("Ignoring connection termination after Game destruction");
+            return;
+        }
+
         if (errorCode == MoonBridge.ML_ERROR_GRACEFUL_TERMINATION &&
                 (fastResumeLifecycleArmed || fastResumeBackgrounded || fastResumeReconnectPending)) {
             LimeLog.info("Ignoring expected graceful termination for Fast Resume");
             return;
         }
 
-        // For graceful termination or non-reconnectable errors, skip smart reconnect
         if (errorCode == MoonBridge.ML_ERROR_GRACEFUL_TERMINATION ||
                 errorCode == MoonBridge.ML_ERROR_PROTECTED_CONTENT ||
                 !smartReconnectEnabled) {
@@ -4277,102 +4423,31 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             return;
         }
 
-        // Attempt smart reconnect: freeze frame is automatic (we don't clear the surface)
-        LimeLog.info("Connection lost (error " + errorCode + "), attempting smart reconnect...");
+        final long reconnectToken;
+        final Thread reconnectWorker;
+        Thread previousWorker;
+        synchronized (smartReconnectAttemptGuard) {
+            reconnectToken = smartReconnectAttemptGuard.beginAttempt();
+            if (reconnectToken == SmartReconnectAttemptGuard.NO_ATTEMPT) {
+                return;
+            }
+            previousWorker = smartReconnectThread;
+            reconnectWorker = new Thread(
+                    () -> runSmartReconnect(errorCode, reconnectToken),
+                    "ArtemisSmartReconnect");
+            smartReconnectThread = reconnectWorker;
+        }
+        if (previousWorker != null && previousWorker != Thread.currentThread()) {
+            previousWorker.interrupt();
+        }
 
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                if (reconnectOverlay != null) {
-                    reconnectOverlay.show(SMART_RECONNECT_MAX_ATTEMPTS);
-                }
+        LimeLog.info("Connection lost (error " + errorCode + "), attempting smart reconnect...");
+        runOnUiThread(() -> {
+            if (isSmartReconnectAttemptActive(reconnectToken) && reconnectOverlay != null) {
+                reconnectOverlay.show(SMART_RECONNECT_MAX_ATTEMPTS);
             }
         });
-
-        // Run reconnect attempts on a background thread
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                boolean reconnected = false;
-
-                for (int attempt = 1; attempt <= SMART_RECONNECT_MAX_ATTEMPTS; attempt++) {
-                    final int currentAttempt = attempt;
-                    LimeLog.info("Reconnect attempt " + attempt + "/" + SMART_RECONNECT_MAX_ATTEMPTS);
-
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            if (reconnectOverlay != null) {
-                                reconnectOverlay.setAttempt(currentAttempt);
-                            }
-                        }
-                    });
-
-                    // Exponential backoff: 500ms, 1000ms, 1500ms, 2000ms, 2500ms, 3000ms
-                    try {
-                        Thread.sleep(500L * attempt);
-                    } catch (InterruptedException e) {
-                        break;
-                    }
-
-                    // Check if WiFi/network is available
-                    if (!isNetworkAvailable()) {
-                        LimeLog.info("No network available, skipping attempt " + attempt);
-                        continue;
-                    }
-
-                    // Attempt to reconnect by stopping and restarting the connection
-                    try {
-                        synchronized (MoonBridge.class) {
-                            MoonBridge.stopConnection();
-                            MoonBridge.cleanupBridge();
-                        }
-
-                        // Re-start the connection with the same parameters. Keep Alive may be
-                        // decoding to a drained headless Surface while the Activity Surface is gone.
-                        Surface reconnectSurface = null;
-                        if ((keepAliveBackgrounded || keepAliveLifecycleArmed) &&
-                                keepAliveSurface != null && keepAliveSurface.isValid()) {
-                            reconnectSurface = keepAliveSurface.getSurface();
-                        } else if (surfaceCreated && streamContainer.getSurface() != null &&
-                                streamContainer.getSurface().isValid()) {
-                            reconnectSurface = streamContainer.getSurface();
-                        }
-                        if (conn != null && reconnectSurface != null) {
-                            decoderRenderer.setRenderTarget(reconnectSurface);
-                            conn.start(new AndroidAudioRenderer(Game.this, prefConfig.playHostAudio),
-                                    decoderRenderer, Game.this);
-
-                            // Wait briefly to see if connection succeeds
-                            Thread.sleep(2000);
-
-                            if (connected) {
-                                reconnected = true;
-                                LimeLog.info("Reconnect succeeded on attempt " + attempt);
-                                break;
-                            }
-                        }
-                    } catch (Exception e) {
-                        LimeLog.warning("Reconnect attempt " + attempt + " failed: " + e.getMessage());
-                    }
-                }
-
-                final boolean success = reconnected;
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (reconnectOverlay != null) {
-                            reconnectOverlay.hide();
-                        }
-
-                        if (!success) {
-                            // All attempts failed, fall through to normal disconnect handling
-                            handleConnectionTerminatedFinal(errorCode);
-                        }
-                    }
-                });
-            }
-        }).start();
+        reconnectWorker.start();
     }
 
     /**
@@ -4380,6 +4455,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
      * or after all reconnect attempts have failed.
      */
     private void handleConnectionTerminatedFinal(final int errorCode) {
+        cancelSmartReconnectWorker(false);
+
         // A failed reconnect has no live transport to receive input. Keep Fast Resume input
         // suspended here; connectionStarted() is the success path that restores controllers.
         // Perform a connection test if the failure could be due to a blocked port

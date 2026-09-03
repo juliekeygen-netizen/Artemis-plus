@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/keyboard-refresh-callback-lifecycle
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write

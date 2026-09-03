@@ -1,0 +1,60 @@
+name: One-shot keyboard refresh callback lifecycle
+
+on:
+  push:
+    branches:
+      - fix/keyboard-refresh-callback-lifecycle
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+        with:
+          ref: fix/keyboard-refresh-callback-lifecycle
+          fetch-depth: 0
+
+      - name: Apply focused lifecycle patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          controller_path = Path('app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardController.java')
+          controller = controller_path.read_text()
+          old = '''    public void removeElements() {\n        if (configureGestureCancelCallback != null) {\n'''
+          new = '''    public void removeElements() {\n        // All element long-press/editor callbacks share this Handler. A layout/profile refresh\n        // invalidates the entire current element generation, so none of those callbacks may run\n        // after the old Views are detached.\n        handler.removeCallbacksAndMessages(null);\n        if (configureGestureCancelCallback != null) {\n'''
+          if controller.count(old) != 1:
+              raise SystemExit(f'expected one removeElements anchor, found {controller.count(old)}')
+          controller_path.write_text(controller.replace(old, new, 1))
+
+          test_path = Path('app/src/test/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardControllerCallbackLifecycleTest.java')
+          test_path.write_text('''package com.limelight.binding.input.virtual_controller.keyboard;\n\nimport static org.junit.Assert.assertFalse;\nimport static org.mockito.Mockito.mock;\n\nimport android.app.Activity;\nimport android.os.Looper;\nimport android.widget.FrameLayout;\n\nimport com.limelight.nvstream.NvConnection;\n\nimport org.junit.Test;\nimport org.junit.runner.RunWith;\nimport org.robolectric.Robolectric;\nimport org.robolectric.RobolectricTestRunner;\nimport org.robolectric.Shadows;\nimport org.robolectric.annotation.Config;\n\nimport java.util.concurrent.TimeUnit;\nimport java.util.concurrent.atomic.AtomicBoolean;\n\n@Config(sdk = {33})\n@RunWith(RobolectricTestRunner.class)\npublic class KeyBoardControllerCallbackLifecycleTest {\n    @Test\n    public void refreshLayoutCancelsCallbacksOwnedByDetachedElements() {\n        Activity activity = Robolectric.buildActivity(Activity.class).setup().get();\n        FrameLayout layout = new FrameLayout(activity);\n        activity.setContentView(layout);\n        KeyBoardController controller = new KeyBoardController(\n                mock(NvConnection.class), layout, activity);\n        AtomicBoolean staleCallbackRan = new AtomicBoolean(false);\n\n        controller.getHandler().postDelayed(() -> staleCallbackRan.set(true), 300L);\n        controller.refreshLayout();\n        Shadows.shadowOf(Looper.getMainLooper()).idleFor(500L, TimeUnit.MILLISECONDS);\n\n        assertFalse(staleCallbackRan.get());\n        controller.destroy();\n    }\n}\n''')
+
+          ci_path = Path('.github/workflows/android-ci.yml')
+          ci = ci_path.read_text()
+          ci_old = '          --tests "com.limelight.binding.input.virtual_controller.keyboard.ArtemisActionButtonFactoryTest"\n'
+          ci_new = ci_old + '          --tests "com.limelight.binding.input.virtual_controller.keyboard.KeyBoardControllerCallbackLifecycleTest"\n'
+          if ci.count(ci_old) != 1:
+              raise SystemExit(f'expected one CI test anchor, found {ci.count(ci_old)}')
+          ci_path.write_text(ci.replace(ci_old, ci_new, 1))
+
+      - name: Validate patch shape
+        run: |
+          git diff --check
+          git diff -- app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardController.java app/src/test/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardControllerCallbackLifecycleTest.java .github/workflows/android-ci.yml
+
+      - name: Commit focused fix and remove helper
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/one-shot-keyboard-refresh-callback-lifecycle.yml
+          git add app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardController.java
+          git add app/src/test/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardControllerCallbackLifecycleTest.java
+          git add .github/workflows/android-ci.yml
+          git commit -m "Cancel stale keyboard callbacks on layout refresh"
+          git push origin HEAD:fix/keyboard-refresh-callback-lifecycle

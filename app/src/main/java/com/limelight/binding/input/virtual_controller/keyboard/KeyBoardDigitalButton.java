@@ -56,6 +56,7 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement {
             onLongClickCallback();
         }
     };
+    private boolean callbackPressActive;
 
     private final Paint paint = new Paint();
     private final RectF rect = new RectF();
@@ -255,6 +256,7 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement {
 
     private void onClickCallback() {
         _DBG("clicked");
+        callbackPressActive = true;
         // notify listeners
         for (DigitalButtonListener listener : listeners) {
             listener.onClick();
@@ -277,6 +279,11 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement {
         // notify listeners
         for (DigitalButtonListener listener : listeners) {
             listener.onRelease();
+        }
+
+        // Sticky buttons deliberately keep their host-side press active after finger-up.
+        if (!sticky) {
+            callbackPressActive = false;
         }
 
         // We may be called for a release without a prior click
@@ -333,5 +340,25 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement {
             }
         }
         return true;
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        if (virtualController != null) {
+            virtualController.getHandler().removeCallbacks(longClickRunnable);
+        }
+
+        // A profile/layout refresh can detach this View without delivering ACTION_UP/CANCEL. Only
+        // synthesize a release if this control actually emitted a listener press, so editor-only
+        // touches cannot release an unrelated host key that happens to use the same key code.
+        if (callbackPressActive) {
+            setPressed(false);
+            sticky = false;
+            switchDown = false;
+            movingButton = null;
+            onReleaseCallback();
+        }
+
+        super.onDetachedFromWindow();
     }
 }

@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - fix/keyboard-refresh-callback-lifecycle
-  pull_request:
-    branches:
-      - main
 
 permissions:
   contents: write
@@ -51,11 +48,10 @@ jobs:
           git diff --check
           git diff -- app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardController.java app/src/test/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardControllerCallbackLifecycleTest.java .github/workflows/android-ci.yml
 
-      - name: Commit focused fix and remove helper
+      - name: Commit focused fix
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/one-shot-keyboard-refresh-callback-lifecycle.yml
           git add app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardController.java
           git add app/src/test/java/com/limelight/binding/input/virtual_controller/keyboard/KeyBoardControllerCallbackLifecycleTest.java
           git add .github/workflows/android-ci.yml

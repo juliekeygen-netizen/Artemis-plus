@@ -188,4 +188,12 @@ final class KeyComboButton extends KeyBoardDigitalButton {
                 return true;
         }
     }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        if (virtualController != null) {
+            virtualController.getHandler().removeCallbacks(editorLongPressRunnable);
+        }
+        super.onDetachedFromWindow();
+    }
 }

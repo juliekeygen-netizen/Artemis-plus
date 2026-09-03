@@ -393,6 +393,11 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
     }
 
     public void onDestroy() {
+        // BaseInputConnection instances can outlive this View. Drop the Activity callback target so
+        // late IME commits/deletes cannot reach a destroyed Game instance.
+        mInputCallbacks = null;
+        commitTextEnabled = false;
+
         if (mStereoRenderer != null) {
             mStereoRenderer.onSurfaceDestroyed();
         }

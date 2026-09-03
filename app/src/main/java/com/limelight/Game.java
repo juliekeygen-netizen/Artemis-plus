@@ -378,10 +378,15 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private static final int UTF8_CHUNK_SIZE = 512;
     private final Queue<String> commitTextQueue = new ArrayDeque<>();
     private final Handler commitTextHandler = new Handler(Looper.getMainLooper());
+    private volatile boolean inputCallbacksDestroyed;
 
     private final Runnable flushCommitTextQueue = new Runnable() {
         @Override
         public void run() {
+            if (inputCallbacksDestroyed) {
+                commitTextQueue.clear();
+                return;
+            }
             if (commitTextQueue.isEmpty()) {
                 return;
             }
@@ -1868,6 +1873,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     protected void onDestroy() {
+        // Detach IME/text work before any transport teardown. An InputConnection can outlive its
+        // View/Activity briefly, so reject late callbacks and discard already queued chunks.
+        inputCallbacksDestroyed = true;
+        commitTextHandler.removeCallbacksAndMessages(null);
+        commitTextQueue.clear();
+
         // Invalidate reconnect ownership before Android tears down the Activity. The worker may be
         // sleeping in a backoff/retry delay, so interrupt it as well as invalidating its token.
         smartReconnectLifecycle.destroy();
@@ -5445,7 +5456,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleCommitText(CharSequence text) {
-        if (!prefConfig.enableCommitText || conn == null) {
+        if (inputCallbacksDestroyed || !prefConfig.enableCommitText || conn == null) {
             return false;
         }
         enqueueCommitText(text.toString());
@@ -5454,7 +5465,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleDeleteSurroundingText(int beforeLength, int afterLength) {
-        if (!prefConfig.enableCommitText || conn == null) {
+        if (inputCallbacksDestroyed || !prefConfig.enableCommitText || conn == null) {
             return false;
         }
         // Send backspace events for deleted preceding characters
@@ -5469,7 +5480,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private void enqueueCommitText(String text) {
-        if (text == null || text.isEmpty()) {
+        if (inputCallbacksDestroyed || text == null || text.isEmpty()) {
             return;
         }
         byte[] utf8 = text.getBytes(StandardCharsets.UTF_8);

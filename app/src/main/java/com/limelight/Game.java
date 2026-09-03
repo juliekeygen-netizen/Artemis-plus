@@ -2763,24 +2763,34 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     public void sendKeys(short[] keys) {
+        NvConnection keyConnection = conn;
+        if (keyConnection == null || keys == null || keys.length == 0) {
+            return;
+        }
+
+        // Pair every delayed key-up with the same connection generation that received its key-down.
+        // Reconnect can replace the Game.conn field while this delay is pending.
+        short[] keySequence = keys.clone();
         final byte[] modifier = {(byte) 0};
 
-        for (short key : keys) {
-            conn.sendKeyboardInput(key, KeyboardPacket.KEY_DOWN, modifier[0], (byte) 0);
+        for (short key : keySequence) {
+            keyConnection.sendKeyboardInput(key, KeyboardPacket.KEY_DOWN, modifier[0], (byte) 0);
 
             // Apply the modifier of the pressed key, e.g. CTRL first issues a CTRL event (without
             // modifier) and then sends the following keys with the CTRL modifier applied
             modifier[0] |= getModifier(key);
         }
 
-        new Handler().postDelayed((() -> {
-            for (int pos = keys.length - 1; pos >= 0; pos--) {
-                short key = keys[pos];
+        // Use the Activity-owned handler so onDestroy() can cancel pending releases before transport
+        // teardown instead of leaving an anonymous Handler retaining this Game instance.
+        timerHandler.postDelayed((() -> {
+            for (int pos = keySequence.length - 1; pos >= 0; pos--) {
+                short key = keySequence[pos];
 
                 // Remove the keys modifier before releasing the key
                 modifier[0] &= (byte) ~getModifier(key);
 
-                conn.sendKeyboardInput(key, KeyboardPacket.KEY_UP, modifier[0], (byte) 0);
+                keyConnection.sendKeyboardInput(key, KeyboardPacket.KEY_UP, modifier[0], (byte) 0);
             }
         }), GameMenu.KEY_UP_DELAY);
     }

@@ -1,0 +1,34 @@
+name: One-shot sendKeys lifecycle patch
+
+on:
+  push:
+    branches:
+      - audit/sendkeys-generation
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: audit/sendkeys-generation
+          fetch-depth: 0
+
+      - name: Apply lifecycle patch
+        run: |
+          python3 .github/scripts/patch-sendkeys-generation.py
+          git diff --check
+          git status --short
+
+      - name: Commit source patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/limelight/Game.java \
+                  app/src/test/java/com/limelight/GameSendKeysLifecycleTest.java
+          git commit -m "Bind delayed key releases to their connection"
+          git push origin HEAD:audit/sendkeys-generation

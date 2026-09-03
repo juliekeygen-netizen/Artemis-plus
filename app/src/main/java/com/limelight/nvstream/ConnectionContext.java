@@ -31,4 +31,7 @@ public class ConnectionContext {
     public int negotiatedPacketSize;
 
     public int videoCapabilities;
+
+    // INVALID_TOKEN for legacy/direct helper use; asynchronous NvConnection starts set this.
+    long startGenerationToken = NvConnectionStartGate.INVALID_TOKEN;
 }

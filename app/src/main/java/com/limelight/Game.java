@@ -4295,9 +4295,14 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             return;
         }
 
+        // Any reconnectable termination means the old transport is no longer usable. Clear this
+        // before ownership arbitration too: a nested retry termination must not leave a stale
+        // true value that the retry worker could mistake for a successful reconnect.
+        connected = false;
+
         // A retry connection can itself report termination while the owning retry loop is still
         // active. Keep exactly one reconnect owner instead of recursively spawning overlapping
-        // workers that race MoonBridge.stopConnection()/start().
+        // workers that race the shared connection transport.
         final long reconnectToken = smartReconnectLifecycle.tryBegin();
         if (reconnectToken == SmartReconnectLifecycle.INVALID_TOKEN) {
             LimeLog.info("Ignoring nested connection termination while smart reconnect is active");
@@ -4308,7 +4313,18 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         LimeLog.info("Connection lost (error " + errorCode + "), attempting smart reconnect...");
 
         runOnUiThread(() -> {
-            if (smartReconnectLifecycle.isActive(reconnectToken) && reconnectOverlay != null) {
+            if (!smartReconnectLifecycle.isActive(reconnectToken)) {
+                return;
+            }
+            if (controllerHandler != null) {
+                controllerHandler.suspendForReconnect();
+            }
+            if (wifiMonitor != null) {
+                wifiMonitor.stop();
+            }
+            MoonBridge.setServerStatsListener(null);
+            updatePipAutoEnter();
+            if (reconnectOverlay != null) {
                 reconnectOverlay.show(SMART_RECONNECT_MAX_ATTEMPTS);
             }
         });
@@ -4348,15 +4364,14 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                     continue;
                 }
 
-                // Attempt to reconnect by stopping and restarting the connection
+                // Stop/restart through NvConnection because it owns both the Java-side start
+                // generation and the global MoonBridge semaphore. Bypassing it can leak the permit.
                 try {
-                    synchronized (MoonBridge.class) {
-                        if (!smartReconnectLifecycle.isActive(reconnectToken)) {
-                            return;
-                        }
-                        MoonBridge.stopConnection();
-                        MoonBridge.cleanupBridge();
+                    if (conn == null) {
+                        continue;
                     }
+                    connected = false;
+                    conn.stop();
 
                     if (!smartReconnectLifecycle.isActive(reconnectToken)) {
                         return;

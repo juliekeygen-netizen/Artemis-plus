@@ -68,47 +68,8 @@ public class KeyBoardControllerConfigurationLoader {
 
     public static KeyboardDigitalPadButton createDiaitalPadButton(String elementId, int keyCodeLeft, int keyCodeRight, int keyCodeUp, int keyCodeDown, final KeyBoardController controller, final Context context) {
         KeyboardDigitalPadButton button = new KeyboardDigitalPadButton(controller, context, elementId);
-        button.addDigitalPadListener(new KeyboardDigitalPadButton.DigitalPadListener() {
-            @Override
-            public void onDirectionChange(int direction) {
-                if ((direction & KeyboardDigitalPadButton.DIGITAL_PAD_DIRECTION_LEFT) != 0) {
-                    KeyEvent event = new KeyEvent(KeyEvent.ACTION_DOWN, keyCodeLeft);
-                    event.setSource(3);
-                    controller.sendKeyEvent(event);
-                } else {
-                    KeyEvent event = new KeyEvent(KeyEvent.ACTION_UP, keyCodeLeft);
-                    event.setSource(3);
-                    controller.sendKeyEvent(event);
-                }
-                if ((direction & KeyboardDigitalPadButton.DIGITAL_PAD_DIRECTION_RIGHT) != 0) {
-                    KeyEvent event = new KeyEvent(KeyEvent.ACTION_DOWN, keyCodeRight);
-                    event.setSource(3);
-                    controller.sendKeyEvent(event);
-                } else {
-                    KeyEvent event = new KeyEvent(KeyEvent.ACTION_UP, keyCodeRight);
-                    event.setSource(3);
-                    controller.sendKeyEvent(event);
-                }
-                if ((direction & KeyboardDigitalPadButton.DIGITAL_PAD_DIRECTION_UP) != 0) {
-                    KeyEvent event = new KeyEvent(KeyEvent.ACTION_DOWN, keyCodeUp);
-                    event.setSource(3);
-                    controller.sendKeyEvent(event);
-                } else {
-                    KeyEvent event = new KeyEvent(KeyEvent.ACTION_UP, keyCodeUp);
-                    event.setSource(3);
-                    controller.sendKeyEvent(event);
-                }
-                if ((direction & KeyboardDigitalPadButton.DIGITAL_PAD_DIRECTION_DOWN) != 0) {
-                    KeyEvent event = new KeyEvent(KeyEvent.ACTION_DOWN, keyCodeDown);
-                    event.setSource(3);
-                    controller.sendKeyEvent(event);
-                } else {
-                    KeyEvent event = new KeyEvent(KeyEvent.ACTION_UP, keyCodeDown);
-                    event.setSource(3);
-                    controller.sendKeyEvent(event);
-                }
-            }
-        });
+        KeyboardControlInputBinding.bindDigitalPad(
+                button, controller, keyCodeLeft, keyCodeRight, keyCodeUp, keyCodeDown);
         return button;
     }
 
@@ -116,14 +77,7 @@ public class KeyBoardControllerConfigurationLoader {
     public static KeyBoardAnalogStickButton createKeyBoardAnalogStickButton(final KeyBoardController controller, String elementId, final Context context, int[] keylist) {
 
         KeyBoardAnalogStickButton analogStick = new KeyBoardAnalogStickButton(controller, elementId, context, keylist);
-        analogStick.setListener(new KeyBoardAnalogStickButton.KeyBoardAnalogStickListener() {
-            @Override
-            public void onkeyEvent(int code, boolean isPress) {
-                KeyEvent keyEvent = new KeyEvent(isPress ? KeyEvent.ACTION_DOWN : KeyEvent.ACTION_UP, code);
-                keyEvent.setSource(2);
-                controller.sendKeyEvent(keyEvent);
-            }
-        });
+        KeyboardControlInputBinding.bindAnalogStick(analogStick, controller);
 
         return analogStick;
 
@@ -132,14 +86,7 @@ public class KeyBoardControllerConfigurationLoader {
     private static KeyBoardAnalogStickButtonFree createKeyBoardAnalogStickButton2(final KeyBoardController controller, String elementId, final Context context, int[] keylist) {
 
         KeyBoardAnalogStickButtonFree analogStick = new KeyBoardAnalogStickButtonFree(controller, elementId, context, keylist);
-        analogStick.setListener(new KeyBoardAnalogStickButtonFree.KeyBoardAnalogStickListener() {
-            @Override
-            public void onkeyEvent(int code, boolean isPress) {
-                KeyEvent keyEvent = new KeyEvent(isPress ? KeyEvent.ACTION_DOWN : KeyEvent.ACTION_UP, code);
-                keyEvent.setSource(2);
-                controller.sendKeyEvent(keyEvent);
-            }
-        });
+        KeyboardControlInputBinding.bindFreeAnalogStick(analogStick, controller);
 
         return analogStick;
 
@@ -296,7 +243,7 @@ public class KeyBoardControllerConfigurationLoader {
                     // Release keys
                     for (int i = keys.length - 1; i >= 0; i--) {
                         short key = keys[i];
-                        modifier[0] &= (byte) ~getModifier(key);
+                        modifier[0] &= (byte) ~getModifier(keys[i]);
                         conn.sendKeyboardInput(key, KeyboardPacket.KEY_UP, modifier[0], (byte) 0);
                     }
                 }
@@ -318,33 +265,7 @@ public class KeyBoardControllerConfigurationLoader {
         KeyBoardTouchPadButton button = new KeyBoardTouchPadButton(controller, elementId, layer, context);
         button.setText(text);
         button.setIcon(icon);
-        button.addDigitalButtonListener(new KeyBoardTouchPadButton.DigitalButtonListener() {
-            @Override
-            public void onClick() {
-                int code = keyShort == 9 ? 3 : 1;
-                KeyEvent keyEvent = new KeyEvent(KeyEvent.ACTION_DOWN, code);
-                keyEvent.setSource(type);
-                controller.sendKeyEvent(keyEvent);
-            }
-
-            @Override
-            public void onLongClick() {
-            }
-
-            @Override
-            public void onMove(int x, int y) {
-                controller.sendMouseMove(x, y);
-            }
-
-            @Override
-            public void onRelease() {
-                int code = keyShort == 9 ? 3 : 1;
-                KeyEvent keyEvent = new KeyEvent(KeyEvent.ACTION_UP, code);
-                keyEvent.setSource(type);
-                controller.sendKeyEvent(keyEvent);
-
-            }
-        });
+        KeyboardControlInputBinding.bindTouchButton(button, keyShort, type, controller);
 
         return button;
     }

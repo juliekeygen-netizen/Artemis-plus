@@ -104,6 +104,7 @@ jobs:
           --tests "com.limelight.binding.input.virtual_controller.keyboard.LongPressMoveGestureGuardTest"
           --tests "com.limelight.nvstream.http.PairingManagerRetryTest"
           --tests "com.limelight.ui.FloatingControlPositionStoreTest"
+          --tests "com.limelight.wifi.WifiMonitorLifecycleTest"
           --tests "com.limelight.preferences.BackgroundStreamingPolicyTest"
           --tests "com.limelight.preferences.GlPreferencesTest"
           --tests "com.limelight.preferences.PreferenceStringValuesTest"

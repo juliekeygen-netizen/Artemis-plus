@@ -22,11 +22,11 @@ public class WifiMonitor {
     public static final int QUALITY_GOOD = 3;
     public static final int QUALITY_EXCELLENT = 4;
 
-    private WifiManager wifiManager;
-    private Handler handler;
-    private Runnable pollRunnable;
-    private WifiCallback callback;
-    private boolean running;
+    private volatile WifiManager wifiManager;
+    private volatile Handler handler;
+    private volatile Runnable pollRunnable;
+    private volatile WifiCallback callback;
+    private volatile boolean running;
 
     private int lastQuality = -1;
 
@@ -34,21 +34,30 @@ public class WifiMonitor {
         void onWifiQualityChanged(int quality, int rssi, int linkSpeed);
     }
 
-    public void start(Context context, WifiCallback callback) {
+    public synchronized void start(Context context, WifiCallback callback) {
         if (running) {
             return;
         }
+        if (context == null || callback == null) {
+            LimeLog.warning("Unable to start WiFi monitor without context and callback");
+            return;
+        }
 
-        this.callback = callback;
-        this.running = true;
-
+        final WifiManager resolvedWifiManager;
         try {
-            wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            resolvedWifiManager = (WifiManager) context.getApplicationContext()
+                    .getSystemService(Context.WIFI_SERVICE);
         } catch (Exception e) {
             LimeLog.warning("Failed to get WifiManager: " + e.getMessage());
             return;
         }
+        if (resolvedWifiManager == null) {
+            LimeLog.warning("Failed to get WifiManager: service unavailable");
+            return;
+        }
 
+        wifiManager = resolvedWifiManager;
+        this.callback = callback;
         handler = new Handler(Looper.getMainLooper());
 
         pollRunnable = new Runnable() {
@@ -59,33 +68,48 @@ public class WifiMonitor {
                 }
 
                 try {
-                    WifiInfo info = wifiManager.getConnectionInfo();
-                    if (info != null) {
-                        int rssi = info.getRssi();
-                        int linkSpeed = info.getLinkSpeed();
+                    WifiManager manager = wifiManager;
+                    WifiCallback activeCallback = WifiMonitor.this.callback;
+                    if (manager != null && activeCallback != null) {
+                        WifiInfo info = manager.getConnectionInfo();
+                        if (info != null) {
+                            int rssi = info.getRssi();
+                            int linkSpeed = info.getLinkSpeed();
 
-                        int quality = calculateQuality(rssi, linkSpeed);
+                            int quality = calculateQuality(rssi, linkSpeed);
 
-                        // Always report so the overlay stays updated
-                        callback.onWifiQualityChanged(quality, rssi, linkSpeed);
-                        lastQuality = quality;
+                            // Always report so the overlay stays updated
+                            activeCallback.onWifiQualityChanged(quality, rssi, linkSpeed);
+                            lastQuality = quality;
+                        }
                     }
                 } catch (Exception e) {
                     LimeLog.warning("WiFi poll failed: " + e.getMessage());
                 }
 
-                handler.postDelayed(pollRunnable, POLL_INTERVAL_MS);
+                Handler activeHandler = handler;
+                if (running && activeHandler != null) {
+                    activeHandler.postDelayed(this, POLL_INTERVAL_MS);
+                }
             }
         };
 
+        // Mark the lifecycle active only after all resources required by the poller exist. This
+        // keeps a failed service lookup restartable instead of permanently wedging start().
+        running = true;
         handler.post(pollRunnable);
     }
 
-    public void stop() {
+    public synchronized void stop() {
         running = false;
-        if (handler != null) {
-            handler.removeCallbacksAndMessages(null);
+        Handler activeHandler = handler;
+        if (activeHandler != null) {
+            activeHandler.removeCallbacksAndMessages(null);
         }
+        pollRunnable = null;
+        handler = null;
+        callback = null;
+        wifiManager = null;
         lastQuality = -1;
     }
 

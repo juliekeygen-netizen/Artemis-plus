@@ -97,6 +97,7 @@ jobs:
           --tests "com.limelight.binding.input.virtual_controller.OscProfilesManagerTest"
           --tests "com.limelight.binding.input.virtual_controller.keyboard.ArtemisActionButtonFactoryTest"
           --tests "com.limelight.binding.input.virtual_controller.keyboard.KeyComboManagerTest"
+          --tests "com.limelight.binding.input.virtual_controller.keyboard.KeyboardInputReleaseTrackerTest"
           --tests "com.limelight.binding.input.virtual_controller.keyboard.KeyboardProfileStorageAliasRecoveryTest"
           --tests "com.limelight.binding.input.virtual_controller.keyboard.KeyboardProfilesManagerTest"
           --tests "com.limelight.binding.input.virtual_controller.keyboard.LayoutSnappingHelperTest"

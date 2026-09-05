@@ -75,7 +75,7 @@ public class GameClipboardLifecycleTest {
         int network = get.indexOf("clipboardHttp.getClipboard();", firstActive);
         int afterNetwork = get.indexOf("if (!lifecycle.isActive(token))", network);
         int atomicMutation = get.indexOf("lifecycle.runIfActive(token", afterNetwork);
-        int mutation = get.indexOf("activeClipboardManager.setPrimaryClip(clipData);", atomicMutation);
+        int mutation = get.indexOf("activeClipboardManager.setPrimaryClip(clipData)", atomicMutation);
         int finallyBlock = get.indexOf("finally", mutation);
         int finish = get.indexOf("lifecycle.finishGet(token);", finallyBlock);
 

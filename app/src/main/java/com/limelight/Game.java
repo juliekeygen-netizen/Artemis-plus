@@ -5065,7 +5065,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void onPerfUpdate(final String text) {
-        runOnUiThread(new Runnable() {
+        runOnUiThreadIfActive(new Runnable() {
             @Override
             public void run() {
                 if(prefConfig.enablePerfOverlayLite){
@@ -5080,7 +5080,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     @Override
     public void onPerfStatsUpdate(final float decodeTimeMs, final float renderTimeMs,
                                   final float networkLatencyMs, final int fps, final String codec) {
-        runOnUiThread(new Runnable() {
+        runOnUiThreadIfActive(new Runnable() {
             @Override
             public void run() {
                 if (statsOverlay != null) {

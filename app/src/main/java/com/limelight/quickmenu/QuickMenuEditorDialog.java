@@ -275,9 +275,14 @@ public final class QuickMenuEditorDialog {
             root.addView(search, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, ArtemisEditorUi.dp(ui, 44)));
 
+            List<Integer> categoryResIds = new ArrayList<>();
+            categoryResIds.add(0); // Sentinel for "All categories"; never persisted or compared to action IDs.
+            categoryResIds.addAll(StreamActionRegistry.getCategoryResIds());
             List<String> categories = new ArrayList<>();
             categories.add(ui.getString(R.string.artemis_quick_menu_all_categories));
-            categories.addAll(StreamActionRegistry.getCategories());
+            for (int categoryResId : StreamActionRegistry.getCategoryResIds()) {
+                categories.add(ui.getString(categoryResId));
+            }
             Spinner category = new Spinner(ui);
             ArrayAdapter<String> categoryAdapter = new ArrayAdapter<String>(
                     ui, android.R.layout.simple_spinner_dropdown_item, categories) {
@@ -317,12 +322,16 @@ public final class QuickMenuEditorDialog {
 
             Runnable rebuild = () -> {
                 String query = search.getText().toString().trim().toLowerCase(Locale.ROOT);
-                String selectedCategory = String.valueOf(category.getSelectedItem());
+                int selectedPosition = category.getSelectedItemPosition();
+                int selectedCategoryResId = selectedPosition >= 0 && selectedPosition < categoryResIds.size()
+                        ? categoryResIds.get(selectedPosition) : 0;
                 rows.removeAllViews();
                 for (StreamActionRegistry.ActionDefinition action : StreamActionRegistry.getAll()) {
-                    if (!ui.getString(R.string.artemis_quick_menu_all_categories).equals(selectedCategory) &&
-                            !action.category.equals(selectedCategory)) continue;
-                    String haystack = (action.label + " " + action.category + " " + action.description)
+                    if (selectedCategoryResId != 0 && action.categoryResId != selectedCategoryResId) continue;
+                    String label = ui.getString(action.labelResId);
+                    String categoryLabel = ui.getString(action.categoryResId);
+                    String description = ui.getString(action.descriptionResId);
+                    String haystack = (label + " " + categoryLabel + " " + description)
                             .toLowerCase(Locale.ROOT);
                     if (!query.isEmpty() && !haystack.contains(query)) continue;
                     rows.addView(actionPickerRow(action, picker), new LinearLayout.LayoutParams(
@@ -361,9 +370,10 @@ public final class QuickMenuEditorDialog {
                     ArtemisEditorUi.dp(ui, 12), ArtemisEditorUi.dp(ui, 7));
             row.setBackground(ArtemisEditorUi.rounded(ui,
                     ArtemisEditorUi.SURFACE_RAISED, 8, 0, 0));
-            TextView label = ArtemisEditorUi.label(ui, action.label, 14.5f, ArtemisEditorUi.TEXT_PRIMARY);
+            TextView label = ArtemisEditorUi.label(ui,
+                    ui.getString(action.labelResId), 14.5f, ArtemisEditorUi.TEXT_PRIMARY);
             TextView detail = ArtemisEditorUi.label(ui,
-                    action.category + "  ·  " + action.description,
+                    ui.getString(action.categoryResId) + "  ·  " + ui.getString(action.descriptionResId),
                     11.5f, ArtemisEditorUi.TEXT_SECONDARY);
             detail.setMaxLines(1);
             row.addView(label);
@@ -495,10 +505,11 @@ public final class QuickMenuEditorDialog {
                     holder.itemView.setOnClickListener(v -> openPage(node.page));
                 } else {
                     StreamActionRegistry.ActionDefinition action = StreamActionRegistry.find(node.actionId);
-                    holder.name.setText(action == null ? node.actionId : action.label);
+                    holder.name.setText(action == null
+                            ? node.actionId : ui.getString(action.labelResId));
                     holder.type.setText(action == null
                             ? ui.getString(R.string.artemis_quick_menu_unavailable_action)
-                            : action.category);
+                            : ui.getString(action.categoryResId));
                     holder.open.setVisibility(View.INVISIBLE);
                     holder.itemView.setOnClickListener(null);
                 }

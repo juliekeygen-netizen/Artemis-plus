@@ -378,7 +378,24 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private static final int UTF8_CHUNK_SIZE = 512;
     private final Queue<String> commitTextQueue = new ArrayDeque<>();
     private final Handler commitTextHandler = new Handler(Looper.getMainLooper());
+    private final Object gameCallbackOwnerLock = new Object();
     private volatile boolean inputCallbacksDestroyed;
+
+    private boolean shouldIgnoreGameUiCallback() {
+        return inputCallbacksDestroyed || isFinishing() || isDestroyed();
+    }
+
+    private void runOnUiThreadIfActive(Runnable runnable) {
+        if (inputCallbacksDestroyed) {
+            return;
+        }
+        runOnUiThread(() -> {
+            if (shouldIgnoreGameUiCallback()) {
+                return;
+            }
+            runnable.run();
+        });
+    }
 
     private final Runnable restoreInputGrabRunnable = () -> {
         if (inputCallbacksDestroyed || isFinishing() || isDestroyed() || !connected ||
@@ -1902,7 +1919,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     protected void onDestroy() {
         // Detach IME/text work before any transport teardown. An InputConnection can outlive its
         // View/Activity briefly, so reject late callbacks and discard already queued chunks.
-        inputCallbacksDestroyed = true;
+        // The owner lock also waits for any synchronous native callback already touching controller
+        // or decoder state, then prevents all later callbacks from entering those owners.
+        synchronized (gameCallbackOwnerLock) {
+            inputCallbacksDestroyed = true;
+        }
         commitTextHandler.removeCallbacksAndMessages(null);
         commitTextQueue.clear();
 
@@ -4152,7 +4173,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void stageStarting(final String stage) {
-        runOnUiThread(new Runnable() {
+        runOnUiThreadIfActive(new Runnable() {
             @Override
             public void run() {
                 if (spinner != null) {
@@ -4250,16 +4271,24 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean stageFailed(final String stage, final int portFlags, final int errorCode) {
+        if (inputCallbacksDestroyed) {
+            return false;
+        }
+
         // Perform a connection test if the failure could be due to a blocked port
         // This does network I/O, so don't do it on the main thread.
         final int portTestResult = MoonBridge.testClientConnectivity(ServerHelper.CONNECTION_TEST_SERVER, 443, portFlags);
 
         if (errorCode == 0 && portFlags != 0 && (portTestResult == MoonBridge.ML_TEST_RESULT_INCONCLUSIVE || portTestResult == 0)) {
-            spinner.setMessage(getResources().getString(R.string.unlocking_or_starting));
-            return true;
+            runOnUiThreadIfActive(() -> {
+                if (spinner != null) {
+                    spinner.setMessage(getResources().getString(R.string.unlocking_or_starting));
+                }
+            });
+            return !inputCallbacksDestroyed;
         }
 
-        runOnUiThread(new Runnable() {
+        runOnUiThreadIfActive(new Runnable() {
             @Override
             public void run() {
                 if (spinner != null) {
@@ -4612,7 +4641,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void connectionStatusUpdate(final int connectionStatus) {
-        runOnUiThread(new Runnable() {
+        runOnUiThreadIfActive(new Runnable() {
             @Override
             public void run() {
                 if (prefConfig.disableWarnings) {
@@ -4642,7 +4671,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void connectionStarted() {
-        runOnUiThread(new Runnable() {
+        runOnUiThreadIfActive(new Runnable() {
             @Override
             public void run() {
                 if (spinner != null) {
@@ -4694,7 +4723,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 MoonBridge.setServerStatsListener(new MoonBridge.ServerStatsListener() {
                     @Override
                     public void onServerStats(final int bitrate, final int fecPct, final int thermalState) {
-                        runOnUiThread(new Runnable() {
+                        runOnUiThreadIfActive(new Runnable() {
                             @Override
                             public void run() {
                                 if (statsOverlay != null) {
@@ -4709,6 +4738,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 wifiMonitor.start(Game.this, new WifiMonitor.WifiCallback() {
                     @Override
                     public void onWifiQualityChanged(int quality, int rssi, int linkSpeed) {
+                        if (shouldIgnoreGameUiCallback()) {
+                            return;
+                        }
+
                         // Update the stats overlay
                         if (statsOverlay != null) {
                             statsOverlay.updateWifiStats(quality, rssi, linkSpeed);
@@ -4730,38 +4763,44 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             }
         });
 
-        if (BackgroundStreamingPolicy.isKeepAlive(prefConfig.backgroundStreamingMode) &&
-                isKeepAliveSupportedForSession() && !keepAliveServiceStarted) {
-            keepAliveServiceStarted = StreamKeepAliveService.start(this);
-            if (!keepAliveServiceStarted) {
-                keepAliveFallbackToFastResume = true;
+        synchronized (gameCallbackOwnerLock) {
+            if (inputCallbacksDestroyed) {
+                return;
             }
-        }
 
-        if (prefConfig.usbDriver && !connectedToUsbDriverService) {
-            // Start the USB driver once. Fast Resume and smart reconnect reuse the existing binding.
-            bindService(new Intent(this, UsbDriverService.class),
-                    usbDriverServiceConnection, Service.BIND_AUTO_CREATE);
-        }
+            if (BackgroundStreamingPolicy.isKeepAlive(prefConfig.backgroundStreamingMode) &&
+                    isKeepAliveSupportedForSession() && !keepAliveServiceStarted) {
+                keepAliveServiceStarted = StreamKeepAliveService.start(this);
+                if (!keepAliveServiceStarted) {
+                    keepAliveFallbackToFastResume = true;
+                }
+            }
 
-        // A reconnect is not a new shortcut launch. Report usage only for the first connection.
-        if (!reportedShortcutUsage) {
-            reportedShortcutUsage = true;
-            ComputerDetails computer = new ComputerDetails();
-            computer.name = pcName;
-            computer.uuid = Game.this.getIntent().getStringExtra(EXTRA_PC_UUID);
-            ShortcutHelper shortcutHelper = new ShortcutHelper(this);
-            shortcutHelper.reportComputerShortcutUsed(computer);
-            if (appName != null) {
-                // This may be null if launched from the "Resume Session" PC context menu item
-                shortcutHelper.reportGameLaunched(computer, app);
+            if (prefConfig.usbDriver && !connectedToUsbDriverService) {
+                // Start the USB driver once. Fast Resume and smart reconnect reuse the existing binding.
+                bindService(new Intent(this, UsbDriverService.class),
+                        usbDriverServiceConnection, Service.BIND_AUTO_CREATE);
+            }
+
+            // A reconnect is not a new shortcut launch. Report usage only for the first connection.
+            if (!reportedShortcutUsage) {
+                reportedShortcutUsage = true;
+                ComputerDetails computer = new ComputerDetails();
+                computer.name = pcName;
+                computer.uuid = Game.this.getIntent().getStringExtra(EXTRA_PC_UUID);
+                ShortcutHelper shortcutHelper = new ShortcutHelper(this);
+                shortcutHelper.reportComputerShortcutUsed(computer);
+                if (appName != null) {
+                    // This may be null if launched from the "Resume Session" PC context menu item
+                    shortcutHelper.reportGameLaunched(computer, app);
+                }
             }
         }
     }
 
     @Override
     public void displayMessage(final String message) {
-        runOnUiThread(new Runnable() {
+        runOnUiThreadIfActive(new Runnable() {
             @Override
             public void run() {
                 Toast.makeText(Game.this, message, Toast.LENGTH_LONG).show();
@@ -4772,7 +4811,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     @Override
     public void displayTransientMessage(final String message) {
         if (!prefConfig.disableWarnings) {
-            runOnUiThread(new Runnable() {
+            runOnUiThreadIfActive(new Runnable() {
                 @Override
                 public void run() {
                     Toast.makeText(Game.this, message, Toast.LENGTH_LONG).show();
@@ -4783,33 +4822,57 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void rumble(short controllerNumber, short lowFreqMotor, short highFreqMotor) {
-        if (prefConfig.enableRumble) {
-            LimeLog.info(String.format((Locale)null, "Rumble on gamepad %d: %04x %04x", controllerNumber, lowFreqMotor, highFreqMotor));
-            controllerHandler.handleRumble(controllerNumber, lowFreqMotor, highFreqMotor);
+        synchronized (gameCallbackOwnerLock) {
+            if (inputCallbacksDestroyed) {
+                return;
+            }
+            if (prefConfig.enableRumble) {
+                LimeLog.info(String.format((Locale)null, "Rumble on gamepad %d: %04x %04x", controllerNumber, lowFreqMotor, highFreqMotor));
+                controllerHandler.handleRumble(controllerNumber, lowFreqMotor, highFreqMotor);
+            }
         }
     }
 
     @Override
     public void rumbleTriggers(short controllerNumber, short leftTrigger, short rightTrigger) {
-        LimeLog.info(String.format((Locale)null, "Rumble on gamepad triggers %d: %04x %04x", controllerNumber, leftTrigger, rightTrigger));
-
-        controllerHandler.handleRumbleTriggers(controllerNumber, leftTrigger, rightTrigger);
+        synchronized (gameCallbackOwnerLock) {
+            if (inputCallbacksDestroyed) {
+                return;
+            }
+            LimeLog.info(String.format((Locale)null, "Rumble on gamepad triggers %d: %04x %04x", controllerNumber, leftTrigger, rightTrigger));
+            controllerHandler.handleRumbleTriggers(controllerNumber, leftTrigger, rightTrigger);
+        }
     }
 
     @Override
     public void setHdrMode(boolean enabled, byte[] hdrMetadata) {
-        LimeLog.info("Display HDR mode: " + (enabled ? "enabled" : "disabled"));
-        decoderRenderer.setHdrMode(enabled, hdrMetadata);
+        synchronized (gameCallbackOwnerLock) {
+            if (inputCallbacksDestroyed) {
+                return;
+            }
+            LimeLog.info("Display HDR mode: " + (enabled ? "enabled" : "disabled"));
+            decoderRenderer.setHdrMode(enabled, hdrMetadata);
+        }
     }
 
     @Override
     public void setMotionEventState(short controllerNumber, byte motionType, short reportRateHz) {
-        controllerHandler.handleSetMotionEventState(controllerNumber, motionType, reportRateHz);
+        synchronized (gameCallbackOwnerLock) {
+            if (inputCallbacksDestroyed) {
+                return;
+            }
+            controllerHandler.handleSetMotionEventState(controllerNumber, motionType, reportRateHz);
+        }
     }
 
     @Override
     public void setControllerLED(short controllerNumber, byte r, byte g, byte b) {
-        controllerHandler.handleSetControllerLED(controllerNumber, r, g, b);
+        synchronized (gameCallbackOwnerLock) {
+            if (inputCallbacksDestroyed) {
+                return;
+            }
+            controllerHandler.handleSetControllerLED(controllerNumber, r, g, b);
+        }
     }
 
     @Override
@@ -5002,7 +5065,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void onPerfUpdate(final String text) {
-        runOnUiThread(new Runnable() {
+        runOnUiThreadIfActive(new Runnable() {
             @Override
             public void run() {
                 if(prefConfig.enablePerfOverlayLite){
@@ -5017,7 +5080,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     @Override
     public void onPerfStatsUpdate(final float decodeTimeMs, final float renderTimeMs,
                                   final float networkLatencyMs, final int fps, final String codec) {
-        runOnUiThread(new Runnable() {
+        runOnUiThreadIfActive(new Runnable() {
             @Override
             public void run() {
                 if (statsOverlay != null) {

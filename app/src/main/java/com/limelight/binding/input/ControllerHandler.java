@@ -137,6 +137,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     private long batteryPollingGeneration;
     private final Object sensorLifecycleLock = new Object();
     private boolean sensorRegistrationSuspended = false;
+    private volatile boolean mouseEmulationCallbacksSuspended = false;
 
     // Stats overlay toggle: Select+L1 held for 2 seconds
     private boolean selectL1HoldPending;
@@ -355,6 +356,32 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         }
     }
 
+    private void suspendMouseEmulationForReconnect() {
+        mouseEmulationCallbacksSuspended = true;
+        defaultContext.suspendMouseEmulation();
+        for (int i = 0; i < inputDeviceContexts.size(); i++) {
+            inputDeviceContexts.valueAt(i).suspendMouseEmulation();
+        }
+        for (int i = 0; i < usbDeviceContexts.size(); i++) {
+            usbDeviceContexts.valueAt(i).suspendMouseEmulation();
+        }
+    }
+
+    private void resumeMouseEmulationAfterReconnect() {
+        if (stopped || suspendedForReconnect) {
+            return;
+        }
+
+        mouseEmulationCallbacksSuspended = false;
+        defaultContext.resumeMouseEmulation();
+        for (int i = 0; i < inputDeviceContexts.size(); i++) {
+            inputDeviceContexts.valueAt(i).resumeMouseEmulation();
+        }
+        for (int i = 0; i < usbDeviceContexts.size(); i++) {
+            usbDeviceContexts.valueAt(i).resumeMouseEmulation();
+        }
+    }
+
     public void suspendForReconnect() {
         if (stopped || suspendedForReconnect) {
             return;
@@ -366,6 +393,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         // cannot cross the lifecycle boundary while waiting for the battery lock.
         suspendBatteryPolling();
         suspendSensorsForReconnect();
+        suspendMouseEmulationForReconnect();
         suspendedForReconnect = true;
         selectL1HoldPending = false;
         mainThreadHandler.removeCallbacks(statsOverlayToggleRunnable);
@@ -391,6 +419,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         suspendedForReconnect = false;
         inputManager.registerInputDeviceListener(this, null);
         resumeSensorsAfterReconnect();
+        resumeMouseEmulationAfterReconnect();
         resumeBatteryPollingAfterDrain();
     }
 
@@ -3255,7 +3284,8 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         public final Runnable mouseEmulationRunnable = new Runnable() {
             @Override
             public void run() {
-                if (!mouseEmulationActive) {
+                if (stopped || suspendedForReconnect || mouseEmulationCallbacksSuspended ||
+                        !mouseEmulationActive) {
                     return;
                 }
 
@@ -3275,8 +3305,11 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
                     sendEmulatedMouseMove(rightStickX, rightStickY, mouseEmulationXDown, mouseEmulationPixelMultiplier);
                 }
 
-                // Requeue the callback
-                mainThreadHandler.postDelayed(this, mouseEmulationReportPeriod);
+                // Requeue only while this context still owns active mouse emulation.
+                if (!stopped && !suspendedForReconnect && !mouseEmulationCallbacksSuspended &&
+                        mouseEmulationActive) {
+                    mainThreadHandler.postDelayed(this, mouseEmulationReportPeriod);
+                }
             }
         };
 
@@ -3295,7 +3328,43 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             mouseEmulationActive = !mouseEmulationActive;
             Toast.makeText(activityContext, "Mouse emulation is: " + (mouseEmulationActive ? "ON" : "OFF"), Toast.LENGTH_SHORT).show();
 
-            if (mouseEmulationActive) {
+            if (mouseEmulationActive && !stopped && !suspendedForReconnect &&
+                    !mouseEmulationCallbacksSuspended) {
+                mainThreadHandler.postDelayed(mouseEmulationRunnable, mouseEmulationReportPeriod);
+            }
+        }
+
+        public void suspendMouseEmulation() {
+            mainThreadHandler.removeCallbacks(mouseEmulationRunnable);
+            if (!mouseEmulationActive) {
+                return;
+            }
+
+            // Release synthetic mouse buttons while the current transport still owns them.
+            if ((mouseEmulationLastInputMap & ControllerPacket.A_FLAG) != 0) {
+                conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT);
+            }
+            if ((mouseEmulationLastInputMap & ControllerPacket.B_FLAG) != 0) {
+                conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_RIGHT);
+            }
+
+            // Input events are intentionally ignored while suspended. Neutralize transient
+            // state so resume cannot replay a stick/button value that changed in background.
+            mouseEmulationLastInputMap = 0;
+            mouseEmulationXDown = false;
+            inputMap = 0;
+            leftTrigger = 0;
+            rightTrigger = 0;
+            leftStickX = 0;
+            leftStickY = 0;
+            rightStickX = 0;
+            rightStickY = 0;
+        }
+
+        public void resumeMouseEmulation() {
+            mainThreadHandler.removeCallbacks(mouseEmulationRunnable);
+            if (mouseEmulationActive && !stopped && !suspendedForReconnect &&
+                    !mouseEmulationCallbacksSuspended) {
                 mainThreadHandler.postDelayed(mouseEmulationRunnable, mouseEmulationReportPeriod);
             }
         }

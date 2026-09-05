@@ -378,6 +378,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private static final int UTF8_CHUNK_SIZE = 512;
     private final Queue<String> commitTextQueue = new ArrayDeque<>();
     private final Handler commitTextHandler = new Handler(Looper.getMainLooper());
+    private final Object gameCallbackOwnerLock = new Object();
     private volatile boolean inputCallbacksDestroyed;
 
     private boolean shouldIgnoreGameUiCallback() {
@@ -1918,7 +1919,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     protected void onDestroy() {
         // Detach IME/text work before any transport teardown. An InputConnection can outlive its
         // View/Activity briefly, so reject late callbacks and discard already queued chunks.
-        inputCallbacksDestroyed = true;
+        // The owner lock also waits for any synchronous native callback already touching controller
+        // or decoder state, then prevents all later callbacks from entering those owners.
+        synchronized (gameCallbackOwnerLock) {
+            inputCallbacksDestroyed = true;
+        }
         commitTextHandler.removeCallbacksAndMessages(null);
         commitTextQueue.clear();
 
@@ -4758,7 +4763,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             }
         });
 
-        runOnUiThreadIfActive(() -> {
+        synchronized (gameCallbackOwnerLock) {
+            if (inputCallbacksDestroyed) {
+                return;
+            }
+
             if (BackgroundStreamingPolicy.isKeepAlive(prefConfig.backgroundStreamingMode) &&
                     isKeepAliveSupportedForSession() && !keepAliveServiceStarted) {
                 keepAliveServiceStarted = StreamKeepAliveService.start(this);
@@ -4786,7 +4795,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                     shortcutHelper.reportGameLaunched(computer, app);
                 }
             }
-        });
+        }
     }
 
     @Override
@@ -4813,39 +4822,57 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void rumble(short controllerNumber, short lowFreqMotor, short highFreqMotor) {
-        runOnUiThreadIfActive(() -> {
+        synchronized (gameCallbackOwnerLock) {
+            if (inputCallbacksDestroyed) {
+                return;
+            }
             if (prefConfig.enableRumble) {
                 LimeLog.info(String.format((Locale)null, "Rumble on gamepad %d: %04x %04x", controllerNumber, lowFreqMotor, highFreqMotor));
                 controllerHandler.handleRumble(controllerNumber, lowFreqMotor, highFreqMotor);
             }
-        });
+        }
     }
 
     @Override
     public void rumbleTriggers(short controllerNumber, short leftTrigger, short rightTrigger) {
-        runOnUiThreadIfActive(() -> {
+        synchronized (gameCallbackOwnerLock) {
+            if (inputCallbacksDestroyed) {
+                return;
+            }
             LimeLog.info(String.format((Locale)null, "Rumble on gamepad triggers %d: %04x %04x", controllerNumber, leftTrigger, rightTrigger));
             controllerHandler.handleRumbleTriggers(controllerNumber, leftTrigger, rightTrigger);
-        });
+        }
     }
 
     @Override
     public void setHdrMode(boolean enabled, byte[] hdrMetadata) {
-        runOnUiThreadIfActive(() -> {
+        synchronized (gameCallbackOwnerLock) {
+            if (inputCallbacksDestroyed) {
+                return;
+            }
             LimeLog.info("Display HDR mode: " + (enabled ? "enabled" : "disabled"));
             decoderRenderer.setHdrMode(enabled, hdrMetadata);
-        });
+        }
     }
 
     @Override
     public void setMotionEventState(short controllerNumber, byte motionType, short reportRateHz) {
-        runOnUiThreadIfActive(() ->
-                controllerHandler.handleSetMotionEventState(controllerNumber, motionType, reportRateHz));
+        synchronized (gameCallbackOwnerLock) {
+            if (inputCallbacksDestroyed) {
+                return;
+            }
+            controllerHandler.handleSetMotionEventState(controllerNumber, motionType, reportRateHz);
+        }
     }
 
     @Override
     public void setControllerLED(short controllerNumber, byte r, byte g, byte b) {
-        runOnUiThreadIfActive(() -> controllerHandler.handleSetControllerLED(controllerNumber, r, g, b));
+        synchronized (gameCallbackOwnerLock) {
+            if (inputCallbacksDestroyed) {
+                return;
+            }
+            controllerHandler.handleSetControllerLED(controllerNumber, r, g, b);
+        }
     }
 
     @Override

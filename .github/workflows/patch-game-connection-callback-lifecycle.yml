@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Guard Game connection callbacks across teardown
+      - name: Serialize direct connection callbacks with Activity teardown
         shell: python
         run: |
           from pathlib import Path
@@ -25,272 +25,100 @@ jobs:
           path = Path('app/src/main/java/com/limelight/Game.java')
           text = path.read_text(encoding='utf-8')
 
-          old = (
-              "    private volatile boolean inputCallbacksDestroyed;\n"
-              "\n"
-              "    private final Runnable restoreInputGrabRunnable = () -> {\n"
-          )
-          new = (
-              "    private volatile boolean inputCallbacksDestroyed;\n"
-              "\n"
-              "    private boolean shouldIgnoreGameUiCallback() {\n"
-              "        return inputCallbacksDestroyed || isFinishing() || isDestroyed();\n"
-              "    }\n"
-              "\n"
-              "    private void runOnUiThreadIfActive(Runnable runnable) {\n"
-              "        if (inputCallbacksDestroyed) {\n"
-              "            return;\n"
-              "        }\n"
-              "        runOnUiThread(() -> {\n"
-              "            if (shouldIgnoreGameUiCallback()) {\n"
-              "                return;\n"
-              "            }\n"
-              "            runnable.run();\n"
-              "        });\n"
-              "    }\n"
-              "\n"
-              "    private final Runnable restoreInputGrabRunnable = () -> {\n"
-          )
-          if text.count(old) != 1:
-              raise SystemExit('UI callback helper insertion marker mismatch')
-          text = text.replace(old, new, 1)
+          replacements = [
+              (
+                  "    public void rumble(short controllerNumber, short lowFreqMotor, short highFreqMotor) {\n"
+                  "        if (inputCallbacksDestroyed) {\n"
+                  "            return;\n"
+                  "        }\n"
+                  "\n"
+                  "        if (prefConfig.enableRumble) {\n"
+                  "            LimeLog.info(String.format((Locale)null, \"Rumble on gamepad %d: %04x %04x\", controllerNumber, lowFreqMotor, highFreqMotor));\n"
+                  "            controllerHandler.handleRumble(controllerNumber, lowFreqMotor, highFreqMotor);\n"
+                  "        }\n"
+                  "    }\n",
+                  "    public void rumble(short controllerNumber, short lowFreqMotor, short highFreqMotor) {\n"
+                  "        runOnUiThreadIfActive(() -> {\n"
+                  "            if (prefConfig.enableRumble) {\n"
+                  "                LimeLog.info(String.format((Locale)null, \"Rumble on gamepad %d: %04x %04x\", controllerNumber, lowFreqMotor, highFreqMotor));\n"
+                  "                controllerHandler.handleRumble(controllerNumber, lowFreqMotor, highFreqMotor);\n"
+                  "            }\n"
+                  "        });\n"
+                  "    }\n"
+              ),
+              (
+                  "    public void rumbleTriggers(short controllerNumber, short leftTrigger, short rightTrigger) {\n"
+                  "        if (inputCallbacksDestroyed) {\n"
+                  "            return;\n"
+                  "        }\n"
+                  "\n"
+                  "        LimeLog.info(String.format((Locale)null, \"Rumble on gamepad triggers %d: %04x %04x\", controllerNumber, leftTrigger, rightTrigger));\n"
+                  "\n"
+                  "        controllerHandler.handleRumbleTriggers(controllerNumber, leftTrigger, rightTrigger);\n"
+                  "    }\n",
+                  "    public void rumbleTriggers(short controllerNumber, short leftTrigger, short rightTrigger) {\n"
+                  "        runOnUiThreadIfActive(() -> {\n"
+                  "            LimeLog.info(String.format((Locale)null, \"Rumble on gamepad triggers %d: %04x %04x\", controllerNumber, leftTrigger, rightTrigger));\n"
+                  "            controllerHandler.handleRumbleTriggers(controllerNumber, leftTrigger, rightTrigger);\n"
+                  "        });\n"
+                  "    }\n"
+              ),
+              (
+                  "    public void setHdrMode(boolean enabled, byte[] hdrMetadata) {\n"
+                  "        if (inputCallbacksDestroyed) {\n"
+                  "            return;\n"
+                  "        }\n"
+                  "\n"
+                  "        LimeLog.info(\"Display HDR mode: \" + (enabled ? \"enabled\" : \"disabled\"));\n"
+                  "        decoderRenderer.setHdrMode(enabled, hdrMetadata);\n"
+                  "    }\n",
+                  "    public void setHdrMode(boolean enabled, byte[] hdrMetadata) {\n"
+                  "        runOnUiThreadIfActive(() -> {\n"
+                  "            LimeLog.info(\"Display HDR mode: \" + (enabled ? \"enabled\" : \"disabled\"));\n"
+                  "            decoderRenderer.setHdrMode(enabled, hdrMetadata);\n"
+                  "        });\n"
+                  "    }\n"
+              ),
+              (
+                  "    public void setMotionEventState(short controllerNumber, byte motionType, short reportRateHz) {\n"
+                  "        if (inputCallbacksDestroyed) {\n"
+                  "            return;\n"
+                  "        }\n"
+                  "\n"
+                  "        controllerHandler.handleSetMotionEventState(controllerNumber, motionType, reportRateHz);\n"
+                  "    }\n",
+                  "    public void setMotionEventState(short controllerNumber, byte motionType, short reportRateHz) {\n"
+                  "        runOnUiThreadIfActive(() ->\n"
+                  "                controllerHandler.handleSetMotionEventState(controllerNumber, motionType, reportRateHz));\n"
+                  "    }\n"
+              ),
+              (
+                  "    public void setControllerLED(short controllerNumber, byte r, byte g, byte b) {\n"
+                  "        if (inputCallbacksDestroyed) {\n"
+                  "            return;\n"
+                  "        }\n"
+                  "\n"
+                  "        controllerHandler.handleSetControllerLED(controllerNumber, r, g, b);\n"
+                  "    }\n",
+                  "    public void setControllerLED(short controllerNumber, byte r, byte g, byte b) {\n"
+                  "        runOnUiThreadIfActive(() -> controllerHandler.handleSetControllerLED(controllerNumber, r, g, b));\n"
+                  "    }\n"
+              ),
+          ]
 
-          old = (
-              "    @Override\n"
-              "    public void stageStarting(final String stage) {\n"
-              "        runOnUiThread(new Runnable() {\n"
-          )
-          new = (
-              "    @Override\n"
-              "    public void stageStarting(final String stage) {\n"
-              "        runOnUiThreadIfActive(new Runnable() {\n"
-          )
-          if text.count(old) != 1:
-              raise SystemExit('stageStarting marker mismatch')
-          text = text.replace(old, new, 1)
-
-          old = (
-              "    @Override\n"
-              "    public boolean stageFailed(final String stage, final int portFlags, final int errorCode) {\n"
-              "        // Perform a connection test if the failure could be due to a blocked port\n"
-          )
-          new = (
-              "    @Override\n"
-              "    public boolean stageFailed(final String stage, final int portFlags, final int errorCode) {\n"
-              "        if (inputCallbacksDestroyed) {\n"
-              "            return false;\n"
-              "        }\n"
-              "\n"
-              "        // Perform a connection test if the failure could be due to a blocked port\n"
-          )
-          if text.count(old) != 1:
-              raise SystemExit('stageFailed guard marker mismatch')
-          text = text.replace(old, new, 1)
-
-          old = (
-              "        if (errorCode == 0 && portFlags != 0 && (portTestResult == MoonBridge.ML_TEST_RESULT_INCONCLUSIVE || portTestResult == 0)) {\n"
-              "            spinner.setMessage(getResources().getString(R.string.unlocking_or_starting));\n"
-              "            return true;\n"
-              "        }\n"
-              "\n"
-              "        runOnUiThread(new Runnable() {\n"
-          )
-          new = (
-              "        if (errorCode == 0 && portFlags != 0 && (portTestResult == MoonBridge.ML_TEST_RESULT_INCONCLUSIVE || portTestResult == 0)) {\n"
-              "            runOnUiThreadIfActive(() -> {\n"
-              "                if (spinner != null) {\n"
-              "                    spinner.setMessage(getResources().getString(R.string.unlocking_or_starting));\n"
-              "                }\n"
-              "            });\n"
-              "            return !inputCallbacksDestroyed;\n"
-              "        }\n"
-              "\n"
-              "        runOnUiThreadIfActive(new Runnable() {\n"
-          )
-          if text.count(old) != 1:
-              raise SystemExit('stageFailed UI marker mismatch')
-          text = text.replace(old, new, 1)
-
-          old = (
-              "    @Override\n"
-              "    public void connectionStatusUpdate(final int connectionStatus) {\n"
-              "        runOnUiThread(new Runnable() {\n"
-          )
-          new = (
-              "    @Override\n"
-              "    public void connectionStatusUpdate(final int connectionStatus) {\n"
-              "        runOnUiThreadIfActive(new Runnable() {\n"
-          )
-          if text.count(old) != 1:
-              raise SystemExit('connectionStatusUpdate marker mismatch')
-          text = text.replace(old, new, 1)
-
-          old = (
-              "    @Override\n"
-              "    public void connectionStarted() {\n"
-              "        runOnUiThread(new Runnable() {\n"
-          )
-          new = (
-              "    @Override\n"
-              "    public void connectionStarted() {\n"
-              "        runOnUiThreadIfActive(new Runnable() {\n"
-          )
-          if text.count(old) != 1:
-              raise SystemExit('connectionStarted UI marker mismatch')
-          text = text.replace(old, new, 1)
-
-          old = (
-              "                    public void onServerStats(final int bitrate, final int fecPct, final int thermalState) {\n"
-              "                        runOnUiThread(new Runnable() {\n"
-          )
-          new = (
-              "                    public void onServerStats(final int bitrate, final int fecPct, final int thermalState) {\n"
-              "                        runOnUiThreadIfActive(new Runnable() {\n"
-          )
-          if text.count(old) != 1:
-              raise SystemExit('server stats UI marker mismatch')
-          text = text.replace(old, new, 1)
-
-          old = (
-              "                    @Override\n"
-              "                    public void onWifiQualityChanged(int quality, int rssi, int linkSpeed) {\n"
-              "                        // Update the stats overlay\n"
-          )
-          new = (
-              "                    @Override\n"
-              "                    public void onWifiQualityChanged(int quality, int rssi, int linkSpeed) {\n"
-              "                        if (shouldIgnoreGameUiCallback()) {\n"
-              "                            return;\n"
-              "                        }\n"
-              "\n"
-              "                        // Update the stats overlay\n"
-          )
-          if text.count(old) != 1:
-              raise SystemExit('WiFi callback marker mismatch')
-          text = text.replace(old, new, 1)
-
-          old = (
-              "        if (BackgroundStreamingPolicy.isKeepAlive(prefConfig.backgroundStreamingMode) &&\n"
-              "                isKeepAliveSupportedForSession() && !keepAliveServiceStarted) {\n"
-              "            keepAliveServiceStarted = StreamKeepAliveService.start(this);\n"
-              "            if (!keepAliveServiceStarted) {\n"
-              "                keepAliveFallbackToFastResume = true;\n"
-              "            }\n"
-              "        }\n"
-              "\n"
-              "        if (prefConfig.usbDriver && !connectedToUsbDriverService) {\n"
-              "            // Start the USB driver once. Fast Resume and smart reconnect reuse the existing binding.\n"
-              "            bindService(new Intent(this, UsbDriverService.class),\n"
-              "                    usbDriverServiceConnection, Service.BIND_AUTO_CREATE);\n"
-              "        }\n"
-              "\n"
-              "        // A reconnect is not a new shortcut launch. Report usage only for the first connection.\n"
-              "        if (!reportedShortcutUsage) {\n"
-              "            reportedShortcutUsage = true;\n"
-              "            ComputerDetails computer = new ComputerDetails();\n"
-              "            computer.name = pcName;\n"
-              "            computer.uuid = Game.this.getIntent().getStringExtra(EXTRA_PC_UUID);\n"
-              "            ShortcutHelper shortcutHelper = new ShortcutHelper(this);\n"
-              "            shortcutHelper.reportComputerShortcutUsed(computer);\n"
-              "            if (appName != null) {\n"
-              "                // This may be null if launched from the \"Resume Session\" PC context menu item\n"
-              "                shortcutHelper.reportGameLaunched(computer, app);\n"
-              "            }\n"
-              "        }\n"
-          )
-          new = (
-              "        runOnUiThreadIfActive(() -> {\n"
-              "            if (BackgroundStreamingPolicy.isKeepAlive(prefConfig.backgroundStreamingMode) &&\n"
-              "                    isKeepAliveSupportedForSession() && !keepAliveServiceStarted) {\n"
-              "                keepAliveServiceStarted = StreamKeepAliveService.start(this);\n"
-              "                if (!keepAliveServiceStarted) {\n"
-              "                    keepAliveFallbackToFastResume = true;\n"
-              "                }\n"
-              "            }\n"
-              "\n"
-              "            if (prefConfig.usbDriver && !connectedToUsbDriverService) {\n"
-              "                // Start the USB driver once. Fast Resume and smart reconnect reuse the existing binding.\n"
-              "                bindService(new Intent(this, UsbDriverService.class),\n"
-              "                        usbDriverServiceConnection, Service.BIND_AUTO_CREATE);\n"
-              "            }\n"
-              "\n"
-              "            // A reconnect is not a new shortcut launch. Report usage only for the first connection.\n"
-              "            if (!reportedShortcutUsage) {\n"
-              "                reportedShortcutUsage = true;\n"
-              "                ComputerDetails computer = new ComputerDetails();\n"
-              "                computer.name = pcName;\n"
-              "                computer.uuid = Game.this.getIntent().getStringExtra(EXTRA_PC_UUID);\n"
-              "                ShortcutHelper shortcutHelper = new ShortcutHelper(this);\n"
-              "                shortcutHelper.reportComputerShortcutUsed(computer);\n"
-              "                if (appName != null) {\n"
-              "                    // This may be null if launched from the \"Resume Session\" PC context menu item\n"
-              "                    shortcutHelper.reportGameLaunched(computer, app);\n"
-              "                }\n"
-              "            }\n"
-              "        });\n"
-          )
-          if text.count(old) != 1:
-              raise SystemExit('connectionStarted side effects marker mismatch')
-          text = text.replace(old, new, 1)
-
-          old = (
-              "    @Override\n"
-              "    public void displayMessage(final String message) {\n"
-              "        runOnUiThread(new Runnable() {\n"
-          )
-          new = (
-              "    @Override\n"
-              "    public void displayMessage(final String message) {\n"
-              "        runOnUiThreadIfActive(new Runnable() {\n"
-          )
-          if text.count(old) != 1:
-              raise SystemExit('displayMessage marker mismatch')
-          text = text.replace(old, new, 1)
-
-          old = (
-              "        if (!prefConfig.disableWarnings) {\n"
-              "            runOnUiThread(new Runnable() {\n"
-              "                @Override\n"
-              "                public void run() {\n"
-              "                    Toast.makeText(Game.this, message, Toast.LENGTH_LONG).show();\n"
-              "                }\n"
-              "            });\n"
-              "        }\n"
-          )
-          new = (
-              "        if (!prefConfig.disableWarnings) {\n"
-              "            runOnUiThreadIfActive(new Runnable() {\n"
-              "                @Override\n"
-              "                public void run() {\n"
-              "                    Toast.makeText(Game.this, message, Toast.LENGTH_LONG).show();\n"
-              "                }\n"
-              "            });\n"
-              "        }\n"
-          )
-          if text.count(old) != 1:
-              raise SystemExit('displayTransientMessage marker mismatch')
-          text = text.replace(old, new, 1)
-
-          for signature in [
-              "    public void rumble(short controllerNumber, short lowFreqMotor, short highFreqMotor) {\n",
-              "    public void rumbleTriggers(short controllerNumber, short leftTrigger, short rightTrigger) {\n",
-              "    public void setHdrMode(boolean enabled, byte[] hdrMetadata) {\n",
-              "    public void setMotionEventState(short controllerNumber, byte motionType, short reportRateHz) {\n",
-              "    public void setControllerLED(short controllerNumber, byte r, byte g, byte b) {\n",
-          ]:
-              if text.count(signature) != 1:
-                  raise SystemExit('direct callback marker mismatch: ' + signature.strip())
-              replacement = signature + "        if (inputCallbacksDestroyed) {\n            return;\n        }\n\n"
-              text = text.replace(signature, replacement, 1)
+          for old, new in replacements:
+              if text.count(old) != 1:
+                  raise SystemExit('Direct callback replacement marker mismatch')
+              text = text.replace(old, new, 1)
 
           path.write_text(text, encoding='utf-8')
 
-      - name: Commit callback lifecycle patch
+      - name: Commit callback serialization patch
         run: |
           chmod +x app/src/main/java/com/limelight/Game.java
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add app/src/main/java/com/limelight/Game.java
           git diff --cached --check
-          git commit -m "Guard Game connection callbacks after teardown"
+          git commit -m "Serialize direct Game callbacks with teardown"
           git push

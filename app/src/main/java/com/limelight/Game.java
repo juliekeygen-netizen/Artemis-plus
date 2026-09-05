@@ -126,6 +126,7 @@ import androidx.preference.PreferenceManager;
 
 import android.os.Looper;
 import java.nio.charset.StandardCharsets;
+import java.lang.ref.WeakReference;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -334,7 +335,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private SidewaysStreamLayout sidewaysStreamLayout;
     private String activeSidewaysStreamMode = SidewaysStreamMode.MODE_OFF;
     private ClipboardManager clipboardManager;
-    private boolean clipboardSyncRunning = false;
+    private final ClipboardSyncLifecycle clipboardSyncLifecycle = new ClipboardSyncLifecycle();
 
     private NvHTTP httpConn;
 
@@ -530,7 +531,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             sidewaysStreamLayout.setSidewaysMode(activeSidewaysStreamMode);
         }
 
-        clipboardManager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboardManager = (ClipboardManager) getApplicationContext().getSystemService(Context.CLIPBOARD_SERVICE);
 
         // Start the spinner
         spinner = SpinnerDialog.displayDialog(this, getResources().getString(R.string.conn_establishing_title),
@@ -1924,6 +1925,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         synchronized (gameCallbackOwnerLock) {
             inputCallbacksDestroyed = true;
         }
+        clipboardSyncLifecycle.destroy();
         commitTextHandler.removeCallbacksAndMessages(null);
         commitTextQueue.clear();
 
@@ -2920,91 +2922,157 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         return new ClipData(clonedDescription, item);
     }
 
+    private static ClipData createRemoteClipboardData(String clipboardContent, boolean hideClipboardContent) {
+        ClipData clipData = ClipData.newPlainText(CLIPBOARD_IDENTIFIER, clipboardContent);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            ClipDescription clipDescription = clipData.getDescription();
+            PersistableBundle newExtras = new PersistableBundle();
+            newExtras.putBoolean(CLIPBOARD_IDENTIFIER, true);
+            if (hideClipboardContent) {
+                // We don't know if the message is sensitive or not, to be safe mark it as sensitive.
+                newExtras.putBoolean("android.content.extra.IS_SENSITIVE", true);
+            }
+            clipDescription.setExtras(newExtras);
+        }
+        return clipData;
+    }
+
+    private static void showClipboardToast(WeakReference<Game> activityRef,
+            ClipboardSyncLifecycle lifecycle, long token, int stringResId, String suffix) {
+        Game activity = activityRef.get();
+        if (activity == null) {
+            return;
+        }
+        String suffixText = suffix == null ? "" : suffix;
+        activity.runOnUiThreadIfActive(() -> {
+            if (!lifecycle.isActive(token)) {
+                return;
+            }
+            Toast.makeText(activity, activity.getString(stringResId) + suffixText,
+                    Toast.LENGTH_SHORT).show();
+        });
+    }
+
     public boolean sendClipboard(boolean force) {
-        if (httpConn == null) {
+        NvHTTP clipboardHttp = httpConn;
+        if (clipboardHttp == null) {
             LimeLog.warning("httpConn not ready, cannot send clipboard!");
             return false;
         }
 
-        String clipboardText = getClipboardContent(force);
-        if (clipboardText != null) {
-            new Thread() {
-                public void run() {
-                    try {
-                        if (!httpConn.sendClipboard(clipboardText)) {
-                            if (prefConfig.smartClipboardSyncToast) {
-                                Game.this.runOnUiThread(() -> Toast.makeText(Game.this, getString(R.string.clipboard_sync_unsupported), Toast.LENGTH_SHORT).show());
-                            }
-                        } else {
-                            if (prefConfig.smartClipboardSyncToast) {
-                                Game.this.runOnUiThread(() -> Toast.makeText(Game.this, getString(R.string.send_clipboard_success), Toast.LENGTH_SHORT).show());
-                            }
-                        }
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                        if (prefConfig.smartClipboardSyncToast) {
-                            Game.this.runOnUiThread(() -> Toast.makeText(Game.this, getString(R.string.send_clipboard_failed) + e.getMessage(), Toast.LENGTH_SHORT).show());
-                        }
-                    }
-                }
-            }.start();
-
-            return true;
+        ClipboardSyncLifecycle lifecycle = clipboardSyncLifecycle;
+        long token = lifecycle.beginSend();
+        if (token == ClipboardSyncLifecycle.INVALID_TOKEN) {
+            return false;
         }
 
-        return false;
+        String clipboardText = getClipboardContent(force);
+        if (clipboardText == null) {
+            return false;
+        }
+
+        boolean showToast = prefConfig.smartClipboardSyncToast;
+        WeakReference<Game> activityRef = new WeakReference<>(this);
+        Thread worker = new Thread(() -> {
+            if (!lifecycle.isActive(token)) {
+                return;
+            }
+            try {
+                boolean supported = clipboardHttp.sendClipboard(clipboardText);
+                if (!lifecycle.isActive(token) || !showToast) {
+                    return;
+                }
+                showClipboardToast(activityRef, lifecycle, token, supported
+                        ? R.string.send_clipboard_success
+                        : R.string.clipboard_sync_unsupported, null);
+            } catch (Exception e) {
+                e.printStackTrace();
+                if (showToast && lifecycle.isActive(token)) {
+                    showClipboardToast(activityRef, lifecycle, token, R.string.send_clipboard_failed, e.getMessage());
+                }
+            }
+        }, "ArtemisClipboardSend");
+        try {
+            worker.start();
+            return true;
+        } catch (RuntimeException e) {
+            LimeLog.warning("Unable to start clipboard send worker: " + e.getMessage());
+            return false;
+        }
     }
 
-    public boolean getClipboard(int delay) {
-        if (httpConn == null) {
+    private boolean startClipboardGet(int delay, boolean finalDisconnectFetch) {
+        NvHTTP clipboardHttp = httpConn;
+        if (clipboardHttp == null) {
             LimeLog.warning("httpConn not ready, cannot get clipboard!");
             return false;
         }
 
-        if (delay == 0 && gameMenuCallbacks != null && gameMenuCallbacks.isMenuOpen()) {
+        if (!finalDisconnectFetch && delay == 0 && gameMenuCallbacks != null && gameMenuCallbacks.isMenuOpen()) {
             return false;
         }
 
-        new Thread() {
-            public void run() {
-                if (clipboardSyncRunning) {
+        ClipboardSyncLifecycle lifecycle = clipboardSyncLifecycle;
+        long token = finalDisconnectFetch ? lifecycle.beginFinalGet() : lifecycle.beginGet();
+        if (token == ClipboardSyncLifecycle.INVALID_TOKEN) {
+            return false;
+        }
+
+        ClipboardManager activeClipboardManager = clipboardManager;
+        boolean hideClipboardContent = prefConfig.hideClipboardContent;
+        boolean showToast = prefConfig.smartClipboardSyncToast;
+        WeakReference<Game> activityRef = new WeakReference<>(this);
+        Thread worker = new Thread(() -> {
+            try {
+                if (delay > 0) {
+                    Thread.sleep(delay);
+                }
+                if (!lifecycle.isActive(token)) {
                     return;
                 }
 
-                clipboardSyncRunning = true;
-                try {
-                    if (delay > 0) {
-                        sleep(delay);
-                    }
-                    String clipboardContent = httpConn.getClipboard();
-                    ClipData clipData = ClipData.newPlainText(CLIPBOARD_IDENTIFIER, clipboardContent);
-
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                        ClipDescription clipDescription = clipData.getDescription();
-                        PersistableBundle newExtras = new PersistableBundle();
-                        newExtras.putBoolean(CLIPBOARD_IDENTIFIER, true);
-                        if (prefConfig.hideClipboardContent) {
-                            // We don't know if the message is sensitive or not, to be safe mark them all as sensitive.
-                            newExtras.putBoolean("android.content.extra.IS_SENSITIVE", true);
-                        }
-                        clipDescription.setExtras(newExtras);
-                    }
-
-                    clipboardManager.setPrimaryClip(clipData);
-                    if (prefConfig.smartClipboardSyncToast) {
-                        Game.this.runOnUiThread(() -> Toast.makeText(Game.this, getString(R.string.get_clipboard_success), Toast.LENGTH_SHORT).show());
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    if (prefConfig.smartClipboardSyncToast) {
-                        Game.this.runOnUiThread(() -> Toast.makeText(Game.this, getString(R.string.get_clipboard_failed) + e.getMessage(), Toast.LENGTH_SHORT).show());
-                    }
+                String clipboardContent = clipboardHttp.getClipboard();
+                if (!lifecycle.isActive(token)) {
+                    return;
                 }
-                clipboardSyncRunning = false;
-            }
-        }.start();
 
-        return true;
+                ClipData clipData = createRemoteClipboardData(clipboardContent, hideClipboardContent);
+                if (!lifecycle.runIfActive(token,
+                        () -> activeClipboardManager.setPrimaryClip(clipData))) {
+                    return;
+                }
+
+                if (showToast && lifecycle.isActive(token)) {
+                    showClipboardToast(activityRef, lifecycle, token, R.string.get_clipboard_success, null);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (Exception e) {
+                e.printStackTrace();
+                if (showToast && lifecycle.isActive(token)) {
+                    showClipboardToast(activityRef, lifecycle, token, R.string.get_clipboard_failed, e.getMessage());
+                }
+            } finally {
+                lifecycle.finishGet(token);
+            }
+        }, finalDisconnectFetch ? "ArtemisClipboardFinalGet" : "ArtemisClipboardGet");
+
+        try {
+            worker.start();
+            return true;
+        } catch (RuntimeException e) {
+            lifecycle.finishGet(token);
+            LimeLog.warning("Unable to start clipboard worker: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public boolean getClipboard(int delay) {
+        return startClipboardGet(Math.max(0, delay), false);
+    }
+
+    private boolean getClipboardForDisconnect() {
+        return startClipboardGet(0, true);
     }
 
     private TouchContext getTouchContext(int actionIndex, TouchContext[] inputContextMap)
@@ -5476,7 +5544,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     public void disconnect() {
         cancelFastResumeState();
         if (prefConfig.smartClipboardSync) {
-            getClipboard(-1);
+            getClipboardForDisconnect();
         }
         finish();
     }

@@ -51,9 +51,10 @@ public class GameConnectionCallbackLifecycleTest {
         assertUsesOwnedDispatcher(source,
                 "public void onPerfUpdate(final String text)",
                 "public void onPerfStatsUpdate(");
-        assertUsesOwnedDispatcher(source,
-                "public void onPerfStatsUpdate(",
-                "public void onVideoStatsUpdate(");
+
+        String perfStats = windowFrom(source, "public void onPerfStatsUpdate(", 1200);
+        assertTrue(perfStats.contains("runOnUiThreadIfActive("));
+        assertFalse(perfStats.contains("runOnUiThread(new Runnable()"));
     }
 
     @Test
@@ -81,8 +82,10 @@ public class GameConnectionCallbackLifecycleTest {
                 "public void connectionStarted()",
                 "public void displayMessage(final String message)");
 
-        assertTrue(started.contains("runOnUiThreadIfActive(new Runnable()"));
-        assertTrue(started.contains("runOnUiThreadIfActive(new Runnable()"));
+        int firstUiDispatch = started.indexOf("runOnUiThreadIfActive(new Runnable()");
+        int serverStatsDispatch = started.indexOf("runOnUiThreadIfActive(new Runnable()", firstUiDispatch + 1);
+        assertTrue(firstUiDispatch >= 0);
+        assertTrue(serverStatsDispatch > firstUiDispatch);
         assertTrue(started.contains("if (shouldIgnoreGameUiCallback())"));
 
         int ownerLock = started.indexOf("synchronized (gameCallbackOwnerLock)");
@@ -170,5 +173,11 @@ public class GameConnectionCallbackLifecycleTest {
         assertTrue("Missing start marker: " + startMarker, start >= 0);
         assertTrue("Missing end marker: " + endMarker, end > start);
         return source.substring(start, end);
+    }
+
+    private static String windowFrom(String source, String marker, int maxLength) {
+        int start = source.indexOf(marker);
+        assertTrue("Missing marker: " + marker, start >= 0);
+        return source.substring(start, Math.min(source.length(), start + maxLength));
     }
 }

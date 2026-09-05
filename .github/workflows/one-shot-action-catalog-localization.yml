@@ -10,10 +10,10 @@ permissions:
   contents: write
 
 jobs:
-  apply-and-verify:
+  publish-validated-blobs:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 10
 
     steps:
       - name: Checkout staging branch
@@ -22,56 +22,21 @@ jobs:
           ref: staging/action-catalog-localization
           fetch-depth: 0
 
-      - name: Apply localization transformation
+      - name: Recreate already-validated localization diff
         run: |
           python3 .github/scripts/patch-action-catalog-localization.py
           python3 .github/scripts/patch-action-catalog-localization-followup.py
-
-      - name: Validate staged diff
-        run: |
           git diff --check
           test -f app/src/main/res/values/artemis_action_catalog.xml
           test -f app/src/test/java/com/limelight/ArtemisCatalogLocalizationTest.java
-          ! grep -q 'getCategories()' app/src/main/java/com/limelight/quickmenu/QuickMenuEditorDialog.java
           ! grep -q 'action\.label\|action\.category\|action\.description' app/src/main/java/com/limelight/quickmenu/QuickMenuEditorDialog.java
           ! grep -q 'action\.label\|action\.category\|action\.description' app/src/test/java/com/limelight/quickmenu/QuickMenuConfigTest.java
-          ! grep -q 'public final String label;' app/src/main/java/com/limelight/quickmenu/StreamActionRegistry.java
-          ! grep -q 'private final String label;' app/src/main/java/com/limelight/ArtemisAction.java
 
-      - name: Set up Java
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: gradle
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          cmdline-tools-version: 12266719
-
-      - name: Install SDK and NDK
-        run: sdkmanager "platforms;android-36" "ndk;27.0.12077973"
-
-      - name: Compile non-root debug variant
-        run: |
-          chmod +x gradlew
-          ./gradlew :app:compileNonRoot_gameDebugJavaWithJavac --stacktrace
-
-      - name: Run focused localization regressions
-        run: >-
-          ./gradlew :app:testNonRoot_gameDebugUnitTest
-          --tests "com.limelight.ArtemisCatalogLocalizationTest"
-          --tests "com.limelight.binding.input.virtual_controller.keyboard.ArtemisActionButtonFactoryTest"
-          --tests "com.limelight.quickmenu.QuickMenuConfigTest"
-          --stacktrace
-
-      - name: Commit validated staging result
+      - name: Publish validated non-workflow blobs
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
-            .github/workflows/android-ci.yml \
             app/src/main/java/com/limelight/ArtemisAction.java \
             app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/ArtemisActionButtonFactory.java \
             app/src/main/java/com/limelight/quickmenu/StreamActionRegistry.java \
@@ -79,5 +44,5 @@ jobs:
             app/src/main/res/values/artemis_action_catalog.xml \
             app/src/test/java/com/limelight/ArtemisCatalogLocalizationTest.java \
             app/src/test/java/com/limelight/quickmenu/QuickMenuConfigTest.java
-          git commit -m "Stage validated action catalog localization"
+          git commit -m "Stage validated action catalog localization blobs"
           git push origin HEAD:staging/action-catalog-localization

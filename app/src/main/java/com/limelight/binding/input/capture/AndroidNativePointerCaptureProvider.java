@@ -17,11 +17,29 @@ import android.view.View;
 public class AndroidNativePointerCaptureProvider extends AndroidPointerIconCaptureProvider implements InputManager.InputDeviceListener {
     private final InputManager inputManager;
     private final View targetView;
+    private final Handler recaptureHandler;
+    private final Runnable recaptureRunnable;
+    private boolean inputDeviceListenerRegistered;
+    private boolean destroyed;
 
     public AndroidNativePointerCaptureProvider(Activity activity, View targetView) {
         super(activity, targetView);
         this.inputManager = activity.getSystemService(InputManager.class);
         this.targetView = targetView;
+        this.recaptureHandler = new Handler(activity.getMainLooper());
+        this.recaptureRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (destroyed || !isCapturing || isCursorVisible ||
+                        !targetView.isAttachedToWindow() || !targetView.hasWindowFocus()) {
+                    return;
+                }
+
+                if (hasCaptureCompatibleInputDevice()) {
+                    targetView.requestPointerCapture();
+                }
+            }
+        };
     }
 
     public static boolean isCaptureProviderSupported() {
@@ -61,23 +79,46 @@ public class AndroidNativePointerCaptureProvider extends AndroidPointerIconCaptu
         return false;
     }
 
+    private void registerInputDeviceListener() {
+        if (!inputDeviceListenerRegistered) {
+            inputManager.registerInputDeviceListener(this, null);
+            inputDeviceListenerRegistered = true;
+        }
+    }
+
+    private void unregisterInputDeviceListener() {
+        if (inputDeviceListenerRegistered) {
+            inputManager.unregisterInputDeviceListener(this);
+            inputDeviceListenerRegistered = false;
+        }
+    }
+
     @Override
     public void showCursor() {
+        if (destroyed) {
+            return;
+        }
+
         super.showCursor();
+        recaptureHandler.removeCallbacks(recaptureRunnable);
 
         // It is important to unregister the listener *before* releasing pointer capture,
         // because releasing pointer capture can cause an onInputDeviceChanged() callback
         // for devices with a touchpad (like a DS4 controller).
-        inputManager.unregisterInputDeviceListener(this);
+        unregisterInputDeviceListener();
         targetView.releasePointerCapture();
     }
 
     @Override
     public void hideCursor() {
+        if (destroyed) {
+            return;
+        }
+
         super.hideCursor();
 
         // Listen for device events to enable/disable capture
-        inputManager.registerInputDeviceListener(this, null);
+        registerInputDeviceListener();
 
         // Capture now if we have a capture-capable device
         if (hasCaptureCompatibleInputDevice()) {
@@ -86,27 +127,40 @@ public class AndroidNativePointerCaptureProvider extends AndroidPointerIconCaptu
     }
 
     @Override
+    public void destroy() {
+        if (destroyed) {
+            return;
+        }
+
+        // Mark teardown first so racing listener or delayed-focus callbacks become no-ops.
+        destroyed = true;
+        isCapturing = false;
+        recaptureHandler.removeCallbacks(recaptureRunnable);
+
+        // Keep the listener-before-release ordering used by showCursor() to avoid a
+        // releasePointerCapture()-induced onInputDeviceChanged() callback.
+        unregisterInputDeviceListener();
+        targetView.releasePointerCapture();
+        super.showCursor();
+    }
+
+    @Override
     public void onWindowFocusChanged(boolean focusActive) {
         // NB: We have to check cursor visibility here because Android pointer capture
         // doesn't support capturing the cursor while it's visible. Enabling pointer
         // capture implicitly hides the cursor.
-        if (!focusActive || !isCapturing || isCursorVisible) {
+        if (destroyed || !focusActive || !isCapturing || isCursorVisible) {
+            recaptureHandler.removeCallbacks(recaptureRunnable);
             return;
         }
 
         // Recapture the pointer if focus was regained. On Android Q,
         // we have to delay a bit before requesting capture because otherwise
         // we'll hit the "requestPointerCapture called for a window that has no focus"
-        // error and it will not actually capture the cursor.
-        Handler h = new Handler();
-        h.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                if (hasCaptureCompatibleInputDevice()) {
-                    targetView.requestPointerCapture();
-                }
-            }
-        }, 500);
+        // error and it will not actually capture the cursor. Replace any older request
+        // so only the latest focus transition owns delayed recapture work.
+        recaptureHandler.removeCallbacks(recaptureRunnable);
+        recaptureHandler.postDelayed(recaptureRunnable, 500);
     }
 
     @Override
@@ -143,6 +197,10 @@ public class AndroidNativePointerCaptureProvider extends AndroidPointerIconCaptu
 
     @Override
     public void onInputDeviceAdded(int deviceId) {
+        if (destroyed || !isCapturing || isCursorVisible) {
+            return;
+        }
+
         // Check if we've added a capture-compatible device
         if (!targetView.hasPointerCapture() && hasCaptureCompatibleInputDevice()) {
             targetView.requestPointerCapture();
@@ -151,6 +209,10 @@ public class AndroidNativePointerCaptureProvider extends AndroidPointerIconCaptu
 
     @Override
     public void onInputDeviceRemoved(int deviceId) {
+        if (destroyed || !isCapturing || isCursorVisible) {
+            return;
+        }
+
         // Check if the capture-compatible device was removed
         if (targetView.hasPointerCapture() && !hasCaptureCompatibleInputDevice()) {
             targetView.releasePointerCapture();
@@ -159,6 +221,10 @@ public class AndroidNativePointerCaptureProvider extends AndroidPointerIconCaptu
 
     @Override
     public void onInputDeviceChanged(int deviceId) {
+        if (destroyed || !isCapturing || isCursorVisible) {
+            return;
+        }
+
         // Emulating a remove+add should be sufficient for our purposes.
         //
         // Note: This callback must be handled carefully because it can happen as a result of

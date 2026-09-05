@@ -229,7 +229,7 @@ public class AndroidNativePointerCaptureProvider extends AndroidPointerIconCaptu
         //
         // Note: This callback must be handled carefully because it can happen as a result of
         // calling requestPointerCapture(). This can cause trackpad devices to gain SOURCE_MOUSE_RELATIVE
-         // and re-enter this callback.
+        // and re-enter this callback.
         onInputDeviceRemoved(deviceId);
         onInputDeviceAdded(deviceId);
     }

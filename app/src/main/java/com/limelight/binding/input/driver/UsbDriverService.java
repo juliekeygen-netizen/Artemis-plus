@@ -13,6 +13,7 @@ import android.hardware.usb.UsbManager;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.IBinder;
 import android.view.InputDevice;
 import android.widget.Toast;
@@ -37,6 +38,8 @@ public class UsbDriverService extends Service implements UsbDriverListener {
     private final UsbDriverBinder binder = new UsbDriverBinder();
 
     private final ArrayList<AbstractController> controllers = new ArrayList<>();
+
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private UsbDriverListener listener;
     private UsbDriverStateListener stateListener;
@@ -81,6 +84,10 @@ public class UsbDriverService extends Service implements UsbDriverListener {
     public class UsbEventReceiver extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
+            if (!started) {
+                return;
+            }
+
             String action = intent.getAction();
 
             // Initial attachment broadcast
@@ -94,9 +101,12 @@ public class UsbDriverService extends Service implements UsbDriverListener {
                 // kernel is capable of running the device. Let's post a delayed
                 // message to process this state change to allow the kernel
                 // some time to bring up the stack.
-                new Handler().postDelayed(new Runnable() {
+                mainHandler.postDelayed(new Runnable() {
                     @Override
                     public void run() {
+                        if (!started) {
+                            return;
+                        }
                         // Continue the state machine
                         handleUsbDeviceState(device);
                     }
@@ -145,6 +155,10 @@ public class UsbDriverService extends Service implements UsbDriverListener {
     }
 
     private void handleUsbDeviceState(UsbDevice device) {
+        if (!started || device == null) {
+            return;
+        }
+
         // Are we able to operate it?
         if (shouldClaimDevice(device, prefConfig.bindAllUsb)) {
             // Do we have permission yet?
@@ -323,6 +337,8 @@ public class UsbDriverService extends Service implements UsbDriverListener {
     }
 
     private void stop() {
+        mainHandler.removeCallbacksAndMessages(null);
+
         if (!started) {
             return;
         }

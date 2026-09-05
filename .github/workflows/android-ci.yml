@@ -100,6 +100,7 @@ jobs:
           --tests "com.limelight.GameSendKeysLifecycleTest"
           --tests "com.limelight.ProfileEditorPreferenceValuesTest"
           --tests "com.limelight.binding.input.capture.AndroidNativePointerCaptureProviderLifecycleTest"
+          --tests "com.limelight.binding.input.driver.UsbDriverServiceLifecycleTest"
           --tests "com.limelight.binding.input.virtual_controller.OscProfilesManagerTest"
           --tests "com.limelight.binding.input.virtual_controller.keyboard.ArtemisActionButtonFactoryTest"
           --tests "com.limelight.binding.input.virtual_controller.keyboard.KeyComboManagerTest"

@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Serialize synchronous callbacks without creating generation lag
+      - name: Guard performance callback UI work after teardown
         shell: python
         run: |
           from pathlib import Path
@@ -26,206 +26,41 @@ jobs:
           text = path.read_text(encoding='utf-8')
 
           old = (
-              "    private final Handler commitTextHandler = new Handler(Looper.getMainLooper());\n"
-              "    private volatile boolean inputCallbacksDestroyed;\n"
+              "    @Override\n"
+              "    public void onPerfUpdate(final String text) {\n"
+              "        runOnUiThread(new Runnable() {\n"
           )
           new = (
-              "    private final Handler commitTextHandler = new Handler(Looper.getMainLooper());\n"
-              "    private final Object gameCallbackOwnerLock = new Object();\n"
-              "    private volatile boolean inputCallbacksDestroyed;\n"
+              "    @Override\n"
+              "    public void onPerfUpdate(final String text) {\n"
+              "        runOnUiThreadIfActive(new Runnable() {\n"
           )
           if text.count(old) != 1:
-              raise SystemExit('callback owner lock insertion marker mismatch')
+              raise SystemExit('onPerfUpdate marker mismatch')
           text = text.replace(old, new, 1)
 
           old = (
-              "        // Detach IME/text work before any transport teardown. An InputConnection can outlive its\n"
-              "        // View/Activity briefly, so reject late callbacks and discard already queued chunks.\n"
-              "        inputCallbacksDestroyed = true;\n"
-              "        commitTextHandler.removeCallbacksAndMessages(null);\n"
+              "    public void onPerfStatsUpdate(final float decodeTimeMs, final float renderTimeMs,\n"
+              "                                  final float networkLatencyMs, final int fps, final String codec) {\n"
+              "        runOnUiThread(new Runnable() {\n"
           )
           new = (
-              "        // Detach IME/text work before any transport teardown. An InputConnection can outlive its\n"
-              "        // View/Activity briefly, so reject late callbacks and discard already queued chunks.\n"
-              "        // The owner lock also waits for any synchronous native callback already touching controller\n"
-              "        // or decoder state, then prevents all later callbacks from entering those owners.\n"
-              "        synchronized (gameCallbackOwnerLock) {\n"
-              "            inputCallbacksDestroyed = true;\n"
-              "        }\n"
-              "        commitTextHandler.removeCallbacksAndMessages(null);\n"
+              "    public void onPerfStatsUpdate(final float decodeTimeMs, final float renderTimeMs,\n"
+              "                                  final float networkLatencyMs, final int fps, final String codec) {\n"
+              "        runOnUiThreadIfActive(new Runnable() {\n"
           )
           if text.count(old) != 1:
-              raise SystemExit('onDestroy owner close marker mismatch')
+              raise SystemExit('onPerfStatsUpdate marker mismatch')
           text = text.replace(old, new, 1)
-
-          old = (
-              "        runOnUiThreadIfActive(() -> {\n"
-              "            if (BackgroundStreamingPolicy.isKeepAlive(prefConfig.backgroundStreamingMode) &&\n"
-              "                    isKeepAliveSupportedForSession() && !keepAliveServiceStarted) {\n"
-              "                keepAliveServiceStarted = StreamKeepAliveService.start(this);\n"
-              "                if (!keepAliveServiceStarted) {\n"
-              "                    keepAliveFallbackToFastResume = true;\n"
-              "                }\n"
-              "            }\n"
-              "\n"
-              "            if (prefConfig.usbDriver && !connectedToUsbDriverService) {\n"
-              "                // Start the USB driver once. Fast Resume and smart reconnect reuse the existing binding.\n"
-              "                bindService(new Intent(this, UsbDriverService.class),\n"
-              "                        usbDriverServiceConnection, Service.BIND_AUTO_CREATE);\n"
-              "            }\n"
-              "\n"
-              "            // A reconnect is not a new shortcut launch. Report usage only for the first connection.\n"
-              "            if (!reportedShortcutUsage) {\n"
-              "                reportedShortcutUsage = true;\n"
-              "                ComputerDetails computer = new ComputerDetails();\n"
-              "                computer.name = pcName;\n"
-              "                computer.uuid = Game.this.getIntent().getStringExtra(EXTRA_PC_UUID);\n"
-              "                ShortcutHelper shortcutHelper = new ShortcutHelper(this);\n"
-              "                shortcutHelper.reportComputerShortcutUsed(computer);\n"
-              "                if (appName != null) {\n"
-              "                    // This may be null if launched from the \"Resume Session\" PC context menu item\n"
-              "                    shortcutHelper.reportGameLaunched(computer, app);\n"
-              "                }\n"
-              "            }\n"
-              "        });\n"
-          )
-          new = (
-              "        synchronized (gameCallbackOwnerLock) {\n"
-              "            if (inputCallbacksDestroyed) {\n"
-              "                return;\n"
-              "            }\n"
-              "\n"
-              "            if (BackgroundStreamingPolicy.isKeepAlive(prefConfig.backgroundStreamingMode) &&\n"
-              "                    isKeepAliveSupportedForSession() && !keepAliveServiceStarted) {\n"
-              "                keepAliveServiceStarted = StreamKeepAliveService.start(this);\n"
-              "                if (!keepAliveServiceStarted) {\n"
-              "                    keepAliveFallbackToFastResume = true;\n"
-              "                }\n"
-              "            }\n"
-              "\n"
-              "            if (prefConfig.usbDriver && !connectedToUsbDriverService) {\n"
-              "                // Start the USB driver once. Fast Resume and smart reconnect reuse the existing binding.\n"
-              "                bindService(new Intent(this, UsbDriverService.class),\n"
-              "                        usbDriverServiceConnection, Service.BIND_AUTO_CREATE);\n"
-              "            }\n"
-              "\n"
-              "            // A reconnect is not a new shortcut launch. Report usage only for the first connection.\n"
-              "            if (!reportedShortcutUsage) {\n"
-              "                reportedShortcutUsage = true;\n"
-              "                ComputerDetails computer = new ComputerDetails();\n"
-              "                computer.name = pcName;\n"
-              "                computer.uuid = Game.this.getIntent().getStringExtra(EXTRA_PC_UUID);\n"
-              "                ShortcutHelper shortcutHelper = new ShortcutHelper(this);\n"
-              "                shortcutHelper.reportComputerShortcutUsed(computer);\n"
-              "                if (appName != null) {\n"
-              "                    // This may be null if launched from the \"Resume Session\" PC context menu item\n"
-              "                    shortcutHelper.reportGameLaunched(computer, app);\n"
-              "                }\n"
-              "            }\n"
-              "        }\n"
-          )
-          if text.count(old) != 1:
-              raise SystemExit('connectionStarted synchronous side effect marker mismatch')
-          text = text.replace(old, new, 1)
-
-          replacements = [
-              (
-                  "    public void rumble(short controllerNumber, short lowFreqMotor, short highFreqMotor) {\n"
-                  "        runOnUiThreadIfActive(() -> {\n"
-                  "            if (prefConfig.enableRumble) {\n"
-                  "                LimeLog.info(String.format((Locale)null, \"Rumble on gamepad %d: %04x %04x\", controllerNumber, lowFreqMotor, highFreqMotor));\n"
-                  "                controllerHandler.handleRumble(controllerNumber, lowFreqMotor, highFreqMotor);\n"
-                  "            }\n"
-                  "        });\n"
-                  "    }\n",
-                  "    public void rumble(short controllerNumber, short lowFreqMotor, short highFreqMotor) {\n"
-                  "        synchronized (gameCallbackOwnerLock) {\n"
-                  "            if (inputCallbacksDestroyed) {\n"
-                  "                return;\n"
-                  "            }\n"
-                  "            if (prefConfig.enableRumble) {\n"
-                  "                LimeLog.info(String.format((Locale)null, \"Rumble on gamepad %d: %04x %04x\", controllerNumber, lowFreqMotor, highFreqMotor));\n"
-                  "                controllerHandler.handleRumble(controllerNumber, lowFreqMotor, highFreqMotor);\n"
-                  "            }\n"
-                  "        }\n"
-                  "    }\n"
-              ),
-              (
-                  "    public void rumbleTriggers(short controllerNumber, short leftTrigger, short rightTrigger) {\n"
-                  "        runOnUiThreadIfActive(() -> {\n"
-                  "            LimeLog.info(String.format((Locale)null, \"Rumble on gamepad triggers %d: %04x %04x\", controllerNumber, leftTrigger, rightTrigger));\n"
-                  "            controllerHandler.handleRumbleTriggers(controllerNumber, leftTrigger, rightTrigger);\n"
-                  "        });\n"
-                  "    }\n",
-                  "    public void rumbleTriggers(short controllerNumber, short leftTrigger, short rightTrigger) {\n"
-                  "        synchronized (gameCallbackOwnerLock) {\n"
-                  "            if (inputCallbacksDestroyed) {\n"
-                  "                return;\n"
-                  "            }\n"
-                  "            LimeLog.info(String.format((Locale)null, \"Rumble on gamepad triggers %d: %04x %04x\", controllerNumber, leftTrigger, rightTrigger));\n"
-                  "            controllerHandler.handleRumbleTriggers(controllerNumber, leftTrigger, rightTrigger);\n"
-                  "        }\n"
-                  "    }\n"
-              ),
-              (
-                  "    public void setHdrMode(boolean enabled, byte[] hdrMetadata) {\n"
-                  "        runOnUiThreadIfActive(() -> {\n"
-                  "            LimeLog.info(\"Display HDR mode: \" + (enabled ? \"enabled\" : \"disabled\"));\n"
-                  "            decoderRenderer.setHdrMode(enabled, hdrMetadata);\n"
-                  "        });\n"
-                  "    }\n",
-                  "    public void setHdrMode(boolean enabled, byte[] hdrMetadata) {\n"
-                  "        synchronized (gameCallbackOwnerLock) {\n"
-                  "            if (inputCallbacksDestroyed) {\n"
-                  "                return;\n"
-                  "            }\n"
-                  "            LimeLog.info(\"Display HDR mode: \" + (enabled ? \"enabled\" : \"disabled\"));\n"
-                  "            decoderRenderer.setHdrMode(enabled, hdrMetadata);\n"
-                  "        }\n"
-                  "    }\n"
-              ),
-              (
-                  "    public void setMotionEventState(short controllerNumber, byte motionType, short reportRateHz) {\n"
-                  "        runOnUiThreadIfActive(() ->\n"
-                  "                controllerHandler.handleSetMotionEventState(controllerNumber, motionType, reportRateHz));\n"
-                  "    }\n",
-                  "    public void setMotionEventState(short controllerNumber, byte motionType, short reportRateHz) {\n"
-                  "        synchronized (gameCallbackOwnerLock) {\n"
-                  "            if (inputCallbacksDestroyed) {\n"
-                  "                return;\n"
-                  "            }\n"
-                  "            controllerHandler.handleSetMotionEventState(controllerNumber, motionType, reportRateHz);\n"
-                  "        }\n"
-                  "    }\n"
-              ),
-              (
-                  "    public void setControllerLED(short controllerNumber, byte r, byte g, byte b) {\n"
-                  "        runOnUiThreadIfActive(() -> controllerHandler.handleSetControllerLED(controllerNumber, r, g, b));\n"
-                  "    }\n",
-                  "    public void setControllerLED(short controllerNumber, byte r, byte g, byte b) {\n"
-                  "        synchronized (gameCallbackOwnerLock) {\n"
-                  "            if (inputCallbacksDestroyed) {\n"
-                  "                return;\n"
-                  "            }\n"
-                  "            controllerHandler.handleSetControllerLED(controllerNumber, r, g, b);\n"
-                  "        }\n"
-                  "    }\n"
-              ),
-          ]
-
-          for old, new in replacements:
-              if text.count(old) != 1:
-                  raise SystemExit('synchronous callback lock replacement marker mismatch')
-              text = text.replace(old, new, 1)
 
           path.write_text(text, encoding='utf-8')
 
-      - name: Commit callback owner lock patch
+      - name: Commit performance callback lifecycle patch
         run: |
           chmod +x app/src/main/java/com/limelight/Game.java
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add app/src/main/java/com/limelight/Game.java
           git diff --cached --check
-          git commit -m "Synchronize direct Game callbacks with teardown"
+          git commit -m "Guard Game performance callbacks after teardown"
           git push

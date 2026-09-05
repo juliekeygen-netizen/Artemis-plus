@@ -29,8 +29,8 @@ jobs:
           git diff --check
           test -f app/src/main/res/values/artemis_action_catalog.xml
           test -f app/src/test/java/com/limelight/ArtemisCatalogLocalizationTest.java
-          ! grep -q 'action\.label\|action\.category\|action\.description' app/src/main/java/com/limelight/quickmenu/QuickMenuEditorDialog.java
-          ! grep -q 'action\.label\|action\.category\|action\.description' app/src/test/java/com/limelight/quickmenu/QuickMenuConfigTest.java
+          grep -q 'ui.getString(action.labelResId)' app/src/main/java/com/limelight/quickmenu/QuickMenuEditorDialog.java
+          grep -q 'action.descriptionResId != 0' app/src/test/java/com/limelight/quickmenu/QuickMenuConfigTest.java
 
       - name: Publish validated non-workflow blobs
         run: |

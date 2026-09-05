@@ -4813,53 +4813,39 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public void rumble(short controllerNumber, short lowFreqMotor, short highFreqMotor) {
-        if (inputCallbacksDestroyed) {
-            return;
-        }
-
-        if (prefConfig.enableRumble) {
-            LimeLog.info(String.format((Locale)null, "Rumble on gamepad %d: %04x %04x", controllerNumber, lowFreqMotor, highFreqMotor));
-            controllerHandler.handleRumble(controllerNumber, lowFreqMotor, highFreqMotor);
-        }
+        runOnUiThreadIfActive(() -> {
+            if (prefConfig.enableRumble) {
+                LimeLog.info(String.format((Locale)null, "Rumble on gamepad %d: %04x %04x", controllerNumber, lowFreqMotor, highFreqMotor));
+                controllerHandler.handleRumble(controllerNumber, lowFreqMotor, highFreqMotor);
+            }
+        });
     }
 
     @Override
     public void rumbleTriggers(short controllerNumber, short leftTrigger, short rightTrigger) {
-        if (inputCallbacksDestroyed) {
-            return;
-        }
-
-        LimeLog.info(String.format((Locale)null, "Rumble on gamepad triggers %d: %04x %04x", controllerNumber, leftTrigger, rightTrigger));
-
-        controllerHandler.handleRumbleTriggers(controllerNumber, leftTrigger, rightTrigger);
+        runOnUiThreadIfActive(() -> {
+            LimeLog.info(String.format((Locale)null, "Rumble on gamepad triggers %d: %04x %04x", controllerNumber, leftTrigger, rightTrigger));
+            controllerHandler.handleRumbleTriggers(controllerNumber, leftTrigger, rightTrigger);
+        });
     }
 
     @Override
     public void setHdrMode(boolean enabled, byte[] hdrMetadata) {
-        if (inputCallbacksDestroyed) {
-            return;
-        }
-
-        LimeLog.info("Display HDR mode: " + (enabled ? "enabled" : "disabled"));
-        decoderRenderer.setHdrMode(enabled, hdrMetadata);
+        runOnUiThreadIfActive(() -> {
+            LimeLog.info("Display HDR mode: " + (enabled ? "enabled" : "disabled"));
+            decoderRenderer.setHdrMode(enabled, hdrMetadata);
+        });
     }
 
     @Override
     public void setMotionEventState(short controllerNumber, byte motionType, short reportRateHz) {
-        if (inputCallbacksDestroyed) {
-            return;
-        }
-
-        controllerHandler.handleSetMotionEventState(controllerNumber, motionType, reportRateHz);
+        runOnUiThreadIfActive(() ->
+                controllerHandler.handleSetMotionEventState(controllerNumber, motionType, reportRateHz));
     }
 
     @Override
     public void setControllerLED(short controllerNumber, byte r, byte g, byte b) {
-        if (inputCallbacksDestroyed) {
-            return;
-        }
-
-        controllerHandler.handleSetControllerLED(controllerNumber, r, g, b);
+        runOnUiThreadIfActive(() -> controllerHandler.handleSetControllerLED(controllerNumber, r, g, b));
     }
 
     @Override

@@ -34,6 +34,7 @@ jobs:
           test -f app/src/test/java/com/limelight/ArtemisCatalogLocalizationTest.java
           ! grep -q 'getCategories()' app/src/main/java/com/limelight/quickmenu/QuickMenuEditorDialog.java
           ! grep -q 'action\.label\|action\.category\|action\.description' app/src/main/java/com/limelight/quickmenu/QuickMenuEditorDialog.java
+          ! grep -q 'action\.label\|action\.category\|action\.description' app/src/test/java/com/limelight/quickmenu/QuickMenuConfigTest.java
           ! grep -q 'public final String label;' app/src/main/java/com/limelight/quickmenu/StreamActionRegistry.java
           ! grep -q 'private final String label;' app/src/main/java/com/limelight/ArtemisAction.java
 
@@ -76,6 +77,7 @@ jobs:
             app/src/main/java/com/limelight/quickmenu/StreamActionRegistry.java \
             app/src/main/java/com/limelight/quickmenu/QuickMenuEditorDialog.java \
             app/src/main/res/values/artemis_action_catalog.xml \
-            app/src/test/java/com/limelight/ArtemisCatalogLocalizationTest.java
+            app/src/test/java/com/limelight/ArtemisCatalogLocalizationTest.java \
+            app/src/test/java/com/limelight/quickmenu/QuickMenuConfigTest.java
           git commit -m "Stage validated action catalog localization"
           git push origin HEAD:staging/action-catalog-localization

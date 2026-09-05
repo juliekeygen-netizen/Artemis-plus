@@ -97,6 +97,7 @@ jobs:
           --tests "com.limelight.GameConnectionCallbackLifecycleTest"
           --tests "com.limelight.GameDelayedCallbackLifecycleTest"
           --tests "com.limelight.GameInputGrabRestoreLifecycleTest"
+          --tests "com.limelight.GameStopWorkerLifecycleTest"
           --tests "com.limelight.GameSendKeysLifecycleTest"
           --tests "com.limelight.ProfileEditorPreferenceValuesTest"
           --tests "com.limelight.binding.input.ControllerHandlerBatteryLifecycleTest"

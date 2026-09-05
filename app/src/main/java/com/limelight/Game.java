@@ -1953,7 +1953,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             if (decoderRenderer != null) {
                 decoderRenderer.prepareForStop();
             }
-            stopConnection(false, () -> {
+            stopConnectionForDestroy(() -> {
                 releaseKeepAliveCpuWakeLock();
                 closeKeepAliveSurface();
             });
@@ -4283,6 +4283,15 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private void stopConnection(boolean preserveControllerStateForReconnect, Runnable onStopped) {
+        stopConnection(preserveControllerStateForReconnect, onStopped, false);
+    }
+
+    private void stopConnectionForDestroy(Runnable onStopped) {
+        stopConnection(false, onStopped, true);
+    }
+
+    private void stopConnection(boolean preserveControllerStateForReconnect, Runnable onStopped,
+                                boolean allowCompletionAfterDestroy) {
         if (connecting || connected) {
             connecting = connected = false;
             updatePipAutoEnter();
@@ -4309,30 +4318,47 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             // thread to keep things smooth for the UI. Inside moonlight-common,
             // we prevent another thread from starting a connection before and
             // during the process of stopping this one.
-            new Thread() {
-                public void run() {
-                    conn.stop();
-                    if (httpConn != null && quitOnStop) {
-                        try {
-                            sleep(1000);
-                            httpConn.quitApp();
-                            Game.this.runOnUiThread(() -> Toast.makeText(Game.this, Game.this.getResources().getString(R.string.applist_quit_success) + " " + appName, Toast.LENGTH_LONG).show());
-                        } catch (Exception e) {
-                            Game.this.runOnUiThread(() -> Toast.makeText(Game.this, e.getMessage(), Toast.LENGTH_LONG).show());
-                        }
+            NvConnection connectionToStop = conn;
+            NvHTTP httpConnection = httpConn;
+            boolean shouldQuitApp = quitOnStop;
+            String stoppedAppName = appName;
+            new Thread(() -> {
+                connectionToStop.stop();
+                if (httpConnection != null && shouldQuitApp) {
+                    try {
+                        Thread.sleep(1000);
+                        httpConnection.quitApp();
+                        runOnUiThreadIfActive(() -> Toast.makeText(Game.this,
+                                getResources().getString(R.string.applist_quit_success) + " " + stoppedAppName,
+                                Toast.LENGTH_LONG).show());
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    } catch (Exception e) {
+                        runOnUiThreadIfActive(() -> Toast.makeText(Game.this, e.getMessage(),
+                                Toast.LENGTH_LONG).show());
                     }
-                    Game.this.runOnUiThread(() -> {
-                        stopKeepAliveService();
-                        if (onStopped != null) {
-                            onStopped.run();
-                        }
-                    });
                 }
-            }.start();
+
+                Runnable completion = () -> {
+                    stopKeepAliveService();
+                    if (onStopped != null) {
+                        onStopped.run();
+                    }
+                };
+                if (allowCompletionAfterDestroy) {
+                    runOnUiThread(completion);
+                } else {
+                    runOnUiThreadIfActive(completion);
+                }
+            }, "ArtemisStopConnection").start();
         } else {
             stopKeepAliveService();
             if (onStopped != null) {
-                runOnUiThread(onStopped);
+                if (allowCompletionAfterDestroy) {
+                    runOnUiThread(onStopped);
+                } else {
+                    runOnUiThreadIfActive(onStopped);
+                }
             }
         }
     }

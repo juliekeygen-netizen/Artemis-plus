@@ -380,6 +380,13 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private final Handler commitTextHandler = new Handler(Looper.getMainLooper());
     private volatile boolean inputCallbacksDestroyed;
 
+    private final Runnable finishSecondScreenRunnable = () -> {
+        if (inputCallbacksDestroyed || isFinishing() || isDestroyed()) {
+            return;
+        }
+        finish();
+    };
+
     private final Runnable flushCommitTextQueue = new Runnable() {
         @Override
         public void run() {
@@ -1815,6 +1822,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private final Runnable hideSystemUi = new Runnable() {
         @Override
         public void run() {
+            if (inputCallbacksDestroyed || isFinishing() || isDestroyed()) {
+                return;
+            }
+
             // TODO: Do we want to use WindowInsetsController here on R+ instead of
             // SYSTEM_UI_FLAG_IMMERSIVE_STICKY? They seem to do the same thing as of S...
 
@@ -1838,10 +1849,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     };
 
     private void hideSystemUi(int delay) {
-        Handler h = getWindow().getDecorView().getHandler();
-        if (h != null) {
-            h.removeCallbacks(hideSystemUi);
-            h.postDelayed(hideSystemUi, delay);
+        if (timerHandler != null && !inputCallbacksDestroyed) {
+            timerHandler.removeCallbacks(hideSystemUi);
+            timerHandler.postDelayed(hideSystemUi, delay);
         }
     }
 
@@ -2440,6 +2450,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private final Runnable toggleGrab = new Runnable() {
         @Override
         public void run() {
+            if (inputCallbacksDestroyed || isFinishing() || isDestroyed()) {
+                return;
+            }
             setInputGrabState(!grabbedInput);
         }
     };
@@ -2491,9 +2504,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 switch (specialKeyCode) {
                     // Toggle input grab
                     case KeyEvent.KEYCODE_Z:
-                        Handler h = getWindow().getDecorView().getHandler();
-                        if (h != null) {
-                            h.postDelayed(toggleGrab, 250);
+                        if (timerHandler != null && !inputCallbacksDestroyed) {
+                            timerHandler.removeCallbacks(toggleGrab);
+                            timerHandler.postDelayed(toggleGrab, 250);
                         }
                         break;
 
@@ -4280,14 +4293,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     private void finishSecondScreen() {
         // Otherwise screen stays connected but not working with no way of quitting it
-        if (prefConfig.enableFullExDisplay) {
-            Handler h = new Handler();
-            h.postDelayed(new Runnable() {
-                @Override
-                public void run() {
-                    finish();
-                }
-            }, 2000);
+        if (prefConfig.enableFullExDisplay && timerHandler != null && !inputCallbacksDestroyed) {
+            timerHandler.removeCallbacks(finishSecondScreenRunnable);
+            timerHandler.postDelayed(finishSecondScreenRunnable, 2000);
         }
     }
 

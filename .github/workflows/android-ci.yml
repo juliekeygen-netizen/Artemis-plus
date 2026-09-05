@@ -92,6 +92,7 @@ jobs:
           --tests "com.limelight.nvstream.GenerationBoundNvConnectionListenerTest"
           --tests "com.limelight.nvstream.NvConnectionLifecycleIntegrationTest"
           --tests "com.limelight.GameCommitTextLifecycleTest"
+          --tests "com.limelight.GameDelayedCallbackLifecycleTest"
           --tests "com.limelight.GameSendKeysLifecycleTest"
           --tests "com.limelight.ProfileEditorPreferenceValuesTest"
           --tests "com.limelight.binding.input.capture.AndroidNativePointerCaptureProviderLifecycleTest"

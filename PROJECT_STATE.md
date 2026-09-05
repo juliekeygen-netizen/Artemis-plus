@@ -1,6 +1,6 @@
 # Artemis Plus — Durable Project State and Roadmap
 
-**Last refreshed:** 2026-09-02  
+**Last refreshed:** 2026-09-05  
 **Purpose:** durable current-state handoff for Codex/ChatGPT and future contributors.  
 **Rule:** current source/tests, Git history, Actions, and release state are authoritative. Verify live `main` before acting; this file is a recovery map, not a substitute for inspection.
 
@@ -10,7 +10,7 @@
 
 Artemis Plus is an Android streaming client derived from the newer Marssvoodoo Artemis base. The project keeps that streaming/reliability base while adding Artemis-specific control editing, profiles, Quick Menu actions, OSC management, orientation/PiP/background-stream behavior, experimental sideways streaming, and a stable signed rolling debug release.
 
-Primary architectural rule: extend the existing Artemis ownership model rather than creating parallel state systems. Prefer narrow, demonstrated, regression-tested fixes over broad rewrites.
+Primary architectural rule: extend existing ownership/state systems rather than creating parallel ones. Prefer narrow, demonstrated, regression-tested fixes over broad rewrites.
 
 ---
 
@@ -18,17 +18,18 @@ Primary architectural rule: extend the existing Artemis ownership model rather t
 
 Latest verified merged `main` at this refresh:
 
-`47c58451186d8c6b55811d9f7a193a740e996f08`
+`7b4dfd5ee878f3e85bcba21cd2fadbad0eecc458`
 
 Latest merge:
 
-`Reject keyboard profiles that alias the same storage (#51)`
+`Own controller rumble across reconnect suspension (#75)`
 
 Post-merge verification on this exact SHA:
 
-- Android CI run `33676129443` — success.
+- Android CI run `33975853435` — success, including compile, focused Artemis regressions, and the full inherited unit suite.
+- Build Debug APK run `33975853411` — installable signed package build/verification succeeded; rolling-release publication was still completing when this refresh began.
 
-The #51 branch and PR also passed exact-head compile, focused Artemis regressions, and the full inherited unit suite before merge.
+The #75 branch also passed independent exact-head push CI `33975612546` and PR CI `33975631701` before guarded squash merge.
 
 Current Android build stack:
 
@@ -56,37 +57,53 @@ Do not restart these from stale handoffs.
 - **#27** — moved GitHub-hosted actions to Node-24-capable majors while preserving the proven Android toolchain assumptions.
 - **#28** — cleaned stale resource/localization warnings without line-ending churn.
 - **#34** — replaced repository-owned deprecated Gradle Groovy property setter forms with assignment syntax and re-audited warnings.
+- **#52** — refreshed the post-persistence audit handoff. Its recorded baseline is historical now; this file supersedes it.
 
-### Quick Menu / OSC / keyboard persistence
+### Persistence / Quick Menu / OSC / keyboard/editor correctness
 
 - **#23** — preserves unknown/future Quick Menu action IDs inertly and round-trippably.
 - **#25** — recovers OSC profiles from damaged metadata while preserving valid siblings and avoiding stale duplicate resurrection.
 - **#29** — hardens keyboard/profile persistence against wrong-typed and partially malformed state while preserving valid siblings and unknown future fields.
-- **#40** — makes Quick Menu persisted preference reads tolerant of stale/wrong stored types.
-- **#51** — rejects keyboard profile metadata entries that alias the same backing SharedPreferences storage. The first valid storage owner survives, backing layout data is preserved, and the active profile is repaired through the existing recovery path.
-
-### Editor geometry / floating controls / orientation
-
-- **#30** — completed connected long-label expansion using pre-expansion graph topology. The full connected follower component, including offset descendants, moves with expansion while left/below-only branches remain fixed.
+- **#30** — completed connected long-label expansion using pre-expansion graph topology.
 - **#32** — rejects non-finite floating-control coordinates and recovers wrong-typed stored positions.
 - **#33** — recovers malformed outside-stream orientation preference to Follow System.
 - **#35** — recovers malformed floating-control reset-between-sessions state without discarding valid saved positions.
+- **#37–#50** — hardens settings/profile/default/GL preference ownership, atomic profile storage, mutation-safe listeners, duplicate UUID handling, Gson boundary recovery, and global Settings reads.
+- **#51** — rejects keyboard profile metadata entries that alias the same backing SharedPreferences storage.
+- **#53** — allows modifier-only custom keys without requiring a non-modifier key.
 
-### Settings/profile persistence and Settings UI
+### Lifecycle / stream / controller ownership hardening
 
-- **#37** — normalizes Gson-restored string sets and makes typed profile/base preference reads fall back safely when persisted values have stale/wrong types.
-- **#38** — stores `profiles.json` through Android `AtomicFile`, serializes file access, validates a complete deserialized map before replacing live state, clears dangling active profile IDs, and adds interrupted-write/malformed-commit regressions.
-- **#42** — protects base/default preference reads even when no settings profile is active.
-- **#43** — recovers malformed string-backed preferences instead of propagating wrong stored types.
-- **#44** — makes settings-profile listener dispatch mutation-safe.
-- **#45** — rejects duplicate settings-profile UUIDs transactionally during recovery instead of silently overwriting an earlier profile.
-- **#48** — fixes profile-editor Gson boundary mismatches: JSON numbers restored as `Double`, string sets restored as `List`, and rotation/saved-state preservation for these values.
-- **#49** — hardens the separate named `GlPreferences` store against wrong-typed `Renderer`/`Fingerprint` values and verifies later writes repair them.
-- **#50** — routes normal/global Settings through a recovering base SharedPreferences/`PreferenceDataStore` adapter before pre-reads and XML inflation, while preserving the profile editor's in-memory data-store isolation.
+The lifecycle audit after #52 produced a long sequence of narrow fixes. Do not redo these from older audit queues:
 
-### PiP / lifecycle correctness
+- **#54** — owns smart reconnect across `Game` lifecycle.
+- **#55** — hardens `NvConnection` start/stop ownership and native-bridge permit transfer.
+- **#56** — stops commit-text work during stream teardown.
+- **#57** — ignores late stream-surface callbacks after teardown.
+- **#58** — binds delayed key releases to their owning connection.
+- **#60** — releases digital keyboard input when controls detach.
+- **#61** — releases non-digital keyboard input when controls detach.
+- **#62** — hardens Wi-Fi monitor lifecycle ownership.
+- **#63** — hardens native pointer-capture lifecycle ownership.
+- **#64** — owns delayed `Game` callbacks across teardown.
+- **#65** — prevents stale automatic input re-grab after lifecycle transitions.
+- **#66** — owns `Game` connection callbacks across teardown/generation changes.
+- **#67** — owns clipboard workers across `Game` lifecycle.
+- **#68** — snapshots stop-worker transport state, suppresses stale UI completion, and preserves the explicit destroy-time Keep Alive cleanup path.
+- **#70** — owns delayed USB-device callbacks across `UsbDriverService` lifecycle.
+- **#71** — stops an already-running controller battery poll from re-posting itself after its `InputDeviceContext` is destroyed.
+- **#72** — owns battery polling across Fast Resume / Keep Alive suspension, serializes final sends, drains old work before resume, and closes the suspension-boundary race.
+- **#73** — owns Android controller sensor registration and final motion sends across reconnect suspension while preserving host-requested report rates for Keep Alive resume.
+- **#74** — owns the recurring controller mouse-emulation loop across reconnect suspension, releases synthetic mouse buttons, neutralizes stale transient state, and resumes only active contexts.
+- **#75** — owns transient controller rumble across reconnect suspension/final stop, cancelling Android, Shield/Sce, and USB haptics without replaying stale rumble on resume.
 
-- **#41** — guards Android 11 manual PiP entry so OEM/runtime exceptions do not crash the stream Activity while preserving the O–Q manual and Android 12+ auto-enter version split.
+The controller delayed-work inventory is now closed for the demonstrated paths: stats-hold, battery polling, delayed sensor enablement, and mouse emulation are all either cancelled or lifecycle-owned.
+
+### PiP / background product behavior already present
+
+- **#41** guards Android 11 manual PiP entry while preserving the O–Q manual and Android 12+ auto-enter split.
+- Fast Resume, Keep Connection Alive, foreground keep-alive service, headless decoder surface switching, timeout/wake-lock behavior, Keep Alive → Fast Resume fallback, and visible-surface restoration are implemented product systems, not missing features.
+- Experimental Sideways CW/CCW streaming and outside-stream orientation policy are already present.
 
 ---
 
@@ -95,7 +112,7 @@ Do not restart these from stale handoffs.
 ### Editor / keyboard / Artemis Actions
 
 - UI Editor V4 gesture/persistence hardening.
-- Named custom key/chord buttons.
+- Named custom key/chord buttons, including modifier-only bindings.
 - Local Artemis Action buttons with direct-press semantics.
 - Managed keyboard profiles: create/select/rename/duplicate/delete/reorder.
 - Modern keyboard-profile bundle export/import including layout, custom keys, and Action selections.
@@ -135,76 +152,86 @@ Do not restart these from stale handoffs.
 
 ### 5.1 Persisted-state sweep is substantially hardened
 
-The current audit has covered the principal Artemis-owned persistence boundaries: settings profiles/default overlays, profile-editor serialization, Quick Menu, OSC metadata, keyboard profile/key/action metadata, GL preferences, floating controls, and outside-stream orientation.
+The principal Artemis-owned persistence boundaries have been audited/hardened: settings profiles/default overlays, profile-editor serialization, Quick Menu, OSC metadata, keyboard profile/key/action metadata, GL preferences, floating controls, and outside-stream orientation.
 
-The post-#51 focused sweep found no additional reproducible corruption defect in `ArtemisActionButtonFactory` or the remaining independent Artemis preference owners. Action selections already use the keyboard-safe raw-map helpers, malformed saved button geometry is discarded, and the top-level action state reader is runtime-only.
-
-Do not manufacture a broad persistence refactor merely because old handoffs still list these areas as unaudited. Re-open a persistence path only when a concrete invariant/failure is demonstrated.
+Do not manufacture a broad persistence refactor from old notes. Re-open a persistence owner only when a concrete invariant/failure is demonstrated.
 
 ### 5.2 Deliberately unresolved keyboard recovery edge
 
 If the entire keyboard-profile metadata blob is destroyed, inactive **geometry-only** dynamic backing stores can become unreachable. The active dynamic store is preserved, and key/action metadata can identify some inactive stores, but there is no deterministic ownership signal for geometry-only stores.
 
-Do **not** add a heuristic SharedPreferences scan that may resurrect cleared, orphaned, partial-import, or unrelated stores. A recovery patch needs an authoritative ownership marker or migration scheme first.
+Do **not** add heuristic SharedPreferences scanning that may resurrect cleared, orphaned, partial-import, or unrelated stores. A recovery patch needs an authoritative ownership marker or migration scheme first.
 
-### 5.3 Background streaming implementation is already substantial
+### 5.3 Background/lifecycle ownership is much stronger than the old queue suggests
 
-Current `Game` code includes Keep Alive and Fast Resume lifecycle ownership, foreground keep-alive service handling, headless output switching, wake-lock timeout behavior, PiP exclusions, fallback logic, and visible-surface restoration. Treat this as an audit/test surface, not an unimplemented feature.
+The former generic queue items around reconnect workers, clipboard workers, delayed callbacks, surface callbacks, stop workers, USB delayed callbacks, controller detach/polling, sensor enablement, mouse-emulation timers, and rumble have all received evidence-driven fixes and focused regressions.
 
-High-value remaining lifecycle work is evidence-driven regression coverage around:
+A source-level re-check after #75 found no new reproducible ownership defect in the current Keep Alive → Fast Resume fallback/visible-surface restoration path. Continue to treat these as hardware-sensitive validation surfaces rather than rewriting them speculatively.
 
-- background park/resume and reconnect failure;
-- delayed Keep Alive teardown ownership;
-- Surface/TextureView restoration ordering;
-- controller detach/reconcile while parked;
-- Activity destruction while delayed lifecycle callbacks remain queued.
+### 5.4 Controller LED behavior was reviewed and intentionally left stateful
 
-### 5.4 PiP version split is now guarded
+Unlike transient rumble, host LED color is persistent state while Keep Alive retains the active connection generation. `LightsSession` ownership is carried across input-context migration and closed during context destruction. Android resolves light requests against the current device-light list, so an unplugged device does not justify adding speculative suspend/cache/replay machinery. Revisit only with a demonstrated device/OEM failure.
 
-Android O–Q manual entry, Android R manual callback entry, and Android S+ system auto-enter remain intentionally distinct. The Android 11 manual exception gap identified in the previous documentation was fixed in #41. Older notes calling this the next patch are stale.
+### 5.5 Repository/security hygiene sweep found no actionable leak
 
-### 5.5 Localization remains incomplete
+At the #75 baseline:
+
+- build outputs/APKs/AABs/local SDK config/signing material are covered by `.gitignore`;
+- no committed private-key marker or signing-password/keystore literal was found by repository code search;
+- no tracked `.exe` or `.jks` artifact was found in the recursive tree review;
+- no temporary controller staging patchers/workflows exist on `main`;
+- disposable battery/sensor/mouse/rumble staging refs were repointed to the clean #75 `main` after use.
+
+The tracked `.tflite` model is an intentional application asset, not generated build residue.
+
+### 5.6 Localization remains incomplete
 
 Display metadata such as Artemis Action / Quick Menu registry labels, categories, and descriptions still contains hard-coded English. Stable persisted/runtime IDs must never be translated; resource-back display metadata only.
 
-### 5.6 Hardware-sensitive behavior still needs physical validation
+### 5.7 Hardware-sensitive behavior still needs physical validation
 
-Robolectric/emulator success does not prove OEM MediaCodec/TextureView/orientation/PiP/foldable behavior. Real-device validation remains important for:
+Robolectric/emulator/CI success does not prove OEM MediaCodec/TextureView/orientation/PiP/controller behavior. Real-device validation remains important for:
 
 - MediaCodec output-surface switching;
 - TextureView restoration timing;
-- Keep Alive headless-output transitions;
+- Keep Alive headless-output transitions and return/fallback;
 - PiP enter/exit appearance;
 - Sideways CW/CCW video and input transforms;
 - IME/system-window behavior;
+- controller disconnect/reconnect while backgrounded, including sensor/battery/rumble ownership;
 - foldable cover/posture behavior.
 
 The Diana audit did not find a complete reusable cover-screen controller/analog-trigger subsystem to port wholesale; future foldable work should be capability-gated.
 
 ---
 
-## 6. Next audit priorities
+## 6. Next priorities
 
 Keep unrelated fixes in separate coherent PRs.
 
-1. **Lifecycle/race coverage** — background park/resume, Keep Alive fallback/teardown, surface restoration, controller detach, and delayed callbacks after teardown.
-2. **Repository/security hygiene** — generated binaries, machine-local config/path artifacts, secrets/signing material, temporary diagnostics, and unrelated helper artifacts.
-3. **UI/localization debt** — resource-back user-facing Artemis Action / Quick Menu display metadata while preserving stable IDs.
-4. **Performance/ownership review** — only where profiling or a concrete lifecycle/state invariant identifies a problem.
-5. **Useful contained feature work** after correctness/lifecycle work is exhausted.
+1. **Real-device lifecycle acceptance** — exercise Fast Resume, Keep Alive, surface switching/restoration, controller disconnect/reconnect, PiP, Sideways, and IME behavior on physical Android hardware. Convert any reproducible failure into a narrow regression/fix.
+2. **UI/localization debt** — resource-back user-facing Artemis Action / Quick Menu registry labels/categories/descriptions while preserving stable IDs verbatim.
+3. **Targeted lifecycle/performance review** — only where profiling, hardware testing, or a concrete invariant identifies a problem. The generic delayed-callback sweep is no longer an open-ended task.
+4. **Foldable/Diana follow-up** — only as a capability-gated design/implementation; no complete subsystem exists to port wholesale.
+5. **Useful contained feature work** after correctness work, localization, or hardware findings establish the next target.
 
-Persisted-state work should no longer be treated as a generic open-ended priority; revisit specific owners only when new evidence warrants it.
+Persisted-state and repository-hygiene work should no longer be treated as generic open-ended priorities; revisit specific areas only when new evidence warrants it.
 
 ---
 
-## 7. Real-device acceptance checklist for risky areas
+## 7. Real-device acceptance checklist
 
 When a physical-device pass is available, prioritize:
 
 - normal stream start/stop/reconnect;
 - Fast Resume within/after timeout;
-- Keep Alive supported and fallback paths;
+- Keep Alive supported, unsupported, service-start-failure, headless-switch-failure, and visible-surface-return-failure paths;
 - background → foreground with controller connected/disconnected;
+- battery polling stops in background and resumes once after foreground return;
+- controller sensors do not re-register/send while suspended and restore current host report rates after return;
+- mouse-emulation buttons/movement stop cleanly on background and resume without stale motion;
+- rumble stops immediately on background and is not replayed after return;
+- RGB LED state behaves sensibly through reconnect/device removal on target hardware;
 - Android 11 manual PiP enter failure/success and Android 12+ auto-enter;
 - PiP exit and overlay restoration;
 - Sideways CW/CCW video + touch + custom controls;
@@ -214,7 +241,7 @@ When a physical-device pass is available, prioritize:
 - OSC per-game mapping/stale repair/profile deletion;
 - outside-stream orientation on the target OEM device.
 
-Do not classify input failure as a client regression until Apollo per-client input/launch permissions are checked.
+Do not classify total input failure as a client regression until Apollo per-client input/launch permissions are checked.
 
 ---
 

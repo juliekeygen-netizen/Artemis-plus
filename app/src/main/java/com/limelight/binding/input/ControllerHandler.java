@@ -138,6 +138,8 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     private final Object sensorLifecycleLock = new Object();
     private boolean sensorRegistrationSuspended = false;
     private volatile boolean mouseEmulationCallbacksSuspended = false;
+    private final Object rumbleLifecycleLock = new Object();
+    private boolean rumbleSuspended = false;
 
     // Stats overlay toggle: Select+L1 held for 2 seconds
     private boolean selectL1HoldPending;
@@ -382,6 +384,56 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         }
     }
 
+    private void suspendRumbleOutputs() {
+        synchronized (rumbleLifecycleLock) {
+            rumbleSuspended = true;
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && deviceVibratorManager != null) {
+                deviceVibratorManager.cancel();
+            }
+            else {
+                deviceVibrator.cancel();
+            }
+
+            for (int i = 0; i < inputDeviceContexts.size(); i++) {
+                InputDeviceContext context = inputDeviceContexts.valueAt(i);
+                context.lowFreqMotor = 0;
+                context.highFreqMotor = 0;
+                context.leftTriggerMotor = 0;
+                context.rightTriggerMotor = 0;
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && context.vibratorManager != null) {
+                    context.vibratorManager.cancel();
+                }
+                else if (context.vibrator != null) {
+                    context.vibrator.cancel();
+                }
+                if (context.inputDevice != null) {
+                    sceManager.rumble(context.inputDevice, (short) 0, (short) 0);
+                }
+            }
+
+            for (int i = 0; i < usbDeviceContexts.size(); i++) {
+                UsbDeviceContext context = usbDeviceContexts.valueAt(i);
+                context.lowFreqMotor = 0;
+                context.highFreqMotor = 0;
+                context.leftTriggerMotor = 0;
+                context.rightTriggerMotor = 0;
+                context.device.rumble((short) 0, (short) 0);
+                context.device.rumbleTriggers((short) 0, (short) 0);
+            }
+        }
+    }
+
+    private void resumeRumbleOutputsAfterReconnect() {
+        synchronized (rumbleLifecycleLock) {
+            if (stopped || suspendedForReconnect) {
+                return;
+            }
+            rumbleSuspended = false;
+        }
+    }
+
     public void suspendForReconnect() {
         if (stopped || suspendedForReconnect) {
             return;
@@ -394,11 +446,11 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         suspendBatteryPolling();
         suspendSensorsForReconnect();
         suspendMouseEmulationForReconnect();
+        suspendRumbleOutputs();
         suspendedForReconnect = true;
         selectL1HoldPending = false;
         mainThreadHandler.removeCallbacks(statsOverlayToggleRunnable);
         inputManager.unregisterInputDeviceListener(this);
-        deviceVibrator.cancel();
     }
 
     public void resumeAfterReconnect() {
@@ -420,6 +472,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         inputManager.registerInputDeviceListener(this, null);
         resumeSensorsAfterReconnect();
         resumeMouseEmulationAfterReconnect();
+        resumeRumbleOutputsAfterReconnect();
         resumeBatteryPollingAfterDrain();
     }
 
@@ -430,6 +483,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
         // Stop new device contexts from being created or used
         stopped = true;
+        suspendRumbleOutputs();
 
         // Cancel any pending stats overlay toggle
         selectL1HoldPending = false;
@@ -452,7 +506,6 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             deviceContext.destroy();
         }
 
-        deviceVibrator.cancel();
     }
 
     public void destroy() {
@@ -2341,10 +2394,16 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     }
 
     public void handleRumble(short controllerNumber, short lowFreqMotor, short highFreqMotor) {
+        synchronized (rumbleLifecycleLock) {
+            handleRumbleLocked(controllerNumber, lowFreqMotor, highFreqMotor);
+        }
+    }
+
+    private void handleRumbleLocked(short controllerNumber, short lowFreqMotor, short highFreqMotor) {
         boolean foundMatchingDevice = false;
         boolean vibrated = false;
 
-        if (stopped) {
+        if (stopped || rumbleSuspended) {
             return;
         }
 
@@ -2417,7 +2476,13 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     }
 
     public void handleRumbleTriggers(short controllerNumber, short leftTrigger, short rightTrigger) {
-        if (stopped) {
+        synchronized (rumbleLifecycleLock) {
+            handleRumbleTriggersLocked(controllerNumber, leftTrigger, rightTrigger);
+        }
+    }
+
+    private void handleRumbleTriggersLocked(short controllerNumber, short leftTrigger, short rightTrigger) {
+        if (stopped || rumbleSuspended) {
             return;
         }
 

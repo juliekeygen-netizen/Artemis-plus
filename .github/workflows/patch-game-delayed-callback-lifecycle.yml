@@ -1,0 +1,156 @@
+name: Patch Game delayed callback lifecycle
+
+on:
+  push:
+    branches:
+      - fix/game-delayed-callback-lifecycle
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Bind delayed Game callbacks to Activity teardown
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('app/src/main/java/com/limelight/Game.java')
+          text = path.read_text(encoding='utf-8')
+
+          old = '''    private final Runnable flushCommitTextQueue = new Runnable() {
+'''
+          new = '''    private final Runnable finishSecondScreenRunnable = () -> {
+        if (inputCallbacksDestroyed || isFinishing() || isDestroyed()) {
+            return;
+        }
+        finish();
+    };
+
+    private final Runnable flushCommitTextQueue = new Runnable() {
+'''
+          if text.count(old) != 1:
+              raise SystemExit('flushCommitTextQueue insertion marker mismatch')
+          text = text.replace(old, new, 1)
+
+          old = '''    private final Runnable toggleGrab = new Runnable() {
+        @Override
+        public void run() {
+            setInputGrabState(!grabbedInput);
+        }
+    };
+'''
+          new = '''    private final Runnable toggleGrab = new Runnable() {
+        @Override
+        public void run() {
+            if (inputCallbacksDestroyed || isFinishing() || isDestroyed()) {
+                return;
+            }
+            setInputGrabState(!grabbedInput);
+        }
+    };
+'''
+          if text.count(old) != 1:
+              raise SystemExit('toggleGrab runnable marker mismatch')
+          text = text.replace(old, new, 1)
+
+          old = '''    @SuppressLint("InlinedApi")
+    private final Runnable hideSystemUi = new Runnable() {
+        @Override
+        public void run() {
+            // TODO: Do we want to use WindowInsetsController here on R+ instead of
+'''
+          new = '''    @SuppressLint("InlinedApi")
+    private final Runnable hideSystemUi = new Runnable() {
+        @Override
+        public void run() {
+            if (inputCallbacksDestroyed || isFinishing() || isDestroyed()) {
+                return;
+            }
+
+            // TODO: Do we want to use WindowInsetsController here on R+ instead of
+'''
+          if text.count(old) != 1:
+              raise SystemExit('hideSystemUi runnable marker mismatch')
+          text = text.replace(old, new, 1)
+
+          old = '''    private void hideSystemUi(int delay) {
+        Handler h = getWindow().getDecorView().getHandler();
+        if (h != null) {
+            h.removeCallbacks(hideSystemUi);
+            h.postDelayed(hideSystemUi, delay);
+        }
+    }
+'''
+          new = '''    private void hideSystemUi(int delay) {
+        if (timerHandler != null && !inputCallbacksDestroyed) {
+            timerHandler.removeCallbacks(hideSystemUi);
+            timerHandler.postDelayed(hideSystemUi, delay);
+        }
+    }
+'''
+          if text.count(old) != 1:
+              raise SystemExit('hideSystemUi scheduler marker mismatch')
+          text = text.replace(old, new, 1)
+
+          old = '''                    case KeyEvent.KEYCODE_Z:
+                        Handler h = getWindow().getDecorView().getHandler();
+                        if (h != null) {
+                            h.postDelayed(toggleGrab, 250);
+                        }
+                        break;
+'''
+          new = '''                    case KeyEvent.KEYCODE_Z:
+                        if (timerHandler != null && !inputCallbacksDestroyed) {
+                            timerHandler.removeCallbacks(toggleGrab);
+                            timerHandler.postDelayed(toggleGrab, 250);
+                        }
+                        break;
+'''
+          if text.count(old) != 1:
+              raise SystemExit('toggleGrab scheduler marker mismatch')
+          text = text.replace(old, new, 1)
+
+          old = '''    private void finishSecondScreen() {
+        // Otherwise screen stays connected but not working with no way of quitting it
+        if (prefConfig.enableFullExDisplay) {
+            Handler h = new Handler();
+            h.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    finish();
+                }
+            }, 2000);
+        }
+    }
+'''
+          new = '''    private void finishSecondScreen() {
+        // Otherwise screen stays connected but not working with no way of quitting it
+        if (prefConfig.enableFullExDisplay && timerHandler != null && !inputCallbacksDestroyed) {
+            timerHandler.removeCallbacks(finishSecondScreenRunnable);
+            timerHandler.postDelayed(finishSecondScreenRunnable, 2000);
+        }
+    }
+'''
+          if text.count(old) != 1:
+              raise SystemExit('finishSecondScreen marker mismatch')
+          text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8', newline='')
+
+      - name: Commit Game lifecycle patch
+        run: |
+          chmod +x app/src/main/java/com/limelight/Game.java
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/src/main/java/com/limelight/Game.java
+          git diff --cached --check
+          git commit -m "Own delayed Game callbacks across teardown"
+          git push

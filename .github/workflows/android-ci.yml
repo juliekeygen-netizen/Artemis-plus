@@ -104,6 +104,7 @@ jobs:
           --tests "com.limelight.binding.input.ControllerHandlerBatterySuspensionLifecycleTest"
           --tests "com.limelight.binding.input.ControllerHandlerSensorSuspensionLifecycleTest"
           --tests "com.limelight.binding.input.ControllerHandlerMouseEmulationSuspensionLifecycleTest"
+          --tests "com.limelight.binding.input.ControllerHandlerRumbleSuspensionLifecycleTest"
           --tests "com.limelight.binding.input.capture.AndroidNativePointerCaptureProviderLifecycleTest"
           --tests "com.limelight.binding.input.driver.UsbDriverServiceLifecycleTest"
           --tests "com.limelight.binding.input.virtual_controller.OscProfilesManagerTest"

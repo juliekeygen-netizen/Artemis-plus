@@ -38,7 +38,7 @@ public class GameDelayedCallbackLifecycleTest {
         String source = readSource();
         String runnable = between(source,
                 "private final Runnable toggleGrab = new Runnable()",
-                "private void setMetaKeyCaptureState");
+                "private boolean handleSpecialKeys(int androidKeyCode, boolean down)");
         String keyBlock = between(source,
                 "case KeyEvent.KEYCODE_Z:",
                 "case KeyEvent.KEYCODE_Q:");
@@ -58,7 +58,7 @@ public class GameDelayedCallbackLifecycleTest {
                 "private final Runnable flushCommitTextQueue");
         String scheduler = between(source,
                 "private void finishSecondScreen()",
-                "private void handleConnectionTerminatedFinal");
+                "public void connectionTerminated(final int errorCode)");
 
         assertTrue(runnable.contains(LIFECYCLE_GUARD));
         assertTrue(runnable.contains("finish();"));

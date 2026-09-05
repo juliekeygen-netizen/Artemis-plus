@@ -380,6 +380,23 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private final Handler commitTextHandler = new Handler(Looper.getMainLooper());
     private volatile boolean inputCallbacksDestroyed;
 
+    private final Runnable restoreInputGrabRunnable = () -> {
+        if (inputCallbacksDestroyed || isFinishing() || isDestroyed() || !connected ||
+                keepAliveLifecycleArmed || keepAliveBackgrounded || keepAliveReturnPending ||
+                fastResumeLifecycleArmed || fastResumeBackgrounded || fastResumeReconnectPending) {
+            return;
+        }
+        setInputGrabState(true);
+    };
+
+    private void scheduleInputGrabRestore(long delayMs) {
+        if (timerHandler == null || inputCallbacksDestroyed) {
+            return;
+        }
+        timerHandler.removeCallbacks(restoreInputGrabRunnable);
+        timerHandler.postDelayed(restoreInputGrabRunnable, delayMs);
+    }
+
     private final Runnable finishSecondScreenRunnable = () -> {
         if (inputCallbacksDestroyed || isFinishing() || isDestroyed()) {
             return;
@@ -2148,11 +2165,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             controllerHandler.resumeAfterReconnect();
         }
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        timerHandler.postDelayed(() -> {
-            if (!isFinishing() && connected) {
-                setInputGrabState(true);
-            }
-        }, 300);
+        scheduleInputGrabRestore(300);
         hideSystemUi(100);
         LimeLog.info("Keep Connection Alive returned to visible Surface without reconnecting");
         return true;
@@ -2427,6 +2440,13 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private void setInputGrabState(boolean grab) {
+        // An explicit ungrab wins over any older delayed automatic re-grab. This also
+        // prevents a startup/foreground callback from re-enabling capture after we
+        // transition back to the background or the user manually releases input.
+        if (!grab && timerHandler != null) {
+            timerHandler.removeCallbacks(restoreInputGrabRunnable);
+        }
+
         // Grab/ungrab the mouse cursor
         if (grab) {
             inputCaptureProvider.enableCapture();
@@ -4655,12 +4675,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 // is too early to capture. We will delay a second to allow
                 // the spinner to dismiss before capturing.
                 if (!connectedWhileKeepAliveBackgrounded) {
-                    timerHandler.postDelayed(new Runnable() {
-                        @Override
-                        public void run() {
-                            setInputGrabState(true);
-                        }
-                    }, 500);
+                    scheduleInputGrabRestore(500);
 
                     // Keep the display on while the stream is visible.
                     getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);

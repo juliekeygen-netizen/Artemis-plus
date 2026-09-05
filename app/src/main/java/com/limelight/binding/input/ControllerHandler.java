@@ -132,6 +132,9 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     private boolean hasGameController;
     private volatile boolean stopped = false;
     private volatile boolean suspendedForReconnect = false;
+    private final Object batteryPollingLock = new Object();
+    private volatile boolean batteryPollingSuspended = false;
+    private long batteryPollingGeneration;
 
     // Stats overlay toggle: Select+L1 held for 2 seconds
     private boolean selectL1HoldPending;
@@ -283,6 +286,55 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         inputDeviceContexts.put(deviceId, newContext);
     }
 
+    private boolean shouldPollBattery(InputDeviceContext context) {
+        return !stopped && !batteryPollingSuspended && prefConfig.enableBatteryReport &&
+                !context.destroyed;
+    }
+
+    private void suspendBatteryPolling() {
+        synchronized (batteryPollingLock) {
+            batteryPollingGeneration++;
+            batteryPollingSuspended = true;
+        }
+
+        for (int i = 0; i < inputDeviceContexts.size(); i++) {
+            backgroundThreadHandler.removeCallbacks(
+                    inputDeviceContexts.valueAt(i).batteryStateUpdateRunnable);
+        }
+    }
+
+    private void resumeBatteryPollingAfterDrain() {
+        final long generation;
+        synchronized (batteryPollingLock) {
+            generation = batteryPollingGeneration;
+        }
+
+        // Drain any battery query that was already executing before suspension. Keep the
+        // battery-specific suspended flag set until that work has left the background queue so
+        // a pre-suspend poll cannot adopt a newly resumed stream generation.
+        backgroundThreadHandler.post(() -> mainThreadHandler.post(() -> {
+            synchronized (batteryPollingLock) {
+                if (stopped || suspendedForReconnect || generation != batteryPollingGeneration) {
+                    return;
+                }
+
+                batteryPollingSuspended = false;
+            }
+
+            if (!prefConfig.enableBatteryReport) {
+                return;
+            }
+
+            for (int i = 0; i < inputDeviceContexts.size(); i++) {
+                InputDeviceContext context = inputDeviceContexts.valueAt(i);
+                if (!context.destroyed) {
+                    backgroundThreadHandler.removeCallbacks(context.batteryStateUpdateRunnable);
+                    backgroundThreadHandler.post(context.batteryStateUpdateRunnable);
+                }
+            }
+        }));
+    }
+
     public void suspendForReconnect() {
         if (stopped || suspendedForReconnect) {
             return;
@@ -290,6 +342,9 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
         // Block input packets while the stream transport is intentionally down, but keep
         // controller contexts intact so a Fast Resume reconnect can restore them immediately.
+        // Seal battery polling before marking reconnect suspension so an in-flight poll
+        // cannot cross the lifecycle boundary while waiting for the battery lock.
+        suspendBatteryPolling();
         suspendedForReconnect = true;
         selectL1HoldPending = false;
         mainThreadHandler.removeCallbacks(statsOverlayToggleRunnable);
@@ -316,6 +371,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         suspendedForReconnect = false;
         inputManager.registerInputDeviceListener(this, null);
         enableSensors();
+        resumeBatteryPollingAfterDrain();
     }
 
     public void stop() {
@@ -1263,9 +1319,17 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
                 percentage = (byte)(currentBatteryCapacity * 100);
             }
 
-            conn.sendControllerBatteryEvent((byte)context.controllerNumber, state, percentage);
+            // Battery queries can take long enough for Fast Resume/Keep Alive suspension
+            // or context teardown to overtake this worker. Serialize the final ownership check
+            // with those transitions so a stale poll cannot cross into another stream owner.
+            synchronized (batteryPollingLock) {
+                if (!shouldPollBattery(context)) {
+                    return;
+                }
 
-            context.lastReportedBatteryStatus = currentBatteryStatus;
+                conn.sendControllerBatteryEvent((byte)context.controllerNumber, state, percentage);
+                context.lastReportedBatteryStatus = currentBatteryStatus;
+            }
             context.lastReportedBatteryCapacity = currentBatteryCapacity;
         }
     }
@@ -3282,14 +3346,14 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         public final Runnable batteryStateUpdateRunnable = new Runnable() {
             @Override
             public void run() {
-                if (destroyed) {
+                if (!shouldPollBattery(InputDeviceContext.this)) {
                     return;
                 }
 
                 sendControllerBatteryPacket(InputDeviceContext.this);
 
                 // Requeue the callback only while this context still owns battery polling.
-                if (!destroyed) {
+                if (shouldPollBattery(InputDeviceContext.this)) {
                     backgroundThreadHandler.postDelayed(this, BATTERY_RECHECK_INTERVAL_MS);
                 }
             }
@@ -3310,7 +3374,9 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
         @Override
         public void destroy() {
-            destroyed = true;
+            synchronized (batteryPollingLock) {
+                destroyed = true;
+            }
             super.destroy();
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && vibratorManager != null) {
@@ -3463,7 +3529,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             // After reporting arrival to the host, send initial battery state and begin monitoring
             // Might result in stutter in pointer device input. The problem happens within Android framework,
             // Here we can only provide a workaround by disabling this option if user wishes.
-            if (prefConfig.enableBatteryReport) {
+            if (shouldPollBattery(this)) {
                 backgroundThreadHandler.post(batteryStateUpdateRunnable);
             }
         }
@@ -3498,8 +3564,11 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             // Re-enable sensors on the new context
             enableSensors();
 
-            // Refresh battery state and start the battery state polling again
-            backgroundThreadHandler.post(batteryStateUpdateRunnable);
+            // Refresh battery state and start polling again only when reporting is enabled
+            // and this controller owner is active.
+            if (shouldPollBattery(this)) {
+                backgroundThreadHandler.post(batteryStateUpdateRunnable);
+            }
         }
 
         public void disableSensors() {

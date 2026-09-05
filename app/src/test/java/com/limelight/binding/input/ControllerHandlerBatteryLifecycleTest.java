@@ -17,15 +17,26 @@ public class ControllerHandlerBatteryLifecycleTest {
     @Test
     public void batteryPollRechecksOwnershipBeforeRequeue() throws IOException {
         String source = readSource();
+        String helper = between(source,
+                "private boolean shouldPollBattery(InputDeviceContext context)",
+                "private void suspendBatteryPolling()");
         String runnable = between(source,
                 "public final Runnable batteryStateUpdateRunnable",
                 "public final Runnable enableSensorRunnable");
 
         assertTrue(source.contains("private volatile boolean destroyed;"));
+        assertTrue(helper.contains("!stopped"));
+        assertTrue(helper.contains("!batteryPollingSuspended"));
+        assertTrue(helper.contains("!context.destroyed"));
 
-        int initialGuard = runnable.indexOf("if (destroyed) {");
-        int sendPacket = runnable.indexOf("sendControllerBatteryPacket(InputDeviceContext.this);");
-        int requeueGuard = runnable.indexOf("if (!destroyed) {", sendPacket);
+        int initialGuard = runnable.indexOf(
+                "if (!shouldPollBattery(InputDeviceContext.this))");
+        int sendPacket = runnable.indexOf(
+                "sendControllerBatteryPacket(InputDeviceContext.this);",
+                initialGuard);
+        int requeueGuard = runnable.indexOf(
+                "if (shouldPollBattery(InputDeviceContext.this))",
+                sendPacket);
         int requeue = runnable.indexOf(
                 "backgroundThreadHandler.postDelayed(this, BATTERY_RECHECK_INTERVAL_MS);",
                 requeueGuard);

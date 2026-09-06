@@ -1,6 +1,6 @@
 # Artemis Plus — Durable Project State and Roadmap
 
-**Last refreshed:** 2026-09-05  
+**Last refreshed:** 2026-09-06
 **Purpose:** durable current-state handoff for Codex/ChatGPT and future contributors.  
 **Rule:** current source/tests, Git history, Actions, and release state are authoritative. Verify live `main` before acting; this file is a recovery map, not a substitute for inspection.
 
@@ -18,23 +18,23 @@ Primary architectural rule: extend existing ownership/state systems rather than 
 
 Latest verified merged `main` at this refresh:
 
-`7b4dfd5ee878f3e85bcba21cd2fadbad0eecc458`
+`4a9b16107fab95f47425ffd929c5b71e39947354`
 
 Latest merge:
 
-`Own controller rumble across reconnect suspension (#75)`
+`Refresh audit state after controller lifecycle hardening (#76)`
 
 Post-merge verification on this exact SHA:
 
-- Android CI run `33975853435` — success, including compile, focused Artemis regressions, and the full inherited unit suite.
-- Build Debug APK run `33975853411` — installable signed package build/verification succeeded; rolling-release publication was still completing when this refresh began.
+- Android CI run `33977473248` — success, including compile and the focused Artemis regression gate; the inherited full-suite step remains diagnostic/allowed to fail.
+- Build Debug APK run `33977473237` — success, including signed package build/verification and rolling-release publication.
 
-The #75 branch also passed independent exact-head push CI `33975612546` and PR CI `33975631701` before guarded squash merge.
+The product-code baseline immediately before #76 remains `7b4dfd5ee878f3e85bcba21cd2fadbad0eecc458` from #75.
 
 Current Android build stack:
 
 - Android Gradle Plugin: **8.13.0**;
-- Gradle wrapper: **8.14.2**;
+- Gradle wrapper: **8.13**;
 - Java: **17**;
 - NDK: **27.0.12077973**;
 - Android platform: **36**.
@@ -184,9 +184,11 @@ At the #75 baseline:
 
 The tracked `.tflite` model is an intentional application asset, not generated build residue.
 
-### 5.6 Localization remains incomplete
+### 5.6 Action-catalog localization is in review
 
-Display metadata such as Artemis Action / Quick Menu registry labels, categories, and descriptions still contains hard-coded English. Stable persisted/runtime IDs must never be translated; resource-back display metadata only.
+Branch `audit/action-catalog-localization-v2` moves Artemis Action and Quick Menu registry labels, categories, descriptions, picker text, accessibility labels, and related runtime messages from Java literals into Android string resources. Stable persisted/runtime IDs remain literal and unchanged. The clean branch was reconstructed from the validated product diff on `staging/action-catalog-localization`; temporary one-shot patchers/workflows were deliberately excluded.
+
+This closes the catalog-specific resource-backing debt once merged. It does not provide translations for every locale or claim that every Artemis Plus UI surface has completed a broader hard-coded-string/accessibility audit.
 
 ### 5.7 Hardware-sensitive behavior still needs physical validation
 
@@ -210,7 +212,7 @@ The Diana audit did not find a complete reusable cover-screen controller/analog-
 Keep unrelated fixes in separate coherent PRs.
 
 1. **Real-device lifecycle acceptance** — exercise Fast Resume, Keep Alive, surface switching/restoration, controller disconnect/reconnect, PiP, Sideways, and IME behavior on physical Android hardware. Convert any reproducible failure into a narrow regression/fix.
-2. **UI/localization debt** — resource-back user-facing Artemis Action / Quick Menu registry labels/categories/descriptions while preserving stable IDs verbatim.
+2. **Finish/review localization work** — audit and merge `audit/action-catalog-localization-v2`; afterward, keep any broader UI-string/accessibility sweep and actual locale translations in separate coherent changes.
 3. **Targeted lifecycle/performance review** — only where profiling, hardware testing, or a concrete invariant identifies a problem. The generic delayed-callback sweep is no longer an open-ended task.
 4. **Foldable/Diana follow-up** — only as a capability-gated design/implementation; no complete subsystem exists to port wholesale.
 5. **Useful contained feature work** after correctness work, localization, or hardware findings establish the next target.

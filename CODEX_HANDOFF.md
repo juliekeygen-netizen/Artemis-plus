@@ -18,8 +18,9 @@ Audit the repository, recover useful unfinished branch work, and continue implem
 - Base commit: `4a9b16107fab95f47425ffd929c5b71e39947354`
 - Task branch: `audit/action-catalog-localization-v2`
 - Product implementation commit: `fae2a78a` (`Localize Artemis action catalog metadata`)
-- Pull request: pending branch publication
-- PR state: local validation complete; publication pending
+- Published review-packet head: `5dd27097535c3e26d0b3b28f6ac02939cd0d1aa6`
+- Pull request: [#77](https://github.com/juliekeygen-netizen/Artemis-plus/pull/77)
+- PR state: open, non-draft, mergeable; exact-head push and pull-request CI running at publication
 
 The implementation was reconstructed from the final Android product diff on `origin/staging/action-catalog-localization`. The staging branch's temporary patcher scripts and one-shot workflow were intentionally excluded.
 
@@ -88,8 +89,8 @@ The repository's full inherited suite remains a diagnostic `continue-on-error` C
 ## GitHub Actions / release
 
 - Historical staging validation: one-shot action-catalog workflow run `33978283753` — success on staging commit `06428c267e36311fb2922099429a8f96e0d652b0`.
-- Clean branch push CI: pending publication.
-- Clean branch PR CI: pending publication.
+- Clean branch push CI run `34045484441`: running when the PR was opened.
+- Clean branch PR CI run `34045487003`: queued when the PR was opened.
 - Release/APK publication: not applicable to an unmerged PR; local non-root debug APK assembly passed.
 
 ## Known limitations / real-device validation

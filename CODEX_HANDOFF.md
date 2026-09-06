@@ -18,9 +18,9 @@ Audit the repository, recover useful unfinished branch work, and continue implem
 - Base commit: `4a9b16107fab95f47425ffd929c5b71e39947354`
 - Task branch: `audit/action-catalog-localization-v2`
 - Product implementation commit: `fae2a78a` (`Localize Artemis action catalog metadata`)
-- Published review-packet head: `5dd27097535c3e26d0b3b28f6ac02939cd0d1aa6`
+- Pre-audit published head: `ab0d857d9bb84c0df09749079d53faaccdcd1017`
 - Pull request: [#77](https://github.com/juliekeygen-netizen/Artemis-plus/pull/77)
-- PR state: open, non-draft, mergeable; exact-head push and pull-request CI running at publication
+- PR state: open; implementation audit complete with one CI-integration fix awaiting exact-head verification
 
 The implementation was reconstructed from the final Android product diff on `origin/staging/action-catalog-localization`. The staging branch's temporary patcher scripts and one-shot workflow were intentionally excluded.
 
@@ -45,6 +45,7 @@ The implementation was reconstructed from the final Android product diff on `ori
 - Verifies every display resource resolves to nonblank text.
 - Verifies Quick Menu category resource identities are unique, nonzero, and cover every action.
 - Updated the existing registry consistency test for resource-backed metadata.
+- Audit fix: added `ArtemisCatalogLocalizationTest` to the mandatory focused Android CI command. Before the audit it ran only in the diagnostic full-suite step, which is allowed to fail.
 
 ## Key implementation decisions
 
@@ -63,6 +64,7 @@ The implementation was reconstructed from the final Android product diff on `ori
 - `app/src/main/res/values/artemis_action_catalog.xml`
 - `app/src/test/java/com/limelight/ArtemisCatalogLocalizationTest.java`
 - `app/src/test/java/com/limelight/quickmenu/QuickMenuConfigTest.java`
+- `.github/workflows/android-ci.yml`
 - `PROJECT_STATE.md`
 - `CODEX_HANDOFF.md`
 
@@ -82,6 +84,7 @@ This change is display-metadata-only. It does not alter Activity lifecycle, stre
 - `.\gradlew.bat :app:compileNonRoot_gameDebugJavaWithJavac :app:testNonRoot_gameDebugUnitTest --stacktrace` — Java compile PASS; full local suite completed 285 tests with 16 failures.
 - The same full command on an untouched `origin/main` worktree completed with the exact same 16 failing test names. There were no patch-only failures. The failures are Windows/local baseline behavior involving CRLF-sensitive source-contract tests and inherited Robolectric/theme/preferences startup cases.
 - `.\gradlew.bat :app:assembleNonRoot_gameDebug --stacktrace` — PASS, including four-ABI native build, resource packaging, R8, and debug APK assembly.
+- `.\gradlew.bat :app:lintNonRoot_gameDebug --stacktrace` — completed analysis but FAIL due to the existing repository lint baseline (23 errors / 497 warnings). The only finding in a PR-touched source file is a pre-existing `NotifyDataSetChanged` warning at `QuickMenuEditorDialog.java:227`, outside the changed hunks; no catalog/resource finding was reported.
 - `git diff --check` — PASS.
 
 The repository's full inherited suite remains a diagnostic `continue-on-error` CI step. The focused Artemis regression gate is authoritative for PR CI and must pass on the published clean branch.
@@ -89,8 +92,9 @@ The repository's full inherited suite remains a diagnostic `continue-on-error` C
 ## GitHub Actions / release
 
 - Historical staging validation: one-shot action-catalog workflow run `33978283753` — success on staging commit `06428c267e36311fb2922099429a8f96e0d652b0`.
-- Clean branch push CI run `34045484441`: running when the PR was opened.
-- Clean branch PR CI run `34045487003`: queued when the PR was opened.
+- Pre-audit clean-head push CI run `34045515236`: PASS.
+- Pre-audit clean-head PR CI run `34045517161`: PASS.
+- Post-audit exact-head push/PR CI: pending publication of the mandatory-test-gate fix.
 - Release/APK publication: not applicable to an unmerged PR; local non-root debug APK assembly passed.
 
 ## Known limitations / real-device validation

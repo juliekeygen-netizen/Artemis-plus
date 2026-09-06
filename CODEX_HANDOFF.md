@@ -6,57 +6,42 @@ This is the rolling review packet for the latest coherent task. Inspect live Git
 
 ## Task
 
-Resource-back Artemis Action and Quick Menu catalog display metadata.
+Audit, fix, and merge Artemis Action / Quick Menu catalog localization.
 
 ## User goal
 
-Audit the repository, recover useful unfinished branch work, and continue implementing the current roadmap without repeating already-merged phases.
+Independently review PR #77, fix concrete problems, and merge it if the implementation and verification are clean. Preserve remaining real-device testing for later.
 
 ## Repository state
 
-- Base branch: `main`
-- Base commit: `4a9b16107fab95f47425ffd929c5b71e39947354`
-- Task branch: `audit/action-catalog-localization-v2`
-- Product implementation commit: `fae2a78a` (`Localize Artemis action catalog metadata`)
-- Pre-audit published head: `ab0d857d9bb84c0df09749079d53faaccdcd1017`
+- Base branch/commit: `main` at `4a9b16107fab95f47425ffd929c5b71e39947354`
+- Audited PR branch: `audit/action-catalog-localization-v2`
+- Audited exact head: `0e6a21f764520c3937648d0edbbceac956b14bbc`
 - Pull request: [#77](https://github.com/juliekeygen-netizen/Artemis-plus/pull/77)
-- PR state: open; implementation audit complete with one CI-integration fix awaiting exact-head verification
-
-The implementation was reconstructed from the final Android product diff on `origin/staging/action-catalog-localization`. The staging branch's temporary patcher scripts and one-shot workflow were intentionally excluded.
+- PR state: merged by guarded squash after exact-head verification
+- Merge commit: `28fbee2b81229e8696dc2451e81eaaf4f5e9b4d8`
+- Post-merge documentation branch: `maintenance/refresh-state-post77`
 
 ## Scope completed
 
-### Artemis Action buttons
+### Product behavior
 
-- Replaced enum-owned English labels with `@StringRes` metadata while preserving every stable action ID verbatim.
-- Resolves picker labels and button content descriptions through the active Android `Context`.
-- Moved picker title/apply confirmation and three action failure messages into resources.
+- Artemis Action labels, picker strings, failure messages, and button content descriptions are backed by Android string resources.
+- Quick Menu catalog labels, categories, and descriptions are backed by Android string resources.
+- Quick Menu filtering uses category resource IDs as runtime identity and searches localized display text.
+- All stable persisted/runtime IDs remain verbatim strings and unknown future Quick Menu IDs remain inert and round-trippable.
 
-### Quick Menu catalog/editor
+### Independent audit and fix
 
-- Replaced registry-owned English labels, categories, and descriptions with resource IDs.
-- Uses category resource IDs as runtime filter identities, so translated display strings are never compared as keys.
-- Resolves localized text only at the UI/search boundary.
-- Preserves unavailable/future action IDs and existing Quick Menu persistence behavior.
+- Compared all 14 Artemis Action IDs and all 18 Quick Menu IDs against pre-change `main`; no ID changed.
+- Traced all removed raw-label/category/description consumers; no stale catalog API caller remains.
+- Checked persistence, locale filtering, accessibility content descriptions, resource resolution, and the final PR file list.
+- Found one integration defect: `ArtemisCatalogLocalizationTest` was only reached by the diagnostic full-suite step, which is allowed to fail. Commit `0e6a21f7` adds it to the mandatory focused Android CI gate.
+- Confirmed no temporary staging patcher or one-shot workflow entered the merged tree.
 
-### Regression coverage
+## Files changed in merged PR
 
-- Added an exact stable-ID contract for all Artemis Action and Quick Menu entries.
-- Verifies every display resource resolves to nonblank text.
-- Verifies Quick Menu category resource identities are unique, nonzero, and cover every action.
-- Updated the existing registry consistency test for resource-backed metadata.
-- Audit fix: added `ArtemisCatalogLocalizationTest` to the mandatory focused Android CI command. Before the audit it ran only in the diagnostic full-suite step, which is allowed to fail.
-
-## Key implementation decisions
-
-- Stable persisted/runtime IDs remain ordinary literal strings. They are never translated or replaced with resource IDs.
-- Resource IDs represent display metadata and in-process category identity only; they are not serialized.
-- Unknown Quick Menu action IDs remain inert and round-trippable, matching the forward-compatibility behavior from #23.
-- The editor searches the active locale's resolved label/category/description text.
-- No new state owner, migration, preference, or serialization format was introduced.
-
-## Files changed
-
+- `.github/workflows/android-ci.yml`
 - `app/src/main/java/com/limelight/ArtemisAction.java`
 - `app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/ArtemisActionButtonFactory.java`
 - `app/src/main/java/com/limelight/quickmenu/QuickMenuEditorDialog.java`
@@ -64,63 +49,67 @@ The implementation was reconstructed from the final Android product diff on `ori
 - `app/src/main/res/values/artemis_action_catalog.xml`
 - `app/src/test/java/com/limelight/ArtemisCatalogLocalizationTest.java`
 - `app/src/test/java/com/limelight/quickmenu/QuickMenuConfigTest.java`
-- `.github/workflows/android-ci.yml`
 - `PROJECT_STATE.md`
 - `CODEX_HANDOFF.md`
 
+Post-merge state refresh changes only `PROJECT_STATE.md` and `CODEX_HANDOFF.md`.
+
 ## Persistence / compatibility
 
-- All 14 Artemis Action IDs and all 18 Quick Menu action IDs are unchanged and locked by regression tests.
-- Existing keyboard-profile bundles, Action selections, Quick Menu layouts, unknown future IDs, and user-created page titles remain compatible without migration.
-- Android's default-resource fallback supplies English until locale-specific translations are added.
+- No preference schema, serialized layout, keyboard-profile bundle, or migration changed.
+- All existing Artemis Action and Quick Menu action IDs are unchanged and regression-locked.
+- User-created page titles and unknown/future action IDs retain their previous behavior.
+- Default English resources remain the fallback until locale-specific translations are contributed.
 
-## Lifecycle / race / safety review
+## Lifecycle / race / performance review
 
-This change is display-metadata-only. It does not alter Activity lifecycle, stream ownership, input suspension/restoration, Surface/TextureView handling, delayed callbacks, or controller output. Resource lookup occurs when constructing/updating existing UI elements; catalog initialization stores integer IDs only and performs no Context or I/O work.
+The product change is display-metadata-only. It does not alter Activity recreation, stream/background/PiP state, controller ownership, Surface/TextureView handling, input suspension, or delayed callbacks. Registry initialization stores integer resource IDs only; Context-backed resolution occurs at existing UI construction/update boundaries.
+
+The category list is small and built once per picker; localized label/description resolution occurs during the existing row rebuild and introduces no meaningful allocation or UI-thread risk.
 
 ## Tests actually run
 
-- `.\gradlew.bat :app:testNonRoot_gameDebugUnitTest --tests com.limelight.ArtemisCatalogLocalizationTest --tests com.limelight.quickmenu.QuickMenuConfigTest --tests com.limelight.binding.input.virtual_controller.keyboard.ArtemisActionButtonFactoryTest --stacktrace` — PASS.
-- `.\gradlew.bat :app:compileNonRoot_gameDebugJavaWithJavac :app:testNonRoot_gameDebugUnitTest --stacktrace` — Java compile PASS; full local suite completed 285 tests with 16 failures.
-- The same full command on an untouched `origin/main` worktree completed with the exact same 16 failing test names. There were no patch-only failures. The failures are Windows/local baseline behavior involving CRLF-sensitive source-contract tests and inherited Robolectric/theme/preferences startup cases.
-- `.\gradlew.bat :app:assembleNonRoot_gameDebug --stacktrace` — PASS, including four-ABI native build, resource packaging, R8, and debug APK assembly.
-- `.\gradlew.bat :app:lintNonRoot_gameDebug --stacktrace` — completed analysis but FAIL due to the existing repository lint baseline (23 errors / 497 warnings). The only finding in a PR-touched source file is a pre-existing `NotifyDataSetChanged` warning at `QuickMenuEditorDialog.java:227`, outside the changed hunks; no catalog/resource finding was reported.
+- Focused `ArtemisCatalogLocalizationTest`, `QuickMenuConfigTest`, and `ArtemisActionButtonFactoryTest` — PASS before and after audit fix.
+- Non-root debug Java compilation — PASS.
+- Non-root debug APK assembly, including four ABI native builds, resource packaging, R8, and APK packaging — PASS.
+- Full local suite — 285 tests, with the same 16 Windows/local failures as a separately built untouched `origin/main` worktree; no patch-only failure.
+- Android Lint — analysis completed but task FAILS on the inherited baseline of 23 errors / 497 warnings. No catalog/resource finding was reported; the sole finding in a PR-touched source file is a pre-existing `NotifyDataSetChanged` warning outside the changed hunks.
 - `git diff --check` — PASS.
-
-The repository's full inherited suite remains a diagnostic `continue-on-error` CI step. The focused Artemis regression gate is authoritative for PR CI and must pass on the published clean branch.
 
 ## GitHub Actions / release
 
-- Historical staging validation: one-shot action-catalog workflow run `33978283753` — success on staging commit `06428c267e36311fb2922099429a8f96e0d652b0`.
-- Pre-audit clean-head push CI run `34045515236`: PASS.
-- Pre-audit clean-head PR CI run `34045517161`: PASS.
-- Post-audit exact-head push/PR CI: pending publication of the mandatory-test-gate fix.
-- Release/APK publication: not applicable to an unmerged PR; local non-root debug APK assembly passed.
+- Final PR-head push Android CI `34045903759` — PASS.
+- Final PR-head pull-request Android CI `34045905908` — PASS.
+- Both exact-head runs include the new catalog regression in the mandatory focused gate.
+- Post-merge Android CI `34059021337` — PASS.
+- Post-merge Build Debug APK / rolling release `34059021340` — PASS, including signing verification, four-ABI release package, and `debug-latest` publication.
 
 ## Known limitations / real-device validation
 
-- The patch creates localization-ready default resources; it does not add translations for every supported locale.
-- A device/emulator smoke test should confirm translated-resource fallback, picker filtering, row rendering, and TalkBack content descriptions. No stream/hardware behavior changed.
+- The catalog is localization-ready but not translated into every supported locale.
+- UI fallback, picker search/filter behavior, and TalkBack descriptions should receive a later device smoke test.
+- Broader streaming/controller/PiP/Sideways/IME acceptance still requires physical Android hardware; this merge does not claim those hardware-sensitive checks.
 
-## Audit hotspots
+## Remaining roadmap work
 
-- Confirm `ArtemisAction` and `StreamActionRegistry` stable ID literals exactly match the pre-change catalog.
-- Confirm `QuickMenuEditorDialog` compares category resource IDs, never translated strings.
-- Confirm every action/category/description resource resolves and no catalog consumer still expects the removed raw string fields or zero-argument `getLabel()`.
-- Confirm the final PR contains no `.github` one-shot workflow or patcher scripts from the staging branch.
+1. Physical-device lifecycle acceptance for Fast Resume, Keep Alive, surface restoration, controllers, PiP, Sideways, and IME.
+2. Broader Artemis Plus UI string/content-description audit and actual locale translations.
+3. Targeted lifecycle/performance fixes only when hardware testing or profiling demonstrates a defect.
+4. Capability-gated foldable/Diana design or proof of concept; no complete subsystem exists to port wholesale.
+5. New contained product features after testing or user feedback establishes a concrete target.
 
-## Deferred work
+## Audit hotspots for future work
 
-- Actual locale translations and a broader all-screen hard-coded-string/accessibility audit are separate follow-ups.
-- Real-device lifecycle acceptance remains the highest-value project validation item and requires physical Android hardware.
-- Foldable/Diana work remains capability-gated; the feasibility audit found no complete subsystem to port wholesale.
+- Never translate or replace stable persisted/runtime action IDs.
+- Treat the 23-error/497-warning lint result as inherited debt to triage separately, not as a reason to weaken lint or hide findings.
+- Do not make speculative lifecycle changes without hardware evidence.
 
 ## PROJECT_STATE update
 
-- Updated the live merged baseline to #76 / `4a9b1610` and its successful post-merge CI/build runs.
-- Corrected the Gradle wrapper version from 8.14.2 to the actual checked-in 8.13.
-- Marked catalog resource-backing as in review and narrowed the remaining localization follow-up.
+- Records #77 and merge commit `28fbee2b` as the current durable baseline.
+- Marks catalog resource-backing complete.
+- Keeps actual translations/broader accessibility work and physical-device validation in the remaining queue.
 
-## Suggested reviewer action
+## Suggested next action
 
-Audit the stable-ID/resource boundary and, if clean with green exact-head PR CI, merge. Then use physical hardware for the separately documented lifecycle acceptance queue.
+Merge this documentation refresh, then perform the physical-device acceptance checklist when hardware is available.

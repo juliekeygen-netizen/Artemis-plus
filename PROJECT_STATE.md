@@ -16,20 +16,22 @@ Primary architectural rule: extend existing ownership/state systems rather than 
 
 ## 2. Current verified baseline
 
-Latest verified merged `main` at this refresh:
+Latest verified product-code baseline at this refresh:
 
-`4a9b16107fab95f47425ffd929c5b71e39947354`
+`28fbee2b81229e8696dc2451e81eaaf4f5e9b4d8`
 
 Latest merge:
 
-`Refresh audit state after controller lifecycle hardening (#76)`
+`Localize Artemis action catalog metadata (#77)`
+
+Documentation-only PR [#78](https://github.com/juliekeygen-netizen/Artemis-plus/pull/78) refreshes the rolling state after #77; its merge does not change the product-code baseline above.
 
 Post-merge verification on this exact SHA:
 
-- Android CI run `33977473248` — success, including compile and the focused Artemis regression gate; the inherited full-suite step remains diagnostic/allowed to fail.
-- Build Debug APK run `33977473237` — success, including signed package build/verification and rolling-release publication.
+- Android CI run `34059021337` — success, including compile, the mandatory focused regression gate, and diagnostic full-suite reporting.
+- Build Debug APK run `34059021340` — success, including established-signer verification, four-ABI package build, and rolling `debug-latest` publication.
 
-The product-code baseline immediately before #76 remains `7b4dfd5ee878f3e85bcba21cd2fadbad0eecc458` from #75.
+PR #77 passed independent exact-head push CI `34045903759` and pull-request CI `34045905908` before its guarded squash merge. The audit added `ArtemisCatalogLocalizationTest` to the mandatory focused CI gate before merge.
 
 Current Android build stack:
 
@@ -71,6 +73,7 @@ Do not restart these from stale handoffs.
 - **#37–#50** — hardens settings/profile/default/GL preference ownership, atomic profile storage, mutation-safe listeners, duplicate UUID handling, Gson boundary recovery, and global Settings reads.
 - **#51** — rejects keyboard profile metadata entries that alias the same backing SharedPreferences storage.
 - **#53** — allows modifier-only custom keys without requiring a non-modifier key.
+- **#77** — resource-backs Artemis Action and Quick Menu catalog display metadata while preserving every stable persisted/runtime ID; an audit also promoted the new stable-ID/resource-resolution regression into the mandatory focused CI gate.
 
 ### Lifecycle / stream / controller ownership hardening
 
@@ -184,11 +187,11 @@ At the #75 baseline:
 
 The tracked `.tflite` model is an intentional application asset, not generated build residue.
 
-### 5.6 Action-catalog localization is in review
+### 5.6 Action-catalog localization is merged
 
-Branch `audit/action-catalog-localization-v2` moves Artemis Action and Quick Menu registry labels, categories, descriptions, picker text, accessibility labels, and related runtime messages from Java literals into Android string resources. Stable persisted/runtime IDs remain literal and unchanged. The clean branch was reconstructed from the validated product diff on `staging/action-catalog-localization`; temporary one-shot patchers/workflows were deliberately excluded.
+PR #77 moves Artemis Action and Quick Menu registry labels, categories, descriptions, picker text, accessibility labels, and related runtime messages from Java literals into Android string resources. Stable persisted/runtime IDs remain literal and unchanged. Temporary one-shot patchers/workflows from the staging branch were deliberately excluded.
 
-This closes the catalog-specific resource-backing debt once merged. It does not provide translations for every locale or claim that every Artemis Plus UI surface has completed a broader hard-coded-string/accessibility audit.
+This closes the catalog-specific resource-backing debt. It does not provide translations for every locale or claim that every Artemis Plus UI surface has completed a broader hard-coded-string/accessibility audit.
 
 ### 5.7 Hardware-sensitive behavior still needs physical validation
 
@@ -212,7 +215,7 @@ The Diana audit did not find a complete reusable cover-screen controller/analog-
 Keep unrelated fixes in separate coherent PRs.
 
 1. **Real-device lifecycle acceptance** — exercise Fast Resume, Keep Alive, surface switching/restoration, controller disconnect/reconnect, PiP, Sideways, and IME behavior on physical Android hardware. Convert any reproducible failure into a narrow regression/fix.
-2. **Finish/review localization work** — audit and merge `audit/action-catalog-localization-v2`; afterward, keep any broader UI-string/accessibility sweep and actual locale translations in separate coherent changes.
+2. **Broader UI/localization follow-up** — audit remaining Artemis Plus UI strings/content descriptions and add actual locale translations in separate coherent changes; the Action/Quick Menu catalog resource boundary itself is complete.
 3. **Targeted lifecycle/performance review** — only where profiling, hardware testing, or a concrete invariant identifies a problem. The generic delayed-callback sweep is no longer an open-ended task.
 4. **Foldable/Diana follow-up** — only as a capability-gated design/implementation; no complete subsystem exists to port wholesale.
 5. **Useful contained feature work** after correctness work, localization, or hardware findings establish the next target.

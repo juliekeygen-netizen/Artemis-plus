@@ -242,8 +242,9 @@ public class QuickMenuConfigTest {
         for (StreamActionRegistry.ActionDefinition action : StreamActionRegistry.getAll()) {
             assertTrue("Duplicate registry ID: " + action.id, ids.add(action.id));
             assertNotNull(StreamActionRegistry.find(action.id));
-            assertFalse(action.label.trim().isEmpty());
-            assertFalse(action.category.trim().isEmpty());
+            assertTrue(action.labelResId != 0);
+            assertTrue(action.categoryResId != 0);
+            assertTrue(action.descriptionResId != 0);
         }
     }
 

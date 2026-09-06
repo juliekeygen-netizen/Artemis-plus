@@ -1,5 +1,9 @@
 package com.limelight.quickmenu;
 
+import androidx.annotation.StringRes;
+
+import com.limelight.R;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -10,8 +14,9 @@ import java.util.Map;
  * Stable catalog of actions that may be placed in the customizable in-stream Quick Menu.
  *
  * Runtime availability and execution remain owned by GameMenu because those depend on the
- * active stream, display, and input device. Keeping stable IDs and editor metadata here makes
- * persisted layouts independent from translated/dynamic labels and from transient device state.
+ * active stream, display, and input device. Persisted layouts contain only stable action IDs;
+ * translated labels, categories, and descriptions are resolved from Android resources at the
+ * UI boundary and are never used as persistence or matching keys.
  */
 public final class StreamActionRegistry {
     public static final String DISCONNECT = "session.disconnect";
@@ -36,55 +41,120 @@ public final class StreamActionRegistry {
 
     public static final class ActionDefinition {
         public final String id;
-        public final String label;
-        public final String category;
-        public final String description;
+        @StringRes public final int labelResId;
+        @StringRes public final int categoryResId;
+        @StringRes public final int descriptionResId;
 
-        private ActionDefinition(String id, String label, String category, String description) {
+        private ActionDefinition(String id, @StringRes int labelResId,
+                                 @StringRes int categoryResId, @StringRes int descriptionResId) {
             this.id = id;
-            this.label = label;
-            this.category = category;
-            this.description = description;
+            this.labelResId = labelResId;
+            this.categoryResId = categoryResId;
+            this.descriptionResId = descriptionResId;
         }
     }
 
     private static final Map<String, ActionDefinition> ACTIONS;
     private static final List<ActionDefinition> ORDERED_ACTIONS;
+    private static final List<Integer> CATEGORY_RES_IDS;
 
     static {
         LinkedHashMap<String, ActionDefinition> actions = new LinkedHashMap<>();
-        add(actions, DISCONNECT, "Disconnect", "Session", "Disconnect Artemis while leaving the host session running.");
-        add(actions, QUIT_SESSION, "Quit session", "Session", "End the current host session.");
-        add(actions, UPLOAD_CLIPBOARD, "Upload clipboard", "Clipboard", "Send the Android clipboard to the host.");
-        add(actions, FETCH_CLIPBOARD, "Fetch clipboard", "Clipboard", "Copy the host clipboard to Android.");
-        add(actions, SERVER_COMMANDS, "Server commands", "Host", "Open the commands advertised by the current host.");
-        add(actions, TOGGLE_KEYBOARD, "Toggle keyboard", "Input", "Show or hide the Android system keyboard.");
-        add(actions, TOGGLE_ZOOM, "Zoom mode", "Display", "Enable or disable stream Zoom/Pan mode.");
-        add(actions, ROTATE_SCREEN, "Rotate screen", "Display", "Rotate the stream Activity orientation.");
+        add(actions, DISCONNECT,
+                R.string.artemis_quick_menu_action_disconnect_label,
+                R.string.artemis_quick_menu_category_session,
+                R.string.artemis_quick_menu_action_disconnect_description);
+        add(actions, QUIT_SESSION,
+                R.string.artemis_quick_menu_action_quit_session_label,
+                R.string.artemis_quick_menu_category_session,
+                R.string.artemis_quick_menu_action_quit_session_description);
+        add(actions, UPLOAD_CLIPBOARD,
+                R.string.artemis_quick_menu_action_upload_clipboard_label,
+                R.string.artemis_quick_menu_category_clipboard,
+                R.string.artemis_quick_menu_action_upload_clipboard_description);
+        add(actions, FETCH_CLIPBOARD,
+                R.string.artemis_quick_menu_action_fetch_clipboard_label,
+                R.string.artemis_quick_menu_category_clipboard,
+                R.string.artemis_quick_menu_action_fetch_clipboard_description);
+        add(actions, SERVER_COMMANDS,
+                R.string.artemis_quick_menu_action_server_commands_label,
+                R.string.artemis_quick_menu_category_host,
+                R.string.artemis_quick_menu_action_server_commands_description);
+        add(actions, TOGGLE_KEYBOARD,
+                R.string.artemis_quick_menu_action_toggle_keyboard_label,
+                R.string.artemis_quick_menu_category_input,
+                R.string.artemis_quick_menu_action_toggle_keyboard_description);
+        add(actions, TOGGLE_ZOOM,
+                R.string.artemis_quick_menu_action_zoom_mode_label,
+                R.string.artemis_quick_menu_category_display,
+                R.string.artemis_quick_menu_action_zoom_mode_description);
+        add(actions, ROTATE_SCREEN,
+                R.string.artemis_quick_menu_action_rotate_screen_label,
+                R.string.artemis_quick_menu_category_display,
+                R.string.artemis_quick_menu_action_rotate_screen_description);
 
-        add(actions, SELECT_MOUSE_MODE, "Select mouse mode", "Input", "Choose the active Artemis mouse/touch mode.");
-        add(actions, TOGGLE_HUD, "Toggle performance HUD", "Overlays", "Show or hide stream performance statistics.");
-        add(actions, TOGGLE_FLOATING_BUTTON, "Toggle floating menu button", "Overlays", "Show or hide the floating Quick Menu button.");
-        add(actions, TOGGLE_KEYBOARD_CONTROLLER, "Toggle special keys", "Overlays", "Show or hide the customizable special-key overlay.");
-        add(actions, TOGGLE_VIRTUAL_CONTROLLER, "Toggle virtual controller", "Overlays", "Show or hide the on-screen gamepad.");
-        add(actions, TOGGLE_FULL_KEYBOARD, "Toggle full keyboard", "Overlays", "Show or hide the full on-screen keyboard.");
-        add(actions, TASK_MANAGER, "Task Manager", "Windows", "Send Ctrl+Shift+Esc to the host.");
-        add(actions, SEND_KEYS, "Send keys", "Windows", "Open Artemis' special key-combination list.");
-        add(actions, SWITCH_TOUCH_SENSITIVITY, "Switch touch sensitivity", "Input", "Cycle the configured touch sensitivity mode.");
-        add(actions, DEVICE_ACTIONS, "Device actions", "Dynamic", "Insert actions supplied by the currently active controller or input device.");
+        add(actions, SELECT_MOUSE_MODE,
+                R.string.artemis_quick_menu_action_select_mouse_mode_label,
+                R.string.artemis_quick_menu_category_input,
+                R.string.artemis_quick_menu_action_select_mouse_mode_description);
+        add(actions, TOGGLE_HUD,
+                R.string.artemis_quick_menu_action_toggle_performance_hud_label,
+                R.string.artemis_quick_menu_category_overlays,
+                R.string.artemis_quick_menu_action_toggle_performance_hud_description);
+        add(actions, TOGGLE_FLOATING_BUTTON,
+                R.string.artemis_quick_menu_action_toggle_floating_button_label,
+                R.string.artemis_quick_menu_category_overlays,
+                R.string.artemis_quick_menu_action_toggle_floating_button_description);
+        add(actions, TOGGLE_KEYBOARD_CONTROLLER,
+                R.string.artemis_quick_menu_action_toggle_special_keys_label,
+                R.string.artemis_quick_menu_category_overlays,
+                R.string.artemis_quick_menu_action_toggle_special_keys_description);
+        add(actions, TOGGLE_VIRTUAL_CONTROLLER,
+                R.string.artemis_quick_menu_action_toggle_virtual_controller_label,
+                R.string.artemis_quick_menu_category_overlays,
+                R.string.artemis_quick_menu_action_toggle_virtual_controller_description);
+        add(actions, TOGGLE_FULL_KEYBOARD,
+                R.string.artemis_quick_menu_action_toggle_full_keyboard_label,
+                R.string.artemis_quick_menu_category_overlays,
+                R.string.artemis_quick_menu_action_toggle_full_keyboard_description);
+        add(actions, TASK_MANAGER,
+                R.string.artemis_quick_menu_action_task_manager_label,
+                R.string.artemis_quick_menu_category_windows,
+                R.string.artemis_quick_menu_action_task_manager_description);
+        add(actions, SEND_KEYS,
+                R.string.artemis_quick_menu_action_send_keys_label,
+                R.string.artemis_quick_menu_category_windows,
+                R.string.artemis_quick_menu_action_send_keys_description);
+        add(actions, SWITCH_TOUCH_SENSITIVITY,
+                R.string.artemis_quick_menu_action_touch_sensitivity_label,
+                R.string.artemis_quick_menu_category_input,
+                R.string.artemis_quick_menu_action_touch_sensitivity_description);
+        add(actions, DEVICE_ACTIONS,
+                R.string.artemis_quick_menu_action_device_actions_label,
+                R.string.artemis_quick_menu_category_dynamic,
+                R.string.artemis_quick_menu_action_device_actions_description);
 
         ACTIONS = Collections.unmodifiableMap(actions);
         ORDERED_ACTIONS = Collections.unmodifiableList(new ArrayList<>(actions.values()));
+
+        ArrayList<Integer> categoryResIds = new ArrayList<>();
+        for (ActionDefinition action : ORDERED_ACTIONS) {
+            if (!categoryResIds.contains(action.categoryResId)) {
+                categoryResIds.add(action.categoryResId);
+            }
+        }
+        CATEGORY_RES_IDS = Collections.unmodifiableList(categoryResIds);
     }
 
     private StreamActionRegistry() {}
 
-    private static void add(Map<String, ActionDefinition> actions, String id, String label,
-                            String category, String description) {
+    private static void add(Map<String, ActionDefinition> actions, String id,
+                            @StringRes int labelResId, @StringRes int categoryResId,
+                            @StringRes int descriptionResId) {
         if (actions.containsKey(id)) {
             throw new IllegalStateException("Duplicate Quick Menu action ID: " + id);
         }
-        actions.put(id, new ActionDefinition(id, label, category, description));
+        actions.put(id, new ActionDefinition(id, labelResId, categoryResId, descriptionResId));
     }
 
     public static ActionDefinition find(String id) {
@@ -99,14 +169,7 @@ public final class StreamActionRegistry {
         return ORDERED_ACTIONS;
     }
 
-    public static List<String> getCategories() {
-        ArrayList<String> categories = new ArrayList<>();
-        for (ActionDefinition action : ORDERED_ACTIONS) {
-            if (!categories.contains(action.category)) {
-                categories.add(action.category);
-            }
-        }
-        return categories;
+    public static List<Integer> getCategoryResIds() {
+        return CATEGORY_RES_IDS;
     }
-
 }

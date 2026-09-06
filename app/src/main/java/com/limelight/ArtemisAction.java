@@ -1,6 +1,9 @@
 package com.limelight;
 
+import android.content.Context;
 import android.widget.Toast;
+
+import androidx.annotation.StringRes;
 
 /**
  * Actions executed locally by Artemis Plus OSC buttons instead of being sent to the streamed PC.
@@ -8,35 +11,41 @@ import android.widget.Toast;
  * their visibility or duplicating their implementation.
  */
 public enum ArtemisAction {
-    SOFT_KEYBOARD("soft_keyboard", "Soft Keyboard"),
-    FULL_KEYBOARD("full_keyboard", "Full Keyboard"),
-    ROTATE_SCREEN("rotate_screen", "Rotate Screen"),
-    QUICK_MENU("quick_menu", "Quick Menu"),
-    TOGGLE_HUD("toggle_hud", "Performance HUD"),
-    TOGGLE_STATS_OVERLAY("toggle_stats_overlay", "Stats Overlay"),
-    TOGGLE_FLOATING_MENU("toggle_floating_menu", "Floating Menu Button"),
-    TOUCH_SENSITIVITY("touch_sensitivity", "Touch Sensitivity"),
-    SEND_CLIPBOARD("send_clipboard", "Clipboard to PC"),
-    FETCH_CLIPBOARD("fetch_clipboard", "Clipboard from PC"),
-    MOUSE_MODE("mouse_mode", "Mouse Mode"),
-    TOGGLE_ZOOM("toggle_zoom", "Toggle Zoom"),
-    TOGGLE_VIRTUAL_CONTROLLER("toggle_virtual_controller", "Gamepad Overlay"),
-    TOGGLE_KEYBOARD_CONTROLLER("toggle_keyboard_controller", "Custom Buttons" );
+    SOFT_KEYBOARD("soft_keyboard", R.string.artemis_action_label_soft_keyboard),
+    FULL_KEYBOARD("full_keyboard", R.string.artemis_action_label_full_keyboard),
+    ROTATE_SCREEN("rotate_screen", R.string.artemis_action_label_rotate_screen),
+    QUICK_MENU("quick_menu", R.string.artemis_action_label_quick_menu),
+    TOGGLE_HUD("toggle_hud", R.string.artemis_action_label_performance_hud),
+    TOGGLE_STATS_OVERLAY("toggle_stats_overlay", R.string.artemis_action_label_stats_overlay),
+    TOGGLE_FLOATING_MENU("toggle_floating_menu", R.string.artemis_action_label_floating_menu_button),
+    TOUCH_SENSITIVITY("touch_sensitivity", R.string.artemis_action_label_touch_sensitivity),
+    SEND_CLIPBOARD("send_clipboard", R.string.artemis_action_label_clipboard_to_pc),
+    FETCH_CLIPBOARD("fetch_clipboard", R.string.artemis_action_label_clipboard_from_pc),
+    MOUSE_MODE("mouse_mode", R.string.artemis_action_label_mouse_mode),
+    TOGGLE_ZOOM("toggle_zoom", R.string.artemis_action_label_toggle_zoom),
+    TOGGLE_VIRTUAL_CONTROLLER("toggle_virtual_controller", R.string.artemis_action_label_gamepad_overlay),
+    TOGGLE_KEYBOARD_CONTROLLER("toggle_keyboard_controller", R.string.artemis_action_label_custom_buttons);
 
     private final String id;
-    private final String label;
+    @StringRes
+    private final int labelResId;
 
-    ArtemisAction(String id, String label) {
+    ArtemisAction(String id, @StringRes int labelResId) {
         this.id = id;
-        this.label = label;
+        this.labelResId = labelResId;
     }
 
     public String getId() {
         return id;
     }
 
-    public String getLabel() {
-        return label;
+    @StringRes
+    public int getLabelResId() {
+        return labelResId;
+    }
+
+    public String getLabel(Context context) {
+        return context.getString(labelResId);
     }
 
     public static ArtemisAction fromId(String id) {
@@ -93,14 +102,14 @@ public enum ArtemisAction {
 
             case SEND_CLIPBOARD:
                 if (!game.sendClipboard(true)) {
-                    Toast.makeText(game, "Nothing was sent to the PC", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(game, R.string.artemis_action_nothing_sent_to_pc, Toast.LENGTH_SHORT).show();
                     return false;
                 }
                 return true;
 
             case FETCH_CLIPBOARD:
                 if (!game.getClipboard(0)) {
-                    Toast.makeText(game, "Clipboard fetch could not start", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(game, R.string.artemis_action_clipboard_fetch_failed, Toast.LENGTH_SHORT).show();
                     return false;
                 }
                 return true;
@@ -110,7 +119,7 @@ public enum ArtemisAction {
                     game.selectMouseMode(game);
                     return true;
                 }
-                Toast.makeText(game, "Mouse mode cannot be changed in this session", Toast.LENGTH_SHORT).show();
+                Toast.makeText(game, R.string.artemis_action_mouse_mode_unavailable, Toast.LENGTH_SHORT).show();
                 return false;
 
             case TOGGLE_ZOOM:

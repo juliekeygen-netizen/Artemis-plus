@@ -50,7 +50,7 @@ public final class ArtemisActionButtonFactory {
         CheckBox[] boxes = new CheckBox[actions.length];
         for (int i = 0; i < actions.length; i++) {
             CheckBox box = new CheckBox(ui);
-            box.setText(actions[i].getLabel());
+            box.setText(actions[i].getLabel(ui));
             box.setTextSize(15f);
             box.setTextColor(ArtemisEditorUi.TEXT_PRIMARY);
             box.setChecked(selected.contains(actions[i].getId()));
@@ -61,9 +61,9 @@ public final class ArtemisActionButtonFactory {
         }
         ScrollView scroll = new ScrollView(ui);
         scroll.addView(list);
-        AlertDialog dialog = ArtemisEditorUi.builder(ui, "Add Artemis Actions")
+        AlertDialog dialog = ArtemisEditorUi.builder(ui, ui.getString(R.string.artemis_action_picker_title))
                 .setView(scroll)
-                .setPositiveButton("Apply", (d, which) -> {
+                .setPositiveButton(R.string.artemis_apply, (d, which) -> {
                     // Preserve opaque IDs from newer clients. They remain inert on this build,
                     // but editing known actions must not silently erase forward-compatible data.
                     HashSet<String> requested = new HashSet<>();
@@ -84,7 +84,7 @@ public final class ArtemisActionButtonFactory {
                     } else applyCollapsedState(controller);
                     saveSelectedActionIds(context, requested);
                     KeyBoardControllerConfigurationLoader.saveProfile(controller, context);
-                    Toast.makeText(context, "Artemis action buttons updated", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(context, R.string.artemis_action_buttons_updated, Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();
@@ -116,7 +116,7 @@ public final class ArtemisActionButtonFactory {
                 action,
                 primaryIcon(action),
                 alternateIcon(action));
-        button.setContentDescription(action.getLabel());
+        button.setContentDescription(action.getLabel(context));
         button.setSlideActivationEnabled(false);
 
         button.addDigitalButtonListener(new KeyBoardDigitalButton.DigitalButtonListener() {

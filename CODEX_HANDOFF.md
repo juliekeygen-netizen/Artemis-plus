@@ -21,6 +21,8 @@ Independently review PR #77, fix concrete problems, and merge it if the implemen
 - PR state: merged by guarded squash after exact-head verification
 - Merge commit: `28fbee2b81229e8696dc2451e81eaaf4f5e9b4d8`
 - Post-merge documentation branch: `maintenance/refresh-state-post77`
+- Post-merge documentation PR: [#78](https://github.com/juliekeygen-netizen/Artemis-plus/pull/78)
+- Documentation PR pre-metadata head: `fa522b3b9f26226f6381502faf922acf1b81a71d`
 
 ## Scope completed
 
@@ -83,6 +85,8 @@ The category list is small and built once per picker; localized label/descriptio
 - Both exact-head runs include the new catalog regression in the mandatory focused gate.
 - Post-merge Android CI `34059021337` — PASS.
 - Post-merge Build Debug APK / rolling release `34059021340` — PASS, including signing verification, four-ABI release package, and `debug-latest` publication.
+- Documentation PR #78 push Android CI `34059200041` — PASS on pre-metadata head.
+- Documentation PR #78 pull-request Android CI `34059202707` — PASS on pre-metadata head.
 
 ## Known limitations / real-device validation
 

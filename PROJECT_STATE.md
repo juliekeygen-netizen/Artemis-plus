@@ -16,13 +16,15 @@ Primary architectural rule: extend existing ownership/state systems rather than 
 
 ## 2. Current verified baseline
 
-Latest verified merged `main` at this refresh:
+Latest verified product-code baseline at this refresh:
 
 `28fbee2b81229e8696dc2451e81eaaf4f5e9b4d8`
 
 Latest merge:
 
 `Localize Artemis action catalog metadata (#77)`
+
+Documentation-only PR [#78](https://github.com/juliekeygen-netizen/Artemis-plus/pull/78) refreshes the rolling state after #77; its merge does not change the product-code baseline above.
 
 Post-merge verification on this exact SHA:
 

@@ -9,19 +9,23 @@ import android.graphics.drawable.GradientDrawable;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
-import android.view.ContextThemeWrapper;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
-import android.widget.AutoCompleteTextView;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.Filter;
 import android.widget.Filterable;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -60,12 +64,18 @@ final class KeyComboManager {
         final String name;
         final int[] modifiers;
         final int[] keys;
+        final boolean longPressToggle;
 
         Definition(String id, String name, int[] modifiers, int[] keys) {
+            this(id, name, modifiers, keys, false);
+        }
+
+        Definition(String id, String name, int[] modifiers, int[] keys, boolean longPressToggle) {
             this.id = id;
             this.name = name;
             this.modifiers = modifiers == null ? new int[0] : modifiers.clone();
             this.keys = keys == null ? new int[0] : keys.clone();
+            this.longPressToggle = longPressToggle;
         }
 
         String elementId() {
@@ -88,6 +98,7 @@ final class KeyComboManager {
                 keyArray.put(key);
             }
             object.put("keys", keyArray);
+            object.put("longPressToggle", longPressToggle);
             return object;
         }
 
@@ -108,7 +119,8 @@ final class KeyComboManager {
                     object.getString("id"),
                     object.optString("name", "Key"),
                     modifiers,
-                    keys);
+                    keys,
+                    object.optBoolean("longPressToggle", false));
         }
     }
 
@@ -258,7 +270,8 @@ final class KeyComboManager {
                         button.getComboId(),
                         button.getDisplayName(),
                         button.getModifierKeys(),
-                        button.getRegularKeys()));
+                        button.getRegularKeys(),
+                        button.isLongPressToggleEnabled()));
     }
 
     static void restore(KeyBoardController controller, Context context) {
@@ -341,6 +354,17 @@ final class KeyComboManager {
         modifierRow.addView(shift);
         modifierRow.addView(meta);
         content.addView(modifierRow);
+
+        CheckBox longPressToggle = new CheckBox(dialogContext);
+        longPressToggle.setText(R.string.artemis_key_long_press_toggle);
+        longPressToggle.setTextColor(Color.WHITE);
+        longPressToggle.setChecked(existing != null && existing.longPressToggle);
+        content.addView(longPressToggle);
+        TextView longPressSummary = label(dialogContext,
+                dialogContext.getString(R.string.artemis_key_long_press_toggle_summary),
+                11.5f, ArtemisEditorUi.TEXT_SECONDARY);
+        longPressSummary.setPadding(Math.round(4 * density), 0, 0, Math.round(4 * density));
+        content.addView(longPressSummary);
 
         TextView keysLabel = label(dialogContext,
                 dialogContext.getString(R.string.artemis_key_press_order_label), 13f, Color.WHITE);
@@ -437,10 +461,6 @@ final class KeyComboManager {
 
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
                 String name = nameInput.getText().toString().trim();
-                if (name.isEmpty()) {
-                    nameInput.setError(context.getString(R.string.artemis_key_display_name_required));
-                    return;
-                }
 
                 List<Integer> modifiers = new ArrayList<>(4);
                 if (ctrl.isChecked()) modifiers.add(KeyEvent.KEYCODE_CTRL_LEFT);
@@ -462,8 +482,7 @@ final class KeyComboManager {
                     String typed = row.field == null ? "" : row.field.getText().toString().trim();
                     if (!typed.isEmpty()) {
                         row.field.setError(context.getString(R.string.artemis_key_selection_required));
-                        row.field.requestFocus();
-                        row.field.showDropDown();
+                        row.field.performClick();
                         return;
                     }
                 }
@@ -478,17 +497,33 @@ final class KeyComboManager {
                     KeyRowModel first = keyRows.get(0);
                     if (first.field != null) {
                         first.field.setError(context.getString(R.string.artemis_key_selection_required));
-                        first.field.requestFocus();
-                        first.field.showDropDown();
+                        first.field.performClick();
                     }
                     return;
+                }
+
+                // A selected regular key fills this automatically. Modifier-only buttons should
+                // be equally frictionless, including when the convenience key row remains empty.
+                if (name.isEmpty()) {
+                    String generated = buildSummary(
+                            ctrl.isChecked(), alt.isChecked(), shift.isChecked(), meta.isChecked(),
+                            selectedOptions(keyRows));
+                    name = generated.startsWith("Sends: ")
+                            ? generated.substring("Sends: ".length())
+                            : generated;
+                    if (name.isEmpty() || "nothing selected yet".equals(name)) {
+                        nameInput.setError(context.getString(R.string.artemis_key_display_name_required));
+                        return;
+                    }
+                    nameInput.setText(name);
                 }
 
                 Definition updated = new Definition(
                         existing == null ? newId() : existing.id,
                         name,
                         toIntArray(modifiers),
-                        toIntArray(regular));
+                        toIntArray(regular),
+                        longPressToggle.isChecked());
                 saveOrReplaceDefinition(context, updated);
 
                 KeyComboButton button = findButton(controller, updated.id);
@@ -582,7 +617,7 @@ final class KeyComboManager {
 
     private static final class KeyRowModel {
         KeyOption selected;
-        AutoCompleteTextView field;
+        EditText field;
 
         KeyRowModel(KeyOption selected) {
             this.selected = selected;
@@ -622,66 +657,30 @@ final class KeyComboManager {
             rowParams.setMargins(0, Math.round(3 * density), 0, Math.round(3 * density));
             container.addView(row, rowParams);
 
-            AutoCompleteTextView field = new AutoCompleteTextView(context);
+            EditText field = new EditText(context);
             model.field = field;
             field.setHint(rowIndex == 0 ? R.string.artemis_key_choose_first
                     : R.string.artemis_key_choose_another);
             field.setSingleLine(true);
-            field.setThreshold(0);
-            field.setDropDownHeight(Math.round(264 * density));
             ArtemisEditorUi.suppressTextActionMenu(field);
             field.setTextColor(Color.WHITE);
             field.setHintTextColor(0xFF8E8E93);
-            field.setDropDownHeight(Math.round(300 * density));
             field.setPadding(Math.round(14 * density), 0, Math.round(12 * density), 0);
+            field.setFocusable(false);
+            field.setCursorVisible(false);
 
             GradientDrawable fieldBackground = new GradientDrawable();
             fieldBackground.setColor(0xFF2B2B2F);
             fieldBackground.setCornerRadius(10 * density);
             fieldBackground.setStroke(Math.max(1, Math.round(density)), 0xFF505057);
             field.setBackground(fieldBackground);
-            field.setAdapter(new KeySearchAdapter(context, availableKeys));
-
             if (model.selected != null) {
-                field.setText(model.selected.selectionLabel(), false);
+                field.setText(model.selected.selectionLabel());
             }
 
-            field.addTextChangedListener(new TextWatcher() {
-                @Override
-                public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-                }
-
-                @Override
-                public void onTextChanged(CharSequence s, int start, int before, int count) {
-                }
-
-                @Override
-                public void afterTextChanged(Editable editable) {
-                    if (model.selected == null) {
-                        return;
-                    }
-                    String value = editable == null ? "" : editable.toString().trim();
-                    if (!value.equals(model.selected.selectionLabel()) &&
-                            !value.equals(model.selected.name)) {
-                        model.selected = null;
-                        if (onChanged != null) {
-                            onChanged.run();
-                        }
-                    }
-                }
-            });
-
-            field.setOnClickListener(v -> field.showDropDown());
-            field.setOnFocusChangeListener((v, hasFocus) -> {
-                if (hasFocus) {
-                    field.showDropDown();
-                }
-            });
-            field.setOnItemClickListener((parent, view, position, id) -> {
-                KeyOption option = (KeyOption) parent.getItemAtPosition(position);
+            field.setOnClickListener(v -> showKeyPickerDialog(context, availableKeys, option -> {
                 model.selected = option;
-                field.setText(option.selectionLabel(), false);
-                field.setSelection(field.length());
+                field.setText(option.selectionLabel());
                 field.setError(null);
                 if (rowIndex == 0 && nameInput.getText().toString().trim().isEmpty()) {
                     nameInput.setText(option.name);
@@ -690,7 +689,7 @@ final class KeyComboManager {
                 if (onChanged != null) {
                     onChanged.run();
                 }
-            });
+            }));
 
             row.addView(field, new LinearLayout.LayoutParams(
                     0,
@@ -719,6 +718,104 @@ final class KeyComboManager {
                 });
             }
         }
+    }
+
+    private interface KeySelectionListener {
+        void onSelected(KeyOption option);
+    }
+
+    private static void showKeyPickerDialog(Context context,
+                                            List<KeyOption> availableKeys,
+                                            KeySelectionListener listener) {
+        Context dialogContext = ArtemisEditorUi.context(context);
+        float density = dialogContext.getResources().getDisplayMetrics().density;
+
+        LinearLayout content = new LinearLayout(dialogContext);
+        content.setOrientation(LinearLayout.VERTICAL);
+        int padding = Math.round(12 * density);
+        content.setPadding(padding, Math.round(8 * density), padding, Math.round(8 * density));
+
+        EditText search = new EditText(dialogContext);
+        search.setSingleLine(true);
+        search.setHint(R.string.artemis_key_search_hint);
+        search.setTextColor(Color.WHITE);
+        search.setHintTextColor(0xFF8E8E93);
+        search.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        ArtemisEditorUi.suppressTextActionMenu(search);
+        content.addView(search, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, Math.round(48 * density)));
+
+        FrameLayout resultsFrame = new FrameLayout(dialogContext);
+        ListView results = new ListView(dialogContext);
+        results.setDividerHeight(0);
+        KeySearchAdapter adapter = new KeySearchAdapter(dialogContext, availableKeys);
+        results.setAdapter(adapter);
+        resultsFrame.addView(results, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        TextView empty = label(dialogContext,
+                dialogContext.getString(R.string.artemis_key_no_matches),
+                14f, ArtemisEditorUi.TEXT_SECONDARY);
+        empty.setGravity(Gravity.CENTER);
+        resultsFrame.addView(empty, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        results.setEmptyView(empty);
+        content.addView(resultsFrame, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        AlertDialog picker = new AlertDialog.Builder(dialogContext)
+                .setView(content)
+                .create();
+
+        Runnable selectBestMatch = () -> {
+            if (adapter.getCount() <= 0) return;
+            KeyOption option = adapter.getItem(0);
+            if (option != null) {
+                listener.onSelected(option);
+                picker.dismiss();
+            }
+        };
+        results.setOnItemClickListener((parent, view, position, id) -> {
+            KeyOption option = adapter.getItem(position);
+            if (option != null) {
+                listener.onSelected(option);
+                picker.dismiss();
+            }
+        });
+        search.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                adapter.getFilter().filter(s);
+            }
+            @Override public void afterTextChanged(Editable editable) {}
+        });
+        search.setOnEditorActionListener((view, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_DONE ||
+                    (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER &&
+                            event.getAction() == KeyEvent.ACTION_DOWN)) {
+                selectBestMatch.run();
+                return true;
+            }
+            return false;
+        });
+
+        picker.setOnShowListener(ignored -> {
+            ArtemisEditorUi.styleDialog(picker, context, 520, 520, true);
+            Window window = picker.getWindow();
+            if (window != null) {
+                window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
+                        WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+            }
+            search.requestFocus();
+            search.post(() -> {
+                InputMethodManager input = (InputMethodManager) context.getSystemService(
+                        Context.INPUT_METHOD_SERVICE);
+                if (input != null) {
+                    input.showSoftInput(search, InputMethodManager.SHOW_IMPLICIT);
+                }
+            });
+        });
+        picker.show();
     }
 
     private static final class KeySearchAdapter extends ArrayAdapter<KeyOption> implements Filterable {
@@ -765,9 +862,15 @@ final class KeyComboManager {
                             matches.add(option);
                         }
                     }
-                    matches.sort(Comparator.comparingInt(option ->
-                            keySearchScore(option.name, option.code,
-                                    constraint == null ? "" : constraint.toString())));
+                    final String query = constraint == null ? "" : constraint.toString();
+                    Collections.sort(matches, new Comparator<KeyOption>() {
+                        @Override
+                        public int compare(KeyOption first, KeyOption second) {
+                            return Integer.compare(
+                                    keySearchScore(first.name, first.code, query),
+                                    keySearchScore(second.name, second.code, query));
+                        }
+                    });
                     FilterResults results = new FilterResults();
                     results.values = matches;
                     results.count = matches.size();

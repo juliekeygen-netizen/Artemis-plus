@@ -99,6 +99,20 @@ public class KeyComboManagerTest {
     }
 
     @Test
+    public void longPressToggleIsPerKeyAndLegacyDefinitionsDefaultOff() throws Exception {
+        KeyComboManager.Definition enabled = new KeyComboManager.Definition(
+                "sticky-f5", "F5", new int[0], new int[]{KeyEvent.KEYCODE_F5}, true);
+        assertTrue(KeyComboManager.Definition.fromJson(enabled.toJson()).longPressToggle);
+
+        JSONObject legacy = new JSONObject();
+        legacy.put("id", "legacy-f5");
+        legacy.put("name", "F5");
+        legacy.put("modifiers", new org.json.JSONArray());
+        legacy.put("keys", new org.json.JSONArray().put(KeyEvent.KEYCODE_F5));
+        assertFalse(KeyComboManager.Definition.fromJson(legacy).longPressToggle);
+    }
+
+    @Test
     public void semanticSearchFindsSymbolOnlyArrowKeys() {
         assertTrue(KeyComboManager.keySearchMatches("←", KeyEvent.KEYCODE_DPAD_LEFT, "left"));
         assertTrue(KeyComboManager.keySearchMatches("→", KeyEvent.KEYCODE_DPAD_RIGHT, "right arrow"));

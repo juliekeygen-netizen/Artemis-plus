@@ -20,7 +20,9 @@ final class KeyComboButton extends KeyBoardDigitalButton {
     private String displayName;
     private int[] modifierKeys;
     private int[] regularKeys;
+    private boolean longPressToggleEnabled;
     private boolean chordDown;
+    private boolean unlockingTogglePress;
 
     private float editorDownX;
     private float editorDownY;
@@ -51,27 +53,51 @@ final class KeyComboButton extends KeyBoardDigitalButton {
         addDigitalButtonListener(new DigitalButtonListener() {
             @Override
             public void onClick() {
+                if (longPressToggleEnabled && isSticky()) {
+                    // A second press is always an unlock gesture. Suppress its later long-click so
+                    // holding the finger again cannot accidentally re-lock the chord.
+                    setSticky(false);
+                    unlockingTogglePress = true;
+                    invalidate();
+                    return;
+                }
+                unlockingTogglePress = false;
                 pressChord();
             }
 
             @Override
             public void onLongClick() {
-                // Runtime long-press simply keeps the chord held until release. Editing is only
-                // available from the Enable/Disable editor mode, handled by onTouchEvent() below.
+                if (longPressToggleEnabled && chordDown && !unlockingTogglePress) {
+                    setSticky(true);
+                    invalidate();
+                    if (virtualController != null) {
+                        virtualController.vibrate(-1);
+                    }
+                }
             }
 
             @Override
             public void onRelease() {
+                if (isSticky()) {
+                    return;
+                }
                 releaseChord();
+                unlockingTogglePress = false;
             }
         });
     }
 
     void updateDefinition(KeyComboManager.Definition definition) {
+        if (chordDown) {
+            releaseChord();
+        }
+        setSticky(false);
+        unlockingTogglePress = false;
         comboId = definition.id;
         displayName = definition.name;
         modifierKeys = definition.modifiers.clone();
         regularKeys = definition.keys.clone();
+        longPressToggleEnabled = definition.longPressToggle;
         setText(displayName);
         post(() -> {
             if (virtualController != null) {
@@ -94,6 +120,10 @@ final class KeyComboButton extends KeyBoardDigitalButton {
 
     int[] getRegularKeys() {
         return regularKeys.clone();
+    }
+
+    boolean isLongPressToggleEnabled() {
+        return longPressToggleEnabled;
     }
 
     private void pressChord() {

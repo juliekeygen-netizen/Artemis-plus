@@ -404,7 +404,7 @@ public class GameMenu implements Game.GameMenuCallbacks {
                 return new MenuOption(getString(R.string.game_menu_send_keys), this::showSpecialKeysMenu);
             case StreamActionRegistry.SWITCH_TOUCH_SENSITIVITY:
                 return new MenuOption(getString(R.string.game_menu_switch_touch_sensitivity_model), true,
-                        game::switchTouchSensitivity);
+                        game::showTouchSensitivityDialog);
             case StreamActionRegistry.DEVICE_ACTIONS:
                 // This reserved dynamic slot is expanded directly while rendering a page.
                 return null;

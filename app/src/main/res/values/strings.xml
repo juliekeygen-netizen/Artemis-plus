@@ -378,7 +378,7 @@
     <string name="game_menu_toggle_keyboard_model">Toggle Special keys</string>s
     <string name="game_menu_toggle_virtual_model">Toggle On-screen controller</string>
     <string name="game_menu_toggle_virtual_keyboard_model">Toggle On-screen full keyboard</string>
-    <string name="game_menu_switch_touch_sensitivity_model">Switch touch sensitivity</string>
+    <string name="game_menu_switch_touch_sensitivity_model">Touch sensitivity</string>
 
 
     <string name="game_menu_toggle_mouse_on">Enable Controller Mouse Emulation</string>
@@ -704,6 +704,10 @@
     <string name="artemis_key_add_row">+  Add row</string>
     <string name="artemis_key_choose_first">Choose a key…</string>
     <string name="artemis_key_choose_another">Choose another key…</string>
+    <string name="artemis_key_search_hint">Search keys</string>
+    <string name="artemis_key_no_matches">No matching keys</string>
+    <string name="artemis_key_long_press_toggle">Hold to toggle this key</string>
+    <string name="artemis_key_long_press_toggle_summary">Long-press once to keep the key held; press again to release it.</string>
     <string name="artemis_key_remove_row_description">Remove key row</string>
     <string name="artemis_key_edit_title">Edit Key</string>
     <string name="artemis_key_save">Save</string>

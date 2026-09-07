@@ -40,6 +40,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -72,6 +73,9 @@ public class KeyBoardController {
     private Button buttonAcceptGroupMove;
     private View groupOutline;
     private Runnable configureGestureCancelCallback;
+    private View.OnLayoutChangeListener editorChromeLayoutListener;
+    private int editorChromeWidth = -1;
+    private int editorChromeHeight = -1;
 
     private static final String SETTINGS_POSITION_ID = "keyboardSettingsButton";
     // Keep the persisted reset target and the layout default literally identical by sharing these
@@ -98,6 +102,19 @@ public class KeyBoardController {
 
         KeyboardProfilesManager.ensureInitialized(context);
         createEditorControls();
+        editorChromeLayoutListener = (view, left, top, right, bottom,
+                                      oldLeft, oldTop, oldRight, oldBottom) -> {
+            int width = right - left;
+            int height = bottom - top;
+            if (width <= 0 || height <= 0 ||
+                    (width == editorChromeWidth && height == editorChromeHeight)) {
+                return;
+            }
+            editorChromeWidth = width;
+            editorChromeHeight = height;
+            layoutEditorChrome(width, height, true);
+        };
+        frame_layout.addOnLayoutChangeListener(editorChromeLayoutListener);
         refreshLayout();
     }
 
@@ -386,6 +403,10 @@ public class KeyBoardController {
         if (configureGestureCancelCallback != null) {
             configureGestureCancelCallback.run();
         }
+        if (editorChromeLayoutListener != null) {
+            frame_layout.removeOnLayoutChangeListener(editorChromeLayoutListener);
+            editorChromeLayoutListener = null;
+        }
         handler.removeCallbacksAndMessages(null);
         removeElements();
     }
@@ -629,59 +650,17 @@ public class KeyBoardController {
         KeyboardProfilesManager.ensureInitialized(context);
         removeElements();
 
-        int logicalWidth = logicalLayoutWidth();
-        int logicalHeight = logicalLayoutHeight();
-        int oldButtonSize = (int) (logicalHeight * 0.06f);
-        int buttonSize = Math.max(1, Math.round(oldButtonSize * 1.15f));
-
-        FrameLayout.LayoutParams configParams = new FrameLayout.LayoutParams(buttonSize, buttonSize);
-        // Preserve the old anchor, then move it 50 physical pixels left as requested.
+        FrameLayout.LayoutParams configParams = new FrameLayout.LayoutParams(1, 1);
         configParams.leftMargin = SETTINGS_DEFAULT_X_PX; // old 20px anchor shifted left, clamped to edge
         configParams.topMargin = SETTINGS_DEFAULT_Y_PX;
         frame_layout.addView(buttonConfigure, configParams);
-        buttonConfigure.post(() -> FloatingControlPositionStore.restore(
-                buttonConfigure, SETTINGS_POSITION_ID));
 
-        buttonClearAll.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        buttonAddKeys.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        buttonAddActions.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        buttonResetAll.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-
-        int clearWidth = buttonClearAll.getMeasuredWidth();
-        int keysWidth = buttonAddKeys.getMeasuredWidth();
-        int actionsWidth = buttonAddActions.getMeasuredWidth();
-        int resetWidth = buttonResetAll.getMeasuredWidth();
-        int gap = 3;
-        int totalWidth = clearWidth + keysWidth + actionsWidth + resetWidth + gap * 3;
-        int startX = Math.max(0, logicalWidth / 2 - totalWidth / 2);
-
-        addTopButton(buttonClearAll, startX, 15);
-        addTopButton(buttonAddKeys, startX + clearWidth + gap, 15);
-        addTopButton(buttonAddActions,
-                startX + clearWidth + keysWidth + gap * 2,
-                15);
-        addTopButton(buttonResetAll,
-                startX + clearWidth + keysWidth + actionsWidth + gap * 3,
-                15);
-
-        buttonProfiles.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        FrameLayout.LayoutParams profileParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT);
-        profileParams.leftMargin = Math.max(0,
-                logicalWidth / 2 - buttonProfiles.getMeasuredWidth() / 2);
-        profileParams.topMargin = Math.max(0,
-                logicalHeight - buttonProfiles.getMeasuredHeight() - 20);
-        frame_layout.addView(buttonProfiles, profileParams);
-
-        buttonAcceptGroupMove.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        FrameLayout.LayoutParams acceptParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Math.max(1, Math.round(buttonAcceptGroupMove.getMeasuredHeight() * 0.78f)));
-        acceptParams.leftMargin = Math.max(0,
-                logicalWidth / 2 - buttonAcceptGroupMove.getMeasuredWidth() / 2);
-        acceptParams.topMargin = 15;
-        frame_layout.addView(buttonAcceptGroupMove, acceptParams);
+        addTopButton(buttonClearAll, 0, SETTINGS_DEFAULT_Y_PX);
+        addTopButton(buttonAddKeys, 0, SETTINGS_DEFAULT_Y_PX);
+        addTopButton(buttonAddActions, 0, SETTINGS_DEFAULT_Y_PX);
+        addTopButton(buttonResetAll, 0, SETTINGS_DEFAULT_Y_PX);
+        addTopButton(buttonProfiles, 0, 0);
+        addTopButton(buttonAcceptGroupMove, 0, SETTINGS_DEFAULT_Y_PX);
 
         FrameLayout.LayoutParams outlineParams = new FrameLayout.LayoutParams(1, 1);
         frame_layout.addView(groupOutline, outlineParams);
@@ -716,6 +695,81 @@ public class KeyBoardController {
         // Newly rebuilt Views default visible; preserve a user-hidden controller across refreshes.
         if (!shown) {
             hide(true);
+        }
+
+        // refreshLayout() can run before Android publishes the new bounds after rotation. Use the
+        // laid-out FrameLayout as the only coordinate owner and repeat when its bounds change.
+        frame_layout.post(() -> {
+            int width = frame_layout.getWidth();
+            int height = frame_layout.getHeight();
+            if (width > 0 && height > 0) {
+                editorChromeWidth = width;
+                editorChromeHeight = height;
+                layoutEditorChrome(width, height, true);
+            }
+        });
+    }
+
+    static int editorChromeButtonSize(int width, int height) {
+        int shortEdge = Math.max(1, Math.min(width, height));
+        return Math.max(1, Math.round(shortEdge * 0.069f));
+    }
+
+    static int centeredEditorStart(int containerWidth, int contentWidth) {
+        return Math.max(0, containerWidth / 2 - contentWidth / 2);
+    }
+
+    private void layoutEditorChrome(int width, int height, boolean restoreConfigurePosition) {
+        if (buttonConfigure.getParent() != frame_layout || width <= 0 || height <= 0) {
+            return;
+        }
+
+        int buttonSize = editorChromeButtonSize(width, height);
+        FrameLayout.LayoutParams configParams = (FrameLayout.LayoutParams) buttonConfigure.getLayoutParams();
+        configParams.width = buttonSize;
+        configParams.height = buttonSize;
+        buttonConfigure.setLayoutParams(configParams);
+
+        Button[] topButtons = {buttonClearAll, buttonAddKeys, buttonAddActions, buttonResetAll};
+        int[] buttonWidths = new int[topButtons.length];
+        int gap = Math.max(3, Math.round(context.getResources().getDisplayMetrics().density));
+        int totalWidth = gap * (topButtons.length - 1);
+        for (int i = 0; i < topButtons.length; i++) {
+            topButtons[i].measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+            buttonWidths[i] = topButtons[i].getMeasuredWidth();
+            totalWidth += buttonWidths[i];
+        }
+
+        int startX = centeredEditorStart(width, totalWidth);
+        int toolbarTop = SETTINGS_DEFAULT_Y_PX;
+        if (startX < buttonSize + gap) {
+            toolbarTop += buttonSize + gap;
+        }
+        int left = startX;
+        for (int i = 0; i < topButtons.length; i++) {
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) topButtons[i].getLayoutParams();
+            params.leftMargin = left;
+            params.topMargin = toolbarTop;
+            topButtons[i].setLayoutParams(params);
+            left += buttonWidths[i] + gap;
+        }
+
+        buttonProfiles.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+        FrameLayout.LayoutParams profileParams = (FrameLayout.LayoutParams) buttonProfiles.getLayoutParams();
+        profileParams.leftMargin = centeredEditorStart(width, buttonProfiles.getMeasuredWidth());
+        profileParams.topMargin = Math.max(0, height - buttonProfiles.getMeasuredHeight() - 20);
+        buttonProfiles.setLayoutParams(profileParams);
+
+        buttonAcceptGroupMove.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+        FrameLayout.LayoutParams acceptParams = (FrameLayout.LayoutParams) buttonAcceptGroupMove.getLayoutParams();
+        acceptParams.height = Math.max(1, Math.round(buttonAcceptGroupMove.getMeasuredHeight() * 0.78f));
+        acceptParams.leftMargin = centeredEditorStart(width, buttonAcceptGroupMove.getMeasuredWidth());
+        acceptParams.topMargin = SETTINGS_DEFAULT_Y_PX;
+        buttonAcceptGroupMove.setLayoutParams(acceptParams);
+
+        if (restoreConfigurePosition) {
+            buttonConfigure.post(() -> FloatingControlPositionStore.restore(
+                    buttonConfigure, SETTINGS_POSITION_ID));
         }
     }
 
@@ -820,13 +874,7 @@ public class KeyBoardController {
         } else {
             // Keep the current visual ordering but repack all controls with a 4 px gap, making the
             // reset result one connected group instead of scattering them back over the screen.
-            controls.sort(Comparator.comparingInt((keyBoardVirtualControllerElement e) -> {
-                FrameLayout.LayoutParams p = (FrameLayout.LayoutParams) e.getLayoutParams();
-                return p.topMargin;
-            }).thenComparingInt(e -> {
-                FrameLayout.LayoutParams p = (FrameLayout.LayoutParams) e.getLayoutParams();
-                return p.leftMargin;
-            }));
+            sortByScreenPosition(controls);
 
             final int gap = 4;
             final int margin = 8;
@@ -881,14 +929,25 @@ public class KeyBoardController {
             }
         }
         result.addAll(connected);
-        result.sort(Comparator.comparingInt((keyBoardVirtualControllerElement e) -> {
-            FrameLayout.LayoutParams p = (FrameLayout.LayoutParams) e.getLayoutParams();
-            return p.topMargin;
-        }).thenComparingInt(e -> {
-            FrameLayout.LayoutParams p = (FrameLayout.LayoutParams) e.getLayoutParams();
-            return p.leftMargin;
-        }));
+        sortByScreenPosition(result);
         return result;
+    }
+
+    private static void sortByScreenPosition(List<keyBoardVirtualControllerElement> controls) {
+        Collections.sort(controls, new Comparator<keyBoardVirtualControllerElement>() {
+            @Override
+            public int compare(keyBoardVirtualControllerElement first,
+                               keyBoardVirtualControllerElement second) {
+                FrameLayout.LayoutParams firstParams =
+                        (FrameLayout.LayoutParams) first.getLayoutParams();
+                FrameLayout.LayoutParams secondParams =
+                        (FrameLayout.LayoutParams) second.getLayoutParams();
+                int vertical = Integer.compare(firstParams.topMargin, secondParams.topMargin);
+                return vertical != 0
+                        ? vertical
+                        : Integer.compare(firstParams.leftMargin, secondParams.leftMargin);
+            }
+        });
     }
 
     boolean enterGroupMoveMode(keyBoardVirtualControllerElement seed) {

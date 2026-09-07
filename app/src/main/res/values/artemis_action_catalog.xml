@@ -63,8 +63,8 @@
     <string name="artemis_quick_menu_action_task_manager_description">Send Ctrl+Shift+Esc to the host.</string>
     <string name="artemis_quick_menu_action_send_keys_label">Send keys</string>
     <string name="artemis_quick_menu_action_send_keys_description">Open Artemis’s special key-combination list.</string>
-    <string name="artemis_quick_menu_action_touch_sensitivity_label">Switch touch sensitivity</string>
-    <string name="artemis_quick_menu_action_touch_sensitivity_description">Cycle the configured touch sensitivity mode.</string>
+    <string name="artemis_quick_menu_action_touch_sensitivity_label">Touch sensitivity</string>
+    <string name="artemis_quick_menu_action_touch_sensitivity_description">Adjust touch sensitivity during the stream.</string>
     <string name="artemis_quick_menu_action_device_actions_label">Device actions</string>
     <string name="artemis_quick_menu_action_device_actions_description">Insert actions supplied by the currently active controller or input device.</string>
 </resources>

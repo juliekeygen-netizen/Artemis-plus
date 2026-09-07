@@ -18,20 +18,18 @@ Primary architectural rule: extend existing ownership/state systems rather than 
 
 Latest verified product-code baseline at this refresh:
 
-`28fbee2b81229e8696dc2451e81eaaf4f5e9b4d8`
+`0f04fe66c33f3828d68d9c363f045105b75472ce`
 
 Latest merge:
 
-`Localize Artemis action catalog metadata (#77)`
-
-Documentation-only PR [#78](https://github.com/juliekeygen-netizen/Artemis-plus/pull/78) refreshes the rolling state after #77; its merge does not change the product-code baseline above.
+`Fix host polling over Tailscale VPN routes (#79)`
 
 Post-merge verification on this exact SHA:
 
-- Android CI run `34059021337` — success, including compile, the mandatory focused regression gate, and diagnostic full-suite reporting.
-- Build Debug APK run `34059021340` — success, including established-signer verification, four-ABI package build, and rolling `debug-latest` publication.
+- Android CI run `34084050307` — success, including compile, the mandatory focused regression gate, and diagnostic full-suite reporting.
+- Build Debug APK run `34084050291` — success, including established-signer verification, four-ABI package build, and rolling `debug-latest` publication.
 
-PR #77 passed independent exact-head push CI `34045903759` and pull-request CI `34045905908` before its guarded squash merge. The audit added `ArtemisCatalogLocalizationTest` to the mandatory focused CI gate before merge.
+PR #79 passed independent exact-head push CI `34083860772` and pull-request CI `34083863036` before its guarded squash merge. The audit added `ComputerManagerVpnRoutingTest` to the mandatory focused CI gate before merge.
 
 Current Android build stack:
 
@@ -223,8 +221,15 @@ testing the rolling debug build:
 
 The Tailscale investigation found a concrete routing risk introduced when Keep Alive added
 `CHANGE_NETWORK_STATE`: inherited STUN discovery could then bind the entire app process away from
-the active VPN while host polls ran concurrently. PR #79 removes that process-wide reroute, keeps
-host traffic on the VPN, and skips convenience WAN-address discovery while a VPN is active.
+the active VPN while host polls ran concurrently. Merged PR #79 removes that process-wide reroute,
+keeps host traffic on the VPN, and skips convenience WAN-address discovery while a VPN is active.
+
+PR #80 fixes the remaining reported UI defects and adds the requested key behavior: Quick Menu now
+opens the live sensitivity editor, editor chrome is recalculated from current laid-out bounds,
+empty key rows no longer block modifier-only buttons, the key picker uses an IME-resizable embedded
+result list, and deposited keys have an optional persisted default-off hold-to-toggle mode. The
+touched API-24-only sorting paths were also made Android-5-compatible, reducing lint from 23 errors
+to 15 while leaving the 497-warning count unchanged.
 
 ---
 
@@ -232,13 +237,13 @@ host traffic on the VPN, and skips convenience WAN-address discovery while a VPN
 
 Keep unrelated fixes in separate coherent PRs.
 
-1. **Reported device regressions** — finish and validate the Tailscale fix, then fix the concrete Quick Menu/editor/Add Keys/key-picker defects listed in §5.8.
-2. **Optional per-key long-press toggle** — add the default-off setting without changing existing deposited-key press/release behavior.
-3. **Lint cleanup** — triage the inherited 23-error/497-warning baseline in safe coherent batches; do not suppress findings merely to make the task green.
-4. **Broader UI resource/accessibility follow-up** — audit remaining Artemis Plus UI strings and content descriptions. Actual locale translations are lower priority unless a contained translation batch is available.
-5. **Test-suite cleanup** — make the inherited Robolectric/source-contract suite reliable across Linux and Windows, then strengthen the full-suite CI gate.
-6. **Real-device lifecycle acceptance** — retain the broader Fast Resume, Keep Alive, controller, PiP, Sideways, and IME checklist below.
-7. **Keyboard profile disaster recovery** — design an authoritative ownership marker/migration before attempting recovery of inactive geometry-only stores.
+1. **Lint cleanup** — triage the inherited 15-error/497-warning baseline in safe coherent batches; do not suppress findings merely to make the task green.
+2. **Broader UI string audit** — move remaining Artemis Plus UI literals into Android resources without changing persisted/runtime IDs.
+3. **Accessibility audit** — repair missing/weak content descriptions, TalkBack behavior, and control semantics.
+4. **Test-suite cleanup** — make the inherited Robolectric/source-contract suite reliable across Linux and Windows, then strengthen the full-suite CI gate.
+5. **Real-device lifecycle acceptance** — validate #79/#80 plus the broader Fast Resume, Keep Alive, controller, PiP, Sideways, and IME checklist below.
+6. **Keyboard profile disaster recovery** — design an authoritative ownership marker/migration before attempting recovery of inactive geometry-only stores.
+7. **Actual translations** — choose target languages and translate the resource-backed catalog and remaining Plus UI; keep this after the functional audits unless a contained translation batch is available.
 
 Persisted-state and repository-hygiene work should no longer be treated as generic open-ended priorities; revisit specific areas only when new evidence warrants it.
 

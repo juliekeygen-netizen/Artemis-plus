@@ -1,119 +1,85 @@
 # Artemis Plus — Codex Review Handoff
 
-This is the rolling review packet for the latest coherent task. Inspect live GitHub state before relying on recorded SHAs.
+This is the rolling review packet for the latest coherent task. Inspect live GitHub state before
+relying on recorded SHAs.
 
 ---
 
 ## Task
 
-Audit, fix, and merge Artemis Action / Quick Menu catalog localization.
-
-## User goal
-
-Independently review PR #77, fix concrete problems, and merge it if the implementation and verification are clean. Preserve remaining real-device testing for later.
+Preserve Tailscale/VPN routing during computer discovery and polling.
 
 ## Repository state
 
-- Base branch/commit: `main` at `4a9b16107fab95f47425ffd929c5b71e39947354`
-- Audited PR branch: `audit/action-catalog-localization-v2`
-- Audited exact head: `0e6a21f764520c3937648d0edbbceac956b14bbc`
-- Pull request: [#77](https://github.com/juliekeygen-netizen/Artemis-plus/pull/77)
-- PR state: merged by guarded squash after exact-head verification
-- Merge commit: `28fbee2b81229e8696dc2451e81eaaf4f5e9b4d8`
-- Post-merge documentation branch: `maintenance/refresh-state-post77`
-- Post-merge documentation PR: [#78](https://github.com/juliekeygen-netizen/Artemis-plus/pull/78)
-- Documentation PR pre-metadata head: `fa522b3b9f26226f6381502faf922acf1b81a71d`
+- Branch: `fix/tailscale-vpn-host-polling`
+- Base: `main` at `14d8c0485815db8cdd67354976e9e6c02e6c0d3e`
+- Product implementation commit: `a2fb5f1231e0f329a5789c92bcb9e0da29cafd3a`
+- Pull request: [#79](https://github.com/juliekeygen-netizen/Artemis-plus/pull/79)
+- PR state at packet creation: open; CI pending
 
-## Scope completed
+## Intent and user-visible behavior
 
-### Product behavior
+When Android is connected to Tailscale or another VPN, Artemis must poll saved/manual host
+addresses through that VPN. Convenience STUN discovery must not temporarily reroute the entire app
+onto the underlying Wi-Fi and make the VPN host appear Offline.
 
-- Artemis Action labels, picker strings, failure messages, and button content descriptions are backed by Android string resources.
-- Quick Menu catalog labels, categories, and descriptions are backed by Android string resources.
-- Quick Menu filtering uses category resource IDs as runtime identity and searches localized display text.
-- All stable persisted/runtime IDs remain verbatim strings and unknown future Quick Menu IDs remain inert and round-trippable.
+## Implementation summary
 
-### Independent audit and fix
+- `ComputerManagerService` now skips external/WAN address discovery while a VPN is active.
+- It no longer calls process-wide `bindProcessToNetwork()` or `setProcessDefaultNetwork()` for
+  STUN. Normal PC polling therefore retains Android's selected VPN route.
+- Non-VPN mDNS discovery still performs STUN and stores the discovered remote fallback address.
+- `ComputerManagerVpnRoutingTest` locks the VPN/non-VPN policy and is in the mandatory focused CI
+  gate.
 
-- Compared all 14 Artemis Action IDs and all 18 Quick Menu IDs against pre-change `main`; no ID changed.
-- Traced all removed raw-label/category/description consumers; no stale catalog API caller remains.
-- Checked persistence, locale filtering, accessibility content descriptions, resource resolution, and the final PR file list.
-- Found one integration defect: `ArtemisCatalogLocalizationTest` was only reached by the diagnostic full-suite step, which is allowed to fail. Commit `0e6a21f7` adds it to the mandatory focused Android CI gate.
-- Confirmed no temporary staging patcher or one-shot workflow entered the merged tree.
+## Materially changed files
 
-## Files changed in merged PR
-
+- `app/src/main/java/com/limelight/computers/ComputerManagerService.java`
+- `app/src/test/java/com/limelight/computers/ComputerManagerVpnRoutingTest.java`
 - `.github/workflows/android-ci.yml`
-- `app/src/main/java/com/limelight/ArtemisAction.java`
-- `app/src/main/java/com/limelight/binding/input/virtual_controller/keyboard/ArtemisActionButtonFactory.java`
-- `app/src/main/java/com/limelight/quickmenu/QuickMenuEditorDialog.java`
-- `app/src/main/java/com/limelight/quickmenu/StreamActionRegistry.java`
-- `app/src/main/res/values/artemis_action_catalog.xml`
-- `app/src/test/java/com/limelight/ArtemisCatalogLocalizationTest.java`
-- `app/src/test/java/com/limelight/quickmenu/QuickMenuConfigTest.java`
 - `PROJECT_STATE.md`
 - `CODEX_HANDOFF.md`
 
-Post-merge state refresh changes only `PROJECT_STATE.md` and `CODEX_HANDOFF.md`.
+## Architecture, compatibility, lifecycle, and performance
 
-## Persistence / compatibility
+- Existing local, manual, remote, and IPv6 address precedence is unchanged.
+- Saved Tailscale addresses and host database formats are unchanged; no migration is required.
+- `CHANGE_NETWORK_STATE` remains declared because the connected-device foreground service uses it
+  as an Android foreground-service prerequisite. The fix removes only global process routing.
+- Skipping STUN on VPN avoids a global routing race and one blocking network operation. Host polls
+  remain parallel and continue using the active Android route.
+- The PC currently listens on TCP 47984, 47989, 47990, and 48010 on all interfaces; each port was
+  reachable through this PC's Tailscale IPv4 address during the audit. Sunshine/Apollo firewall
+  rules are enabled for all profiles.
 
-- No preference schema, serialized layout, keyboard-profile bundle, or migration changed.
-- All existing Artemis Action and Quick Menu action IDs are unchanged and regression-locked.
-- User-created page titles and unknown/future action IDs retain their previous behavior.
-- Default English resources remain the fallback until locale-specific translations are contributed.
+## Validation actually run
 
-## Lifecycle / race / performance review
+- `ComputerManagerVpnRoutingTest` — PASS (2 tests).
+- `:app:compileNonRoot_gameDebugJavaWithJavac` — PASS.
+- `:app:assembleNonRoot_gameDebug` — PASS, including all four configured ABIs.
+- Mandatory focused test command — attempted locally; the new test and most focused tests passed,
+  but the command retained the known Windows-only source-contract line-ending failures in
+  `GameDelayedCallbackLifecycleTest`, `GameStopWorkerLifecycleTest`, and
+  `StreamContainerSurfaceLifecycleTest`. The implementation does not touch those sources/tests.
+- `git -c core.whitespace=cr-at-eol diff --check` — PASS before documentation update.
 
-The product change is display-metadata-only. It does not alter Activity recreation, stream/background/PiP state, controller ownership, Surface/TextureView handling, input suspension, or delayed callbacks. Registry initialization stores integer resource IDs only; Context-backed resolution occurs at existing UI construction/update boundaries.
+## CI and release state
 
-The category list is small and built once per picker; localized label/description resolution occurs during the existing row rebuild and introduces no meaningful allocation or UI-thread risk.
+- PR #79 CI: pending at packet creation.
+- No signed rolling APK is published from feature branches. A successful merge to `main` should
+  trigger the established signed four-ABI `debug-latest` workflow.
 
-## Tests actually run
+## Required device follow-up
 
-- Focused `ArtemisCatalogLocalizationTest`, `QuickMenuConfigTest`, and `ArtemisActionButtonFactoryTest` — PASS before and after audit fix.
-- Non-root debug Java compilation — PASS.
-- Non-root debug APK assembly, including four ABI native builds, resource packaging, R8, and APK packaging — PASS.
-- Full local suite — 285 tests, with the same 16 Windows/local failures as a separately built untouched `origin/main` worktree; no patch-only failure.
-- Android Lint — analysis completed but task FAILS on the inherited baseline of 23 errors / 497 warnings. No catalog/resource finding was reported; the sole finding in a PR-touched source file is a pre-existing `NotifyDataSetChanged` warning outside the changed hunks.
-- `git diff --check` — PASS.
+- Ensure Tailscale is connected on the OnePlus and the PC is online in the Tailscale peer list.
+- If Artemis Plus has a LAN-only saved record, add the PC's stable Tailscale IP once through Add PC;
+  debug Artemis Plus uses `com.limelight.noirdebug` and does not share the normal Artemis release
+  app's host database.
+- Confirm the PC becomes Online and a stream starts while the phone is off the home LAN.
 
-## GitHub Actions / release
+## Audit hotspots and deferred work
 
-- Final PR-head push Android CI `34045903759` — PASS.
-- Final PR-head pull-request Android CI `34045905908` — PASS.
-- Both exact-head runs include the new catalog regression in the mandatory focused gate.
-- Post-merge Android CI `34059021337` — PASS.
-- Post-merge Build Debug APK / rolling release `34059021340` — PASS, including signing verification, four-ABI release package, and `debug-latest` publication.
-- Documentation PR #78 push Android CI `34059200041` — PASS on pre-metadata head.
-- Documentation PR #78 pull-request Android CI `34059202707` — PASS on pre-metadata head.
-
-## Known limitations / real-device validation
-
-- The catalog is localization-ready but not translated into every supported locale.
-- UI fallback, picker search/filter behavior, and TalkBack descriptions should receive a later device smoke test.
-- Broader streaming/controller/PiP/Sideways/IME acceptance still requires physical Android hardware; this merge does not claim those hardware-sensitive checks.
-
-## Remaining roadmap work
-
-1. Physical-device lifecycle acceptance for Fast Resume, Keep Alive, surface restoration, controllers, PiP, Sideways, and IME.
-2. Broader Artemis Plus UI string/content-description audit and actual locale translations.
-3. Targeted lifecycle/performance fixes only when hardware testing or profiling demonstrates a defect.
-4. Capability-gated foldable/Diana design or proof of concept; no complete subsystem exists to port wholesale.
-5. New contained product features after testing or user feedback establishes a concrete target.
-
-## Audit hotspots for future work
-
-- Never translate or replace stable persisted/runtime action IDs.
-- Treat the 23-error/497-warning lint result as inherited debt to triage separately, not as a reason to weaken lint or hide findings.
-- Do not make speculative lifecycle changes without hardware evidence.
-
-## PROJECT_STATE update
-
-- Records #77 and merge commit `28fbee2b` as the current durable baseline.
-- Marks catalog resource-backing complete.
-- Keeps actual translations/broader accessibility work and physical-device validation in the remaining queue.
-
-## Suggested next action
-
-Merge this documentation refresh, then perform the physical-device acceptance checklist when hardware is available.
+- Do not reintroduce process-wide network binding for STUN while concurrent host polling exists.
+- The user-reported Quick Menu/editor/Add Keys/key-picker issues and per-key long-press toggle are
+  intentionally deferred to the next coherent UI phase.
+- Lint, broader string/accessibility work, and test-baseline cleanup remain separate phases.

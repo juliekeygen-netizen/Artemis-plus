@@ -1,6 +1,6 @@
 # Artemis Plus — Durable Project State and Roadmap
 
-**Last refreshed:** 2026-09-06
+**Last refreshed:** 2026-09-07
 **Purpose:** durable current-state handoff for Codex/ChatGPT and future contributors.  
 **Rule:** current source/tests, Git history, Actions, and release state are authoritative. Verify live `main` before acting; this file is a recovery map, not a substitute for inspection.
 
@@ -208,17 +208,37 @@ Robolectric/emulator/CI success does not prove OEM MediaCodec/TextureView/orient
 
 The Diana audit did not find a complete reusable cover-screen controller/analog-trigger subsystem to port wholesale; future foldable work should be capability-gated.
 
+### 5.8 New physical-device findings after #78
+
+The user reported four concrete stream-editor defects and one requested key-button behavior after
+testing the rolling debug build:
+
+- a saved PC reachable through Tailscale can be shown as Offline;
+- Quick Menu's touch-sensitivity action toggles the setting instead of opening the live editor;
+- the keyboard-overlay editor gear and command strip can scale/reposition incorrectly after a
+  display/orientation transition;
+- an empty key row prevents an otherwise valid modifier-only custom key;
+- the key picker can lose its results behind a docked/split IME;
+- deposited key buttons need an optional, per-key, default-off long-press-to-toggle mode.
+
+The Tailscale investigation found a concrete routing risk introduced when Keep Alive added
+`CHANGE_NETWORK_STATE`: inherited STUN discovery could then bind the entire app process away from
+the active VPN while host polls ran concurrently. PR #79 removes that process-wide reroute, keeps
+host traffic on the VPN, and skips convenience WAN-address discovery while a VPN is active.
+
 ---
 
 ## 6. Next priorities
 
 Keep unrelated fixes in separate coherent PRs.
 
-1. **Real-device lifecycle acceptance** — exercise Fast Resume, Keep Alive, surface switching/restoration, controller disconnect/reconnect, PiP, Sideways, and IME behavior on physical Android hardware. Convert any reproducible failure into a narrow regression/fix.
-2. **Broader UI/localization follow-up** — audit remaining Artemis Plus UI strings/content descriptions and add actual locale translations in separate coherent changes; the Action/Quick Menu catalog resource boundary itself is complete.
-3. **Targeted lifecycle/performance review** — only where profiling, hardware testing, or a concrete invariant identifies a problem. The generic delayed-callback sweep is no longer an open-ended task.
-4. **Foldable/Diana follow-up** — only as a capability-gated design/implementation; no complete subsystem exists to port wholesale.
-5. **Useful contained feature work** after correctness work, localization, or hardware findings establish the next target.
+1. **Reported device regressions** — finish and validate the Tailscale fix, then fix the concrete Quick Menu/editor/Add Keys/key-picker defects listed in §5.8.
+2. **Optional per-key long-press toggle** — add the default-off setting without changing existing deposited-key press/release behavior.
+3. **Lint cleanup** — triage the inherited 23-error/497-warning baseline in safe coherent batches; do not suppress findings merely to make the task green.
+4. **Broader UI resource/accessibility follow-up** — audit remaining Artemis Plus UI strings and content descriptions. Actual locale translations are lower priority unless a contained translation batch is available.
+5. **Test-suite cleanup** — make the inherited Robolectric/source-contract suite reliable across Linux and Windows, then strengthen the full-suite CI gate.
+6. **Real-device lifecycle acceptance** — retain the broader Fast Resume, Keep Alive, controller, PiP, Sideways, and IME checklist below.
+7. **Keyboard profile disaster recovery** — design an authoritative ownership marker/migration before attempting recovery of inactive geometry-only stores.
 
 Persisted-state and repository-hygiene work should no longer be treated as generic open-ended priorities; revisit specific areas only when new evidence warrants it.
 
